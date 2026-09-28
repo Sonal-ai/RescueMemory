@@ -194,8 +194,3 @@ RescueMemory/
 └── README.md
 ```
 
----
-
-## 👥 Authors & Maintainers
-- **Sonal** ([@Sonal-ai](https://github.com/Sonal-ai))
-- Developed for **Code Cubicle 6.0 (Geek Room)**
