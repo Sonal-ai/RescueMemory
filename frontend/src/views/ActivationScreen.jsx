@@ -7,7 +7,7 @@ export default function ActivationScreen() {
   const count = sync?.local_event_count ?? 0;
   return (
     <Shell title="Memory that moves with people" subtitle="Ask locally, report what changed, and exchange knowledge whenever another node or the central network becomes reachable.">
-      <div className="rounded-3xl overflow-hidden border border-slate-700 bg-slate-900 relative min-h-[340px] sm:min-h-[430px] flex items-end">
+      <div className="hero-panel rounded-3xl overflow-hidden border border-slate-700 bg-slate-900 relative min-h-[340px] sm:min-h-[430px] flex items-end">
         <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: "url('/background.jpg')" }} />
         <div className="absolute inset-0 bg-gradient-to-t from-[#07111f] via-[#07111f]/75 to-[#07111f]/20" />
         <div className="relative z-10 p-6 sm:p-10 max-w-3xl">

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
-import { Activity, CircleHelp, Cloud, CloudOff, Database, Menu, Settings2, X } from 'lucide-react';
+import { Activity, CircleHelp, Cloud, CloudOff, Database, Menu, Moon, Settings2, Sun, X } from 'lucide-react';
 import { api, saveSetting, setting } from './api';
 
 export function useNodeStatus() {
@@ -33,7 +33,7 @@ export function SettingsPanel({ onClose }) {
   const save = () => { Object.entries(values).forEach(([key, value]) => saveSetting(key, value)); onClose(); };
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="w-full max-w-xl bg-[#101a2a] border border-slate-700 rounded-2xl p-5 sm:p-7 shadow-2xl max-h-[90vh] overflow-auto">
+      <div className="settings-dialog w-full max-w-xl bg-[#101a2a] border border-slate-700 rounded-2xl p-5 sm:p-7 shadow-2xl max-h-[90vh] overflow-auto">
         <div className="flex justify-between items-center mb-2"><h2 className="text-xl font-bold">Node settings</h2><button aria-label="Close settings" onClick={onClose}><X /></button></div>
         <p className="text-sm text-slate-400 mb-5">Keys stay in this browser tab session. They are never bundled into the app.</p>
         <div className="grid sm:grid-cols-2 gap-4">
@@ -59,14 +59,19 @@ export function Shell({ title, subtitle, children }) {
   const { health, sync, error } = useNodeStatus();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const nav = [
-    ['/', 'Home'], ['/crisis', 'Survivor'], ['/volunteer', 'Volunteer'], ['/command', 'Command'],
-  ];
+  const [theme, setTheme] = useState(() => localStorage.getItem('rescue.theme') === 'light' ? 'light' : 'dark');
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem('rescue.theme', theme);
+  }, [theme]);
+  const nav = [['/', 'Home'], ['/crisis', 'Ask']];
+  if (health?.role === 'volunteer' || health?.role === 'central') nav.push(['/volunteer', 'Field board']);
+  if (health?.role === 'central') nav.push(['/command', 'Command']);
   const exchanges = sync?.last_exchanges || [];
   const last = exchanges.map((item) => item.synced_at).filter(Boolean).sort().at(-1);
   return (
-    <div className="min-h-screen bg-[#08111d] text-slate-100">
-      <header className="border-b border-slate-800 bg-[#0b1625]/95 sticky top-0 z-30 backdrop-blur-md">
+    <div className="app-shell min-h-screen bg-[#08111d] text-slate-100">
+      <header className="app-header border-b border-slate-800 bg-[#0b1625]/95 sticky top-0 z-30 backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-wrap items-center gap-3">
           <Link to="/" className="flex items-center gap-2 font-bold tracking-tight text-lg"><span className="h-8 w-8 rounded-lg bg-red-500 flex items-center justify-center"><Activity size={20} /></span> RescueMemory</Link>
           <nav className={`${menuOpen ? 'flex' : 'hidden'} sm:flex w-full sm:w-auto sm:ml-8 order-3 sm:order-none gap-1 flex-wrap`}>
@@ -76,6 +81,7 @@ export function Shell({ title, subtitle, children }) {
             <span className={`text-xs px-2.5 py-1 rounded-full border flex items-center gap-1.5 ${health ? 'text-emerald-300 border-emerald-800 bg-emerald-950' : 'text-red-300 border-red-800 bg-red-950'}`}>
               {health ? <Database size={13} /> : <CloudOff size={13} />}{health ? `${health.node_id} · Edge active` : 'Node unavailable'}
             </span>
+            <button title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`} aria-pressed={theme === 'light'} className="icon-btn" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Sun size={19} /> : <Moon size={19} />}</button>
             <button title="Node settings" aria-label="Node settings" className="icon-btn" onClick={() => setSettingsOpen(true)}><Settings2 size={19} /></button>
             <button aria-label="Menu" className="icon-btn sm:hidden" onClick={() => setMenuOpen(!menuOpen)}><Menu size={19} /></button>
           </div>
@@ -95,7 +101,7 @@ export function Shell({ title, subtitle, children }) {
 }
 
 export function Card({ title, children, className = '' }) {
-  return <section className={`bg-[#101d2d] border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-lg shadow-black/10 ${className}`}>{title && <h2 className="text-lg font-semibold mb-4">{title}</h2>}{children}</section>;
+  return <section className={`app-card bg-[#101d2d] border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-lg shadow-black/10 ${className}`}>{title && <h2 className="text-lg font-semibold mb-4">{title}</h2>}{children}</section>;
 }
 
 export function Empty({ children }) {

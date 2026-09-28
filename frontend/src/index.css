@@ -2,6 +2,15 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  color-scheme: dark;
+  --map-bg: #0b2131;
+  --map-grid: #24445a;
+  --map-road: #325873;
+  --map-road-line: #6788a0;
+  --map-label: #6eacc8;
+}
+
 body {
   background-color: #08111d;
   color: white;
@@ -43,3 +52,56 @@ body {
 .icon-btn:hover { background: #1e293b; color: white; }
 .stat-card { display: flex; align-items: center; gap: 1rem; padding: 1.25rem; background: #101d2d; border: 1px solid #1e293b; border-radius: 1rem; }
 .stat-card p { color: #94a3b8; font-size: .85rem; }
+
+.hero-panel { color: #f8fafc; }
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --map-bg: #e9f5fb;
+  --map-grid: #b9d8e8;
+  --map-road: #a9ccdd;
+  --map-road-line: #477d98;
+  --map-label: #285c77;
+}
+
+:root[data-theme="light"] body,
+:root[data-theme="light"] .app-shell { background: #f4f7fb !important; color: #162337 !important; }
+:root[data-theme="light"] .app-header { background: rgba(255,255,255,.95) !important; border-color: #dbe4ef !important; }
+:root[data-theme="light"] .app-card,
+:root[data-theme="light"] .settings-dialog,
+:root[data-theme="light"] .stat-card { background: #fff !important; border-color: #dbe4ef !important; color: #162337; box-shadow: 0 8px 30px rgba(38,70,105,.06); }
+:root[data-theme="light"] .stat-card p { color: #52647a; }
+:root[data-theme="light"] .field { background: #fff; color: #162337; border-color: #b8c8da; }
+:root[data-theme="light"] .field::placeholder { color: #66788e; }
+:root[data-theme="light"] .btn-secondary { background: #e9f1f8; color: #17344d; border-color: #bfcede; }
+:root[data-theme="light"] .btn-secondary:hover { background: #dbeaf6; }
+:root[data-theme="light"] .icon-btn { color: #405872; }
+:root[data-theme="light"] .icon-btn:hover { background: #e8f0f8; color: #10283d; }
+:root[data-theme="light"] [class~="bg-slate-900"],
+:root[data-theme="light"] [class~="bg-[#102335]"] { background: #edf4fa !important; }
+:root[data-theme="light"] [class~="bg-slate-950"],
+:root[data-theme="light"] [class*="bg-slate-950/"] { background: #e3edf6 !important; }
+:root[data-theme="light"] [class~="bg-slate-700"] { background: #dceaf5 !important; color: #17344d !important; }
+:root[data-theme="light"] [class~="bg-cyan-950"],
+:root[data-theme="light"] [class*="bg-cyan-950/"] { background: #dcf6fc !important; color: #0f6378 !important; }
+:root[data-theme="light"] [class*="bg-red-950"] { background: #fff1f1 !important; color: #991b1b !important; }
+:root[data-theme="light"] [class*="bg-emerald-950"] { background: #e9fbf2 !important; color: #17684a !important; }
+:root[data-theme="light"] [class~="bg-red-500/20"] { background: #fee2e2 !important; color: #991b1b !important; }
+:root[data-theme="light"] [class~="border-slate-700"] { border-color: #bfd0df !important; }
+:root[data-theme="light"] [class~="border-slate-800"] { border-color: #dbe4ef !important; }
+:root[data-theme="light"] [class~="text-slate-100"],
+:root[data-theme="light"] [class~="text-slate-200"],
+:root[data-theme="light"] [class~="text-slate-300"] { color: #283b50 !important; }
+:root[data-theme="light"] [class~="text-slate-400"] { color: #52647a !important; }
+:root[data-theme="light"] [class~="text-slate-500"] { color: #63758a !important; }
+:root[data-theme="light"] [class~="text-cyan-300"],
+:root[data-theme="light"] [class~="text-cyan-400"] { color: #08718d !important; }
+:root[data-theme="light"] [class~="text-emerald-300"] { color: #08734f !important; }
+:root[data-theme="light"] [class~="text-amber-300"] { color: #8a5500 !important; }
+:root[data-theme="light"] [class~="text-red-200"],
+:root[data-theme="light"] [class~="text-red-300"] { color: #a51d2d !important; }
+:root[data-theme="light"] .hero-panel { color: #f8fafc !important; }
+:root[data-theme="light"] .hero-panel [class~="text-slate-300"],
+:root[data-theme="light"] .hero-panel [class~="text-cyan-300"] { color: #e2f4ff !important; }
+:root[data-theme="light"] .hero-panel [class*="bg-cyan-950/"] { background: rgba(8,45,66,.85) !important; }
+:root[data-theme="light"] .hero-panel .btn-secondary { background: #fff; color: #17344d; }

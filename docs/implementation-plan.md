@@ -2,7 +2,7 @@
 
 **Decision document, 28 September 2026.** The team-chat PDF and earlier architecture PDFs are context and proposals, not verified implementation requirements. The actual problem statement asks for a local Qdrant Edge memory, offline retrieval, sensible local/cloud placement, intermittent sync, evolving/conflicting data, and a UI that exposes the memory and sync state. This plan is scoped for a September 30 demo if that date in the team chat is still the deadline.
 
-**Implementation update:** The backend and Palak frontend have now been integrated on `shdra`. A live Qdrant Cloud smoke test passed for both an event and an authenticated guide; the synthetic records were removed. See the repository README for current setup and test instructions. Remaining production-strength security and native Android work are identified below.
+**Implementation update:** The backend and Palak frontend have now been integrated on `shdra`. A live Qdrant Cloud smoke test passed for both an event and an authenticated guide; the synthetic records were removed. The survivor view now has offline extractive answers from the compact local MiniLM retrieval model, optional Gemini synthesis, a review-first SOS action, a light/dark toggle, and a 30-second local nearby-map refresh. See the repository README for current setup and test instructions. Remaining production-strength security and native Android work are identified below.
 
 ## 1. The product in one sentence
 
@@ -22,7 +22,7 @@ Make the **journey of one fact** the signature feature. In the inspector, select
 | `origin/sonal` | Python `QdrantClient(path=...)`, dense retrieval, baseline checkpoints, 515 generated medical records; no app API or sync | Reuse schemas and useful seed ideas after review. Port any needed behavior to real `qdrant-edge-py`; do not describe local client mode as Edge. |
 | `origin/Palak` | React/Vite activation and survivor HUD, visually developed but hardcoded and desktop sized | Use as the frontend starting point; connect it to real responses and make it responsive. Replace unsafe placeholder medical claims. |
 | `E:\hackthon\code cubical\backend` | Working FastAPI + `qdrant-edge-py` shards, offline dense/BM25 hybrid search, local map, groups, responder SOS, multi-hop HTTP sync | Integrated into `shdra`; the Cloud bridge has since passed a live synthetic upload/download test. |
-| `shdra` | Branch exists and tracks `origin/shdra`; it currently matches `main` | Land the integrated product here via reviewable commits/PRs; preserve teammate branches. |
+| `shdra` | Integrated edge/cloud prototype and Palak frontend are committed here | Continue feature work here; preserve teammate branches. |
 
 Two claims in the supplied chat need correction before a pitch: (1) `QdrantClient(path=...)` is local mode of the Qdrant client, not Qdrant Edge. (2) the generated 515 protocols do not have per-record source evidence or medical review; an example combines “Femoral Bleed” with “Upper Extremity.” Do not call the collection clinically verified or ship it as emergency instructions. Earlier latency and memory numbers also need actual measurement on the demo hardware.
 

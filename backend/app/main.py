@@ -64,6 +64,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "events": len(list(s.memory.all("events"))),
                 "guides": len(list(s.memory.all("reference"))),
                 "guides_enabled": bool(settings.guide_trust_key),
+                "gemini_configured": bool(settings.gemini_api_key),
                 "central_configured": bool(settings.central_url),
                 "cloud_configured": bool(settings.qdrant_url)}
 

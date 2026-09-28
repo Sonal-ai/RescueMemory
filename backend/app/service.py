@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import re
 import secrets
 from datetime import datetime, timedelta, timezone
 from math import asin, cos, radians, sin, sqrt
@@ -13,6 +14,7 @@ from pydantic import BaseModel, Field
 from qdrant_edge import FieldCondition, Filter, MatchValue
 
 from .config import Settings
+from .gemini import grounded_answer
 from .memory import Memory
 from .schemas import (ChatRequest, CreateGroupRequest, GuidePublishRequest,
                       JoinGroupRequest, Location, NearbyRequest, ReportRequest)
@@ -24,6 +26,54 @@ def utc_now() -> datetime:
 
 def canonical(value: dict) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+
+
+STOP_WORDS = {"a", "an", "and", "are", "can", "do", "for", "from", "how", "i", "in",
+              "is", "me", "my", "near", "of", "on", "the", "there", "to", "what", "where"}
+
+
+def query_terms(text: str) -> set[str]:
+    return {word for word in re.findall(r"[a-z]{3,}", text.lower()) if word not in STOP_WORDS}
+
+
+def card_terms(card: dict) -> set[str]:
+    return query_terms(" ".join(str(card.get(field, ""))
+                                for field in ("title", "keywords", "summary")))
+
+
+def local_response(question: str, cards: list[dict], reports: list[dict]) -> tuple[str, dict | None]:
+    normalized = question.lower().replace("’", "'")
+    needs_rescue = any(phrase in normalized for phrase in (
+        "can't walk", "cant walk", "cannot walk", "unable to walk", "can't move",
+        "cant move", "cannot move", "trapped", "need rescue", "can't breathe",
+        "cant breathe", "cannot breathe", "severe bleeding", "unconscious",
+    ))
+    action = None
+    if needs_rescue:
+        action = {"kind": "sos", "label": "Review a responder SOS",
+                  "prefill": question[:1000]}
+    elif any(word in normalized for word in ("nearby", "where", "shelter", "water", "location")):
+        action = {"kind": "map", "label": "Open nearby map"}
+    elif any(phrase in normalized for phrase in ("i saw", "i found", "report a", "there is a hazard")):
+        action = {"kind": "report", "label": "Review a local report",
+                  "prefill": question[:1000]}
+
+    terms = query_terms(question)
+    matching_cards = [card for card in cards[:3] if terms & card_terms(card)]
+    matching_reports = [report for report in reports[:5] if terms & query_terms(report.get("text", ""))]
+    lines = []
+    if needs_rescue:
+        lines.append("You may need urgent help. Review the responder SOS below, add your location, and save it when ready. If possible, contact local emergency services or a nearby responder. Nothing was shared by this question alone.")
+    if matching_cards:
+        card = matching_cards[0]
+        lines.append(f"Local guide [G{cards.index(card) + 1}]: {card['title']}. {card['summary']}")
+    if matching_reports:
+        report = matching_reports[0]
+        label = "Command-verified" if report.get("verified") else "Unverified"
+        lines.append(f"{label} local report: {report['text']}")
+    if not lines:
+        lines.append("I could not find directly matching guidance or observations in this device's memory. Ask a nearby responder or try another search. You can still report what you observed locally.")
+    return "\n\n".join(lines), action
 
 
 class Event(BaseModel):
@@ -171,8 +221,32 @@ class RescueService:
         memory_hits = [e for e in memory_hits if not e.get("expires_at")
                        or datetime.fromisoformat(e["expires_at"]) > utc_now()]
         memory_hits.sort(key=lambda e: e["score"], reverse=True)
+        local_answer, suggested_action = local_response(request.text, cards, memory_hits)
+        terms = query_terms(request.text)
+        grounded_cards = [{**card, "citation_label": f"G{index}"}
+                          for index, card in enumerate(cards[:3], 1)
+                          if terms & card_terms(card)]
+        public_hits = [hit for hit in memory_hits[:5] if hit.get("visibility") == "public"][:4]
+        grounded_hits = [{**hit, "citation_label": f"R{index}"}
+                         for index, hit in enumerate(public_hits, 1)
+                         if terms & query_terms(hit.get("text", ""))]
+        ai_answer = None
+        ai_status = "local_only"
+        if request.use_ai:
+            if not self.settings.gemini_api_key:
+                ai_status = "not_configured"
+            elif not grounded_cards and not grounded_hits:
+                ai_status = "no_evidence"
+            else:
+                ai_answer = grounded_answer(
+                    request.text, grounded_cards, grounded_hits,
+                    self.settings.gemini_api_key, self.settings.gemini_model,
+                )
+                ai_status = "answered" if ai_answer else "unavailable"
         return {"answer_type": "retrieved_cards", "cards": cards,
                 "memory_hits": memory_hits[:5],
+                "ai_answer": ai_answer, "ai_status": ai_status,
+                "local_answer": local_answer, "suggested_action": suggested_action,
                 "presence_event": presence["event"]["id"] if presence else None,
                 "location_shared": bool(presence)}
 

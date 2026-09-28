@@ -12,6 +12,8 @@ The actual hackathon challenge is Qdrant's AI-powered edge memory and intelligen
 - **Central loop:** any connected survivor or volunteer can sync allowed data to the central API. The central API exchanges separate public, group, and responder collections plus approved guides with Qdrant Cloud. Cloud credentials stay on the central process.
 - **Guide updates:** command publishes a versioned, source-linked card. An HMAC authentication tag checked with `GUIDE_TRUST_KEY` prevents alteration in transit during the controlled demo. Nodes pull and relay signed cards. This is a shared-key prototype, not production device identity.
 - **Palak frontend:** her activation/HUD design extended into a responsive survivor view, nearby grid map, volunteer board, group controls, and command/Memory Ripple inspector. All displayed counts and search results come from APIs.
+- **Offline question answering:** the compact local MiniLM embedding model and Edge BM25 retrieve evidence without internet. A short extractive answer and contextual action are built from matching local guides/reports. A mobility or rescue phrase prepares an SOS form for review; asking alone never creates a report.
+- **Optional Gemini answer:** a server-side Gemini request can summarize a question and selected local guide/public-report evidence when online. Group and responder records are excluded. If the key or network is unavailable, the local answer remains. The UI has a persistent light/dark toggle, and nearby people/reports refresh from local memory every 30 seconds.
 
 The Android prototype is a **web interface** opened from a local node over Wi-Fi. Qdrant Edge runs on the node host, not inside the Android browser. The browser and host can operate without internet while their local connection remains available. Native phone-local Edge, Bluetooth discovery, and fully disconnected phone-to-phone transfer are future work. The schematic map uses no online tiles, and manual pin placement works without browser GPS permission.
 
@@ -31,6 +33,8 @@ Copy-Item .env.example .env
 ```
 
 Set long, unique values in `.env` for `MESH_SHARED_KEY`, `RESPONDER_SHARED_KEY`, `NODE_ADMIN_KEY`, and `GUIDE_TRUST_KEY`. Use the same mesh/guide keys only among the demo nodes that should exchange data. Keep `.env` private. The model is provisioned once and then loaded with `local_files_only=True` on every node.
+
+For optional online answers, put `GEMINI_API_KEY` in the ignored local `.env` and keep `GEMINI_MODEL=gemini-3.8-flash` or another available model. Restart each node after changing its environment. The browser never receives the key. In the survivor Ask view, select **Add an AI answer when connected** to send the question and selected public evidence; local search and its extractive answer run either way. Google documents the [Gemini model](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash) and [API key header](https://ai.google.dev/api).
 
 For Qdrant Cloud, copy `.env.central.example` to `.env.central` **on the central host only** and fill in the cluster HTTPS endpoint and **Database API key**. Both real environment files are Git ignored. A free Qdrant Cloud cluster works; Docker is not needed. Verify the read-only connection:
 
@@ -93,6 +97,7 @@ The live smoke test was run successfully against a Qdrant Cloud cluster on 28 Se
 5. Reconnect B or A to command, sync centrally, then run command's Cloud exchange. Check the distinct public/group/responder Cloud collections through the Qdrant console.
 6. At command, publish a reviewed guide and a verified Gate 3 update. Sync B with command and A with B. A should retrieve the new guide locally and show the checkpoint's full timeline.
 7. Open Memory Ripple at command to inspect known hops. Turn internet off again and repeat an offline search.
+8. In the survivor Ask view, type “I can't walk.” Check the offline answer and select **Review a responder SOS**. Review the text and selected location before saving. In the Nearby view, check the local people count and its 30-second refresh. Switch between light and dark mode in the header.
 
 ## Important boundaries
 
@@ -101,6 +106,7 @@ The live smoke test was run successfully against a Qdrant Cloud cluster on 28 Se
 - Public survivor presence is rounded to about a kilometer and expires after two hours. Exact coordinates remain within group or responder scope. Chat text is not copied into presence records.
 - A browser UI on Android cannot execute `qdrant-edge-py` itself. Native Android embedding and Bluetooth/Wi-Fi Direct transport remain unimplemented.
 - Cloud collections are not opened directly to web clients. The central FastAPI gateway enforces scopes; the Cloud API key must stay off local/Android nodes.
+- Gemini generation is optional and may be temporarily unavailable due to provider capacity or connectivity. The API key's authentication was checked, but an initial live generation request received HTTP 503. The app shows its local answer and sources in that case. AI text is a summary of retrieved evidence, not an emergency dispatch or medical diagnosis.
 
 ## References
 

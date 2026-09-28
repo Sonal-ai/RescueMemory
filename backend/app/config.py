@@ -19,6 +19,8 @@ class Settings:
     qdrant_api_key: str | None = None
     node_admin_key: str = ""
     guide_trust_key: str = ""
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-3.8-flash"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -41,4 +43,6 @@ class Settings:
             qdrant_api_key=os.getenv("QDRANT_API_KEY") if role == "central" else None,
             node_admin_key=os.getenv("NODE_ADMIN_KEY", ""),
             guide_trust_key=os.getenv("GUIDE_TRUST_KEY", ""),
+            gemini_api_key=os.getenv("GEMINI_API_KEY", ""),
+            gemini_model=os.getenv("GEMINI_MODEL", "gemini-3.8-flash"),
         )

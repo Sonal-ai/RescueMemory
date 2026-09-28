@@ -21,4 +21,4 @@ if (-not (Test-Path $python)) {
     throw 'Python environment not found. Follow the install steps in README.md.'
 }
 
-& $python -m uvicorn backend.app.main:app --host $hostAddress --port $Port
+& $python -m uvicorn backend.app.main:app --host $hostAddress --port $Port --no-access-log

@@ -1,16 +1,5 @@
-# React + Vite
+# RescueMemory web interface
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Palak's React/Vite interface is integrated with the local RescueMemory API. Build it with `npm ci` and `npm run build`; the FastAPI node serves `dist/` on the same port. The root [README](../README.md) covers full setup and the three-node demo.
 
-Currently, two official plugins are available:
-
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+The survivor Ask view retrieves local Qdrant Edge memory and can optionally request a Gemini summary through the backend. It never embeds the Gemini key in browser code. A question suggesting that someone needs rescue opens a prefilled SOS for review; it does not save or share the report automatically. The nearby map reads the local API every 30 seconds. The header toggle stores the light/dark preference in this browser.

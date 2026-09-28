@@ -7,8 +7,10 @@ import MapPanel from '../MapPanel';
 const CENTER = { lat: 28.7041, lon: 77.1025 };
 
 export default function VolunteerBoard() {
+  const [center, setCenter] = useState(CENTER);
   const [scope, setScope] = useState('public');
   const [items, setItems] = useState([]);
+  const [mapUpdatedAt, setMapUpdatedAt] = useState(null);
   const [status, setStatus] = useState(null);
   const [selected, setSelected] = useState(null);
   const [provenance, setProvenance] = useState(null);
@@ -21,16 +23,29 @@ export default function VolunteerBoard() {
       const groupId = scope === 'group' ? setting('groupId') : '';
       const [map, sync] = await Promise.all([
         api('/api/map/nearby', { method: 'POST', group: Boolean(groupId), responder: scope === 'responders',
-          body: { location: CENTER, radius_m: 5000,
+          body: { location: center, radius_m: 5000,
             ...(groupId ? { group_id: groupId } : {}),
             include_responders: scope === 'responders' } }),
         api('/api/sync/status'),
       ]);
       const matching = map.items.filter((item) => item.visibility === scope);
-      setItems(matching); setStatus(sync); setError('');
+      setItems(matching); setStatus(sync); setMapUpdatedAt(new Date()); setError('');
     } catch (err) { setError(err.message); }
-  }, [scope]);
-  useEffect(() => { refresh(); }, [refresh]);
+  }, [scope, center]);
+  useEffect(() => {
+    refresh();
+    const timer = setInterval(refresh, 30000);
+    return () => clearInterval(timer);
+  }, [refresh]);
+
+  const useGps = () => {
+    if (!navigator.geolocation) { setError('GPS is unavailable. The map remains on its current center.'); return; }
+    navigator.geolocation.getCurrentPosition(
+      (position) => setCenter({ lat: position.coords.latitude, lon: position.coords.longitude }),
+      () => setError('Location permission or secure HTTPS is required.'),
+      { enableHighAccuracy: true, timeout: 8000 },
+    );
+  };
 
   const inspect = async (item) => {
     setSelected(item); setProvenance(null);
@@ -73,9 +88,11 @@ export default function VolunteerBoard() {
       <Card title="Nearby memory">
         <div className="flex flex-wrap gap-2 mb-4 items-center">
           {['public', 'group', 'responders'].map((value) => <button key={value} onClick={() => { setScope(value); setSelected(null); }} className={`text-sm px-3 py-2 rounded-lg ${scope === value ? 'bg-cyan-950 border border-cyan-500 text-cyan-200' : 'bg-slate-900 border border-slate-700 text-slate-400'}`}>{value}</button>)}
-          <button onClick={refresh} className="ml-auto text-cyan-300 flex items-center gap-1 text-sm"><RefreshCw size={15} /> Refresh</button>
+          <button onClick={useGps} className="ml-auto text-cyan-300 flex items-center gap-1 text-sm">My location</button>
+          <button onClick={refresh} className="text-cyan-300 flex items-center gap-1 text-sm"><RefreshCw size={15} /> Refresh</button>
         </div>
-        <MapPanel center={CENTER} items={items} onMarker={inspect} />
+        <p className="text-xs text-slate-400 mb-2">{items.filter((item) => item.kind === 'presence').length} people requesting contact · local memory refreshes every 30 s{mapUpdatedAt ? ` · updated ${mapUpdatedAt.toLocaleTimeString()}` : ''}</p>
+        <MapPanel center={center} items={items} onMarker={inspect} />
         <div className="mt-4 space-y-2 max-h-72 overflow-auto">
           {items.length ? items.map((item) => <button key={item.id} onClick={() => inspect(item)} className={`w-full text-left border p-3 rounded-xl ${selected?.id === item.id ? 'border-cyan-500 bg-cyan-950/30' : 'border-slate-700 bg-slate-900'}`}><div className="font-semibold capitalize text-sm">{item.kind} · {item.status || item.severity}</div><div className="text-sm text-slate-300 mt-1">{item.text}</div><div className="text-xs text-slate-500 mt-1">{item.distance_m} m · {formatTime(item.observed_at)} · {item.origin_device}</div></button>) : <Empty>No visible reports in this scope. Group and responder scopes require their keys in Node settings.</Empty>}
         </div>
