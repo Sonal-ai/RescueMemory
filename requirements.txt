@@ -1,0 +1,8 @@
+qdrant-edge-py==0.8.0
+fastembed==0.8.1
+fastapi==0.141.1
+uvicorn==0.54.0
+httpx==0.28.1
+qdrant-client==1.19.1
+pytest==9.1.1
+python-dotenv==1.2.3
