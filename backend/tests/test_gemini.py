@@ -96,3 +96,26 @@ def test_offline_mobility_question_prepares_sos_without_saving(tmp_path):
         assert body["suggested_action"]["kind"] == "sos"
         assert "Nothing was shared" in body["local_answer"]
         assert client.get("/health").json()["events"] == 0
+
+
+def test_offline_rag_synthesis_and_1tap_sos_saving(tmp_path):
+    settings = Settings("node", "survivor", tmp_path / "node", MODEL_CACHE,
+                        "mesh", "responders")
+    with TestClient(create_app(settings)) as client:
+        result = client.post("/api/chat", json={"text": "I can't walk, broken leg", "use_ai": False})
+        assert result.status_code == 200
+        data = result.json()
+        assert data["ai_status"] == "local_only"
+        assert "Suspected Fracture or Inability to Walk" in data["local_answer"]
+        assert data["suggested_action"]["kind"] == "sos"
+        auto_rep = data["suggested_action"]["auto_report"]
+        assert auto_rep["kind"] == "incident"
+        assert auto_rep["visibility"] == "responders"
+
+        save_res = client.post("/api/reports", json={
+            **auto_rep,
+            "reporter_id": "survivor-1",
+            "location": {"lat": 28.7041, "lon": 77.1025}
+        })
+        assert save_res.status_code == 200
+        assert client.get("/health").json()["events"] == 1

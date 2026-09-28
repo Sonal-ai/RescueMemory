@@ -16,7 +16,7 @@ from qdrant_edge import FieldCondition, Filter, MatchValue
 from .config import Settings
 from .gemini import grounded_answer
 from .memory import Memory
-from .schemas import (ChatRequest, CreateGroupRequest, GuidePublishRequest,
+from .schemas import (AssessRequest, ChatRequest, CreateGroupRequest, GuidePublishRequest,
                       JoinGroupRequest, Location, NearbyRequest, ReportRequest)
 
 
@@ -41,39 +41,19 @@ def card_terms(card: dict) -> set[str]:
                                 for field in ("title", "keywords", "summary")))
 
 
-def local_response(question: str, cards: list[dict], reports: list[dict]) -> tuple[str, dict | None]:
-    normalized = question.lower().replace("’", "'")
-    needs_rescue = any(phrase in normalized for phrase in (
-        "can't walk", "cant walk", "cannot walk", "unable to walk", "can't move",
-        "cant move", "cannot move", "trapped", "need rescue", "can't breathe",
-        "cant breathe", "cannot breathe", "severe bleeding", "unconscious",
-    ))
-    action = None
-    if needs_rescue:
-        action = {"kind": "sos", "label": "Review a responder SOS",
-                  "prefill": question[:1000]}
-    elif any(word in normalized for word in ("nearby", "where", "shelter", "water", "location")):
-        action = {"kind": "map", "label": "Open nearby map"}
-    elif any(phrase in normalized for phrase in ("i saw", "i found", "report a", "there is a hazard")):
-        action = {"kind": "report", "label": "Review a local report",
-                  "prefill": question[:1000]}
+from .offline_rag import clinical_assess, resource_adaptive_rerank, synthesize_offline_rag
 
-    terms = query_terms(question)
-    matching_cards = [card for card in cards[:3] if terms & card_terms(card)]
-    matching_reports = [report for report in reports[:5] if terms & query_terms(report.get("text", ""))]
-    lines = []
-    if needs_rescue:
-        lines.append("You may need urgent help. Review the responder SOS below, add your location, and save it when ready. If possible, contact local emergency services or a nearby responder. Nothing was shared by this question alone.")
-    if matching_cards:
-        card = matching_cards[0]
-        lines.append(f"Local guide [G{cards.index(card) + 1}]: {card['title']}. {card['summary']}")
-    if matching_reports:
-        report = matching_reports[0]
-        label = "Command-verified" if report.get("verified") else "Unverified"
-        lines.append(f"{label} local report: {report['text']}")
-    if not lines:
-        lines.append("I could not find directly matching guidance or observations in this device's memory. Ask a nearby responder or try another search. You can still report what you observed locally.")
-    return "\n\n".join(lines), action
+
+def local_response(
+    question: str,
+    cards: list[dict],
+    reports: list[dict],
+    materials: list[str] | None = None,
+    breathing: bool | None = None,
+    bleeding_type: str | None = None,
+) -> tuple[str, dict | None]:
+    return synthesize_offline_rag(question, cards, reports, materials, breathing, bleeding_type)
+
 
 
 class Event(BaseModel):
@@ -221,7 +201,12 @@ class RescueService:
         memory_hits = [e for e in memory_hits if not e.get("expires_at")
                        or datetime.fromisoformat(e["expires_at"]) > utc_now()]
         memory_hits.sort(key=lambda e: e["score"], reverse=True)
-        local_answer, suggested_action = local_response(request.text, cards, memory_hits)
+        local_answer, suggested_action = local_response(
+            request.text, cards, memory_hits,
+            materials=request.materials,
+            breathing=request.breathing,
+            bleeding_type=request.bleeding_type,
+        )
         terms = query_terms(request.text)
         grounded_cards = [{**card, "citation_label": f"G{index}"}
                           for index, card in enumerate(cards[:3], 1)
@@ -249,6 +234,17 @@ class RescueService:
                 "local_answer": local_answer, "suggested_action": suggested_action,
                 "presence_event": presence["event"]["id"] if presence else None,
                 "location_shared": bool(presence)}
+
+    def assess(self, request: AssessRequest) -> dict:
+        cards = self.memory.search("reference", request.query, limit=max(10, request.limit))
+        return clinical_assess(
+            query=request.query,
+            cards=cards,
+            materials=request.materials,
+            breathing=request.breathing,
+            bleeding_type=request.bleeding_type,
+            limit=request.limit,
+        )
 
     def import_events(self, events: list[dict]) -> dict:
         if len(events) > 128:

@@ -33,8 +33,10 @@ ENV/
 qdrant_storage/
 qdrant_data/
 snapshots/
-*.snapshot
-data/
+/data/
+backend/data/*/
+!backend/data/knowledge.json
+
 
 # Node / React
 node_modules/

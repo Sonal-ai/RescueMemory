@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from .cloud import mirror_to_qdrant_server
 from .config import Settings
-from .schemas import (ChatRequest, CreateGroupRequest, GuidePublishRequest, JoinGroupRequest,
+from .schemas import (AssessRequest, ChatRequest, CreateGroupRequest, GuidePublishRequest, JoinGroupRequest,
                       NearbyRequest, PeerSyncRequest, ReportRequest)
 from .service import RescueService
 from .sync import authorize, sync_with_peer, uplink_sos
@@ -74,6 +74,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if request.group_id and not valid_group_token(s, request.group_id, x_group_token):
             raise HTTPException(403, "group token required")
         return s.chat(request)
+
+    @app.post("/api/assess")
+    def assess_casualty(request: AssessRequest, s: RescueService = Depends(service)):
+        return s.assess(request)
+
 
     @app.post("/api/reports")
     def report(request: ReportRequest, x_group_token: str | None = Header(default=None),

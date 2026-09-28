@@ -82,6 +82,26 @@ body {
 :root[data-theme="light"] [class~="bg-slate-950"],
 :root[data-theme="light"] [class*="bg-slate-950/"] { background: #e3edf6 !important; }
 :root[data-theme="light"] [class~="bg-slate-700"] { background: #dceaf5 !important; color: #17344d !important; }
+.theme-toggle-btn {
+  background: #101c2d;
+  border-color: #334155;
+  color: #f1f5f9;
+}
+.theme-toggle-btn:hover {
+  background: #1a2c42;
+  border-color: #475569;
+}
+
+:root[data-theme="light"] .theme-toggle-btn {
+  background: #eef4fa !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+:root[data-theme="light"] .theme-toggle-btn:hover {
+  background: #e2ecf5 !important;
+  border-color: #94a3b8 !important;
+}
+
 :root[data-theme="light"] [class~="bg-cyan-950"],
 :root[data-theme="light"] [class*="bg-cyan-950/"] { background: #dcf6fc !important; color: #0f6378 !important; }
 :root[data-theme="light"] [class*="bg-red-950"] { background: #fff1f1 !important; color: #991b1b !important; }
@@ -94,12 +114,17 @@ body {
 :root[data-theme="light"] [class~="text-slate-300"] { color: #283b50 !important; }
 :root[data-theme="light"] [class~="text-slate-400"] { color: #52647a !important; }
 :root[data-theme="light"] [class~="text-slate-500"] { color: #63758a !important; }
+:root[data-theme="light"] [class~="text-cyan-200"],
 :root[data-theme="light"] [class~="text-cyan-300"],
 :root[data-theme="light"] [class~="text-cyan-400"] { color: #08718d !important; }
-:root[data-theme="light"] [class~="text-emerald-300"] { color: #08734f !important; }
-:root[data-theme="light"] [class~="text-amber-300"] { color: #8a5500 !important; }
+:root[data-theme="light"] [class~="text-emerald-300"],
+:root[data-theme="light"] [class~="text-emerald-400"] { color: #08734f !important; }
+:root[data-theme="light"] [class~="text-amber-200"],
+:root[data-theme="light"] [class~="text-amber-300"],
+:root[data-theme="light"] [class~="text-amber-400"] { color: #8a5500 !important; }
 :root[data-theme="light"] [class~="text-red-200"],
-:root[data-theme="light"] [class~="text-red-300"] { color: #a51d2d !important; }
+:root[data-theme="light"] [class~="text-red-300"],
+:root[data-theme="light"] [class~="text-red-400"] { color: #a51d2d !important; }
 :root[data-theme="light"] .hero-panel { color: #f8fafc !important; }
 :root[data-theme="light"] .hero-panel [class~="text-slate-300"],
 :root[data-theme="light"] .hero-panel [class~="text-cyan-300"] { color: #e2f4ff !important; }

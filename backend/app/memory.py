@@ -118,6 +118,20 @@ class Memory:
         return list(self.all("events", geo))[:limit]
 
     def seed(self, cards: list[dict]):
-        for card in cards:
-            if self.get("reference", card["id"]) != card:
-                self.upsert("reference", card["id"], card, f"{card['title']} {card['keywords']} {card['summary']}")
+        to_seed = [card for card in cards if self.get("reference", card["id"]) != card]
+        if not to_seed:
+            return
+        texts = [f"{c['title']} {c.get('keywords', '')} {c.get('summary', '')}" for c in to_seed]
+        dense_vectors = [v.tolist() for v in self.embedder.embed(texts)]
+        sparse_vectors = [self.bm25.embed_document(t) for t in texts]
+        points = [
+            Point(point_id(c["id"]), {"dense": d, "bm25": s}, c)
+            for c, d, s in zip(to_seed, dense_vectors, sparse_vectors)
+        ]
+        batch_size = 50
+        with self.lock:
+            for i in range(0, len(points), batch_size):
+                chunk = points[i:i + batch_size]
+                self.shards["reference"].update(UpdateOperation.upsert_points(chunk))
+
+

@@ -1,12 +1,42 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ArrowRight, BookOpen, CheckCircle2, Cross, Droplets, MapPin, MessageCircle, RefreshCw, ShieldAlert, TriangleAlert, Users } from 'lucide-react';
+import {
+  AlertOctagon,
+  ArrowRight,
+  BookOpen,
+  CheckCircle2,
+  Cross,
+  Droplets,
+  ExternalLink,
+  Flame,
+  LifeBuoy,
+  MapPin,
+  MessageCircle,
+  Navigation,
+  RefreshCw,
+  Send,
+  ShieldAlert,
+  Sparkles,
+  TriangleAlert,
+  Users
+} from 'lucide-react';
 import { api, formatTime, saveSetting, setting } from '../api';
 import { Card, Empty, Shell } from '../components';
 import MapPanel from '../MapPanel';
 
 const DEFAULT_CENTER = { lat: 28.7041, lon: 77.1025 };
-const TABS = [['ask', 'Ask', MessageCircle], ['report', 'Report', ShieldAlert], ['map', 'Nearby', MapPin], ['group', 'Group', Users]];
-const STARTER_QUESTIONS = ["I can't walk and need help", 'Is there safe drinking water?', 'Where is the nearest shelter?'];
+const TABS = [
+  ['ask', 'Ask & Triage', MessageCircle],
+  ['report', 'Report Incident', ShieldAlert],
+  ['map', 'Nearby Map', MapPin],
+  ['group', 'Group Relay', Users]
+];
+
+const QUICK_PROMPTS = [
+  { label: "I can't walk & need help", text: "I can't walk and need help", icon: AlertOctagon, urgent: true },
+  { label: "Safe drinking water", text: "Is drinking water safe to drink?", icon: Droplets, urgent: false },
+  { label: "Nearest shelter & safe route", text: "Where is the nearest shelter and safe evacuation route?", icon: Navigation, urgent: false },
+  { label: "Severe bleeding first aid", text: "How do I stop severe bleeding from an injury?", icon: LifeBuoy, urgent: false }
+];
 
 export default function SurvivorHUD() {
   const [tab, setTab] = useState('ask');
@@ -14,28 +44,48 @@ export default function SurvivorHUD() {
   const [answer, setAnswer] = useState(null);
   const [chatBusy, setChatBusy] = useState(false);
   const [useAi, setUseAi] = useState(false);
-  const [shareLocation, setShareLocation] = useState(false);
+  const [shareLocation, setShareLocation] = useState(true);
   const [center, setCenter] = useState(DEFAULT_CENTER);
   const [pin, setPin] = useState(DEFAULT_CENTER);
   const [items, setItems] = useState([]);
   const [mapUpdatedAt, setMapUpdatedAt] = useState(null);
   const [selected, setSelected] = useState(null);
-  const [report, setReport] = useState({ kind: 'hazard', text: '', entity_id: '', status: 'danger', severity: 'yellow', visibility: 'public' });
+  const [report, setReport] = useState({
+    kind: 'hazard',
+    text: '',
+    entity_id: '',
+    status: 'danger',
+    severity: 'yellow',
+    visibility: 'public'
+  });
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [savingSos, setSavingSos] = useState(false);
+  const [sosSuccess, setSosSuccess] = useState(false);
   const [groupName, setGroupName] = useState('');
   const [joinId, setJoinId] = useState('');
   const [joinToken, setJoinToken] = useState('');
+  const [mapFilter, setMapFilter] = useState('all');
 
   const refreshMap = useCallback(async () => {
     try {
       const groupId = setting('groupId');
-      const result = await api('/api/map/nearby', { method: 'POST', group: Boolean(groupId),
-        body: { location: center, radius_m: 5000, ...(groupId ? { group_id: groupId } : {}) } });
+      const result = await api('/api/map/nearby', {
+        method: 'POST',
+        group: Boolean(groupId),
+        body: {
+          location: center,
+          radius_m: 5000,
+          ...(groupId ? { group_id: groupId } : {})
+        }
+      });
       setItems(result.items);
       setMapUpdatedAt(new Date());
-    } catch (err) { setError(err.message); }
+    } catch (err) {
+      setError(err.message);
+    }
   }, [center]);
+
   useEffect(() => {
     refreshMap();
     const timer = setInterval(refreshMap, 30000);
@@ -43,40 +93,115 @@ export default function SurvivorHUD() {
   }, [refreshMap]);
 
   const useGps = () => {
-    if (!navigator.geolocation) { setError('GPS is unavailable in this browser. Tap the map to place a pin.'); return; }
+    if (!navigator.geolocation) {
+      setError('GPS is unavailable in this browser. Tap the map to place a pin.');
+      return;
+    }
     navigator.geolocation.getCurrentPosition(
       (position) => {
         const location = { lat: position.coords.latitude, lon: position.coords.longitude };
-        setCenter(location); setPin(location); setError('');
-      }, () => setError('Location permission or secure HTTPS is required. Tap the map instead.'),
-      { enableHighAccuracy: true, timeout: 8000 },
+        setCenter(location);
+        setPin(location);
+        setError('');
+        setMessage('Updated your location to current GPS coordinates.');
+      },
+      () => setError('Location permission or secure HTTPS is required. Tap the map instead to set your location.'),
+      { enableHighAccuracy: true, timeout: 8000 }
     );
   };
 
-  const ask = async (event) => {
-    event.preventDefault(); setError(''); setChatBusy(true);
+  const askQuestion = async (queryText = text) => {
+    if (!queryText.trim()) return;
+    setError('');
+    setMessage('');
+    setSosSuccess(false);
+    setChatBusy(true);
     try {
       const groupId = setting('groupId');
-      const result = await api('/api/chat', { method: 'POST', group: Boolean(groupId),
-        body: { text, use_ai: useAi, survivor_id: setting('reporterId') || 'survivor-1',
-          share_location: shareLocation, ...(shareLocation ? { location: pin } : {}),
-          ...(groupId ? { group_id: groupId } : {}) } });
-      setAnswer(result); if (shareLocation) refreshMap();
-    } catch (err) { setError(err.message); }
-    finally { setChatBusy(false); }
+      const result = await api('/api/chat', {
+        method: 'POST',
+        group: Boolean(groupId),
+        body: {
+          text: queryText,
+          use_ai: useAi,
+          survivor_id: setting('reporterId') || 'survivor-1',
+          share_location: shareLocation,
+          ...(shareLocation ? { location: pin } : {}),
+          ...(groupId ? { group_id: groupId } : {})
+        }
+      });
+      setAnswer(result);
+      if (shareLocation) refreshMap();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setChatBusy(false);
+    }
+  };
+
+  const onFormSubmit = (event) => {
+    event.preventDefault();
+    askQuestion(text);
+  };
+
+  const handleQuickPrompt = (promptText) => {
+    setText(promptText);
+    askQuestion(promptText);
+  };
+
+  // 1-Tap Save to Local Database for Emergency SOS
+  const saveSosToLocalDatabase = async (customText = null) => {
+    setSavingSos(true);
+    setError('');
+    try {
+      const sosText = customText || (answer?.suggested_action?.auto_report?.text || text || "Survivor cannot walk and requests immediate rescue assistance.");
+      const result = await api('/api/reports', {
+        method: 'POST',
+        body: {
+          kind: 'incident',
+          visibility: 'responders',
+          severity: 'red',
+          status: 'needs_help',
+          text: sosText.trim(),
+          reporter_id: setting('reporterId') || 'survivor-1',
+          location: pin,
+          entity_id: null,
+          group_id: null
+        }
+      });
+      setSosSuccess(true);
+      setMessage(`Emergency SOS successfully saved to local database (ID: ${result.event.id.slice(0, 12)}…). Nearby responder nodes will receive this during local peer exchange.`);
+      refreshMap();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSavingSos(false);
+    }
   };
 
   const followAction = (action) => {
     if (action.kind === 'sos') {
-      setReport({ kind: 'incident', text: action.prefill || '', entity_id: '',
-        status: 'needs_help', severity: 'red', visibility: 'responders' });
+      setReport({
+        kind: 'incident',
+        text: action.prefill || text || '',
+        entity_id: '',
+        status: 'needs_help',
+        severity: 'red',
+        visibility: 'responders'
+      });
       setTab('report');
-      setMessage('Review the SOS, confirm its location, then save it locally. Your question did not create a report.');
+      setMessage('Review your SOS report, confirm the location pin, and save to local memory.');
     } else if (action.kind === 'report') {
-      setReport({ kind: 'hazard', text: action.prefill || '', entity_id: '',
-        status: 'reported', severity: 'yellow', visibility: 'public' });
+      setReport({
+        kind: 'hazard',
+        text: action.prefill || text || '',
+        entity_id: '',
+        status: 'reported',
+        severity: 'yellow',
+        visibility: 'public'
+      });
       setTab('report');
-      setMessage('Review and edit this observation before saving it locally.');
+      setMessage('Review and edit this observation before saving it to local memory.');
     } else if (action.kind === 'map') {
       setTab('map');
       refreshMap();
@@ -84,98 +209,741 @@ export default function SurvivorHUD() {
   };
 
   const submitReport = async (event) => {
-    event.preventDefault(); setError(''); setMessage('');
+    event.preventDefault();
+    setError('');
+    setMessage('');
     try {
       const groupId = setting('groupId');
       const visibility = report.kind === 'incident' ? 'responders' : report.visibility;
-      const result = await api('/api/reports', { method: 'POST', group: visibility === 'group',
-        body: { ...report, visibility, text: report.text.trim(),
-          reporter_id: setting('reporterId') || 'survivor-1', location: pin,
+      const result = await api('/api/reports', {
+        method: 'POST',
+        group: visibility === 'group',
+        body: {
+          ...report,
+          visibility,
+          text: report.text.trim(),
+          reporter_id: setting('reporterId') || 'survivor-1',
+          location: pin,
           entity_id: report.entity_id.trim() || null,
-          group_id: visibility === 'group' ? groupId : null } });
-      setMessage(result.duplicate ? 'This observation is already in local memory.' : `Saved locally as ${result.event.id.slice(0, 12)}…`);
-      setReport({ ...report, text: '' }); refreshMap();
-    } catch (err) { setError(err.message); }
+          group_id: visibility === 'group' ? groupId : null
+        }
+      });
+      setMessage(result.duplicate
+        ? 'This observation is already stored in local memory.'
+        : `Saved to local memory (ID: ${result.event.id.slice(0, 12)}…).`);
+      setReport({ ...report, text: '' });
+      refreshMap();
+    } catch (err) {
+      setError(err.message);
+    }
   };
 
   const createGroup = async () => {
     try {
       const result = await api('/api/groups', { method: 'POST', body: { name: groupName } });
-      saveSetting('groupId', result.group_id); saveSetting('groupToken', result.token);
+      saveSetting('groupId', result.group_id);
+      saveSetting('groupToken', result.token);
       setMessage(`Group created. Share ID ${result.group_id} and its token privately with members.`);
-    } catch (err) { setError(err.message); }
+    } catch (err) {
+      setError(err.message);
+    }
   };
+
   const joinGroup = async () => {
     try {
-      await api('/api/groups/join', { method: 'POST', body: { group_id: joinId, name: groupName || joinId, token: joinToken } });
-      saveSetting('groupId', joinId); saveSetting('groupToken', joinToken);
-      setMessage(`Joined group ${joinId}.`); refreshMap();
-    } catch (err) { setError(err.message); }
+      await api('/api/groups/join', {
+        method: 'POST',
+        body: { group_id: joinId, name: groupName || joinId, token: joinToken }
+      });
+      saveSetting('groupId', joinId);
+      saveSetting('groupToken', joinToken);
+      setMessage(`Joined group ${joinId}.`);
+      refreshMap();
+    } catch (err) {
+      setError(err.message);
+    }
   };
 
-  return <Shell title="How can we help?" subtitle="Ask in your own words. This device can answer from saved guidance and reports even when the internet is down.">
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-6">
-      {TABS.map(([id, label, Icon]) => <button key={id} onClick={() => { setTab(id); setError(''); setMessage(''); }} className={`rounded-xl border px-3 py-3 text-sm font-semibold flex items-center justify-center gap-2 ${tab === id ? 'bg-red-500/20 border-red-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-300 hover:border-slate-500'}`}><Icon size={17} />{label}</button>)}
-    </div>
-    {error && <div role="alert" className="mb-5 p-4 rounded-xl border border-red-800 bg-red-950/40 text-red-200">{error}</div>}
-    {message && <div role="status" className="mb-5 p-4 rounded-xl border border-emerald-800 bg-emerald-950/40 text-emerald-200 flex items-center gap-2"><CheckCircle2 size={18} />{message}</div>}
+  const filteredItems = items.filter((item) => {
+    if (mapFilter === 'all') return true;
+    if (mapFilter === 'sos') return item.kind === 'incident' || item.kind === 'presence';
+    if (mapFilter === 'hazard') return item.kind === 'hazard' || item.kind === 'checkpoint';
+    if (mapFilter === 'resource') return item.kind === 'resource';
+    return true;
+  });
 
-    {tab === 'ask' && <div className="grid lg:grid-cols-[1.1fr_.9fr] gap-5">
-      <Card title="Ask the local memory">
-        <form onSubmit={ask} className="space-y-4">
-          <textarea className="field min-h-36" placeholder="Example: Is there clean water near the north gate?" value={text} onChange={(event) => setText(event.target.value)} required minLength={2} />
-          <div className="flex flex-wrap gap-2">{STARTER_QUESTIONS.map((question) => <button type="button" key={question} onClick={() => setText(question)} className="btn-secondary text-xs !py-2">{question}</button>)}</div>
-          <div className="rounded-xl bg-slate-900 p-4 text-sm text-slate-300"><label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={useAi} onChange={(event) => setUseAi(event.target.checked)} /> Add an AI answer when connected</label><p className="text-xs text-slate-400 mt-1">Optional: sends your question, matching guides, and public reports to Gemini. Group and responder records stay here.</p><details className="mt-3"><summary className="cursor-pointer text-cyan-300">Location sharing options</summary><label className="flex items-start gap-2 mt-2 cursor-pointer"><input type="checkbox" checked={shareLocation} onChange={(event) => setShareLocation(event.target.checked)} /> Share my selected location with responders for 2 hours</label><p className="text-xs text-slate-400 mt-1">Your question alone does not create a report.</p></details></div>
-          <button disabled={chatBusy} className="btn-primary w-full flex items-center justify-center gap-2">{chatBusy ? 'Searching local memory…' : useAi ? 'Find answer' : 'Search local memory'} <ArrowRight size={18} /></button>
-        </form>
-      </Card>
-      <Card title="Answer and local evidence">
-        {!answer && <Empty>Ask a question to see locally stored guides and reports.</Empty>}
-        {answer && <div className="space-y-4">
-          {answer.ai_answer && <div className="rounded-xl border border-cyan-700 bg-cyan-950/30 p-4"><p className="text-xs uppercase tracking-wider text-cyan-300 font-bold mb-2">AI answer from local evidence</p><p className="text-sm whitespace-pre-wrap leading-relaxed">{answer.ai_answer}</p><p className="text-xs text-slate-400 mt-3">Check the numbered sources below. AI wording can be wrong.</p></div>}
-          <div className="rounded-xl border border-slate-700 bg-slate-900 p-4"><p className="text-xs uppercase tracking-wider text-cyan-300 font-bold mb-2">{answer.ai_answer ? 'Offline summary' : 'Answer from this device'}</p><p className="text-sm whitespace-pre-wrap leading-relaxed">{answer.local_answer}</p></div>
-          {answer.suggested_action && <button onClick={() => followAction(answer.suggested_action)} className="btn-primary w-full flex justify-center gap-2 items-center">{answer.suggested_action.label} <ArrowRight size={17} /></button>}
-          {answer.ai_status === 'unavailable' && <p role="status" className="text-sm text-amber-300">The online answer is unavailable. Local search results are still shown below.</p>}
-          {answer.ai_status === 'not_configured' && <p role="status" className="text-sm text-amber-300">No AI key is configured on this node. Local search still works.</p>}
-          {answer.ai_status === 'no_evidence' && <p role="status" className="text-sm text-amber-300">No relevant local evidence was found, so an AI answer was not requested.</p>}
-          <details className="rounded-xl border border-slate-700 p-3"><summary className="cursor-pointer font-semibold text-sm">View retrieved guides and reports</summary><div className="space-y-3 mt-3">
-          {answer.cards?.length ? answer.cards.slice(0, 3).map((card, index) => <div key={card.id} className="rounded-xl border border-slate-700 bg-slate-900 p-4">
-            <div className="flex items-start gap-2"><BookOpen size={18} className="text-cyan-400 shrink-0 mt-1" /><div><h3 className="font-semibold">[G{index + 1}] {card.title}</h3><p className="text-xs text-slate-500 mt-1">{card.review_status === 'team_reviewed' ? `Team reviewed · version ${card.version}` : 'Source-based prototype card'}</p></div></div>
-            <p className="text-sm text-slate-300 mt-3">{card.summary}</p>
-            {card.steps?.length > 0 && <ol className="list-decimal pl-5 text-sm text-slate-300 mt-3 space-y-1">{card.steps.map((step, index) => <li key={index}>{step}</li>)}</ol>}
-            {card.warnings?.length > 0 && <p className="text-sm text-amber-300 mt-3"><TriangleAlert size={14} className="inline mr-1" />{card.warnings.join(' ')}</p>}
-            {card.source && <a href={card.source} target="_blank" rel="noreferrer" className="text-xs text-cyan-400 underline mt-3 inline-block">Open source guidance</a>}
-          </div>) : <Empty>No reliable local guide matched. Seek emergency services or a qualified responder.</Empty>}
-          {answer.memory_hits?.length > 0 && <div><h3 className="font-semibold mb-2">Related local reports</h3>{answer.memory_hits.map((hit) => { const publicIndex = answer.memory_hits.filter((item) => item.visibility === 'public').findIndex((item) => item.id === hit.id); return <div key={hit.id} className="text-sm p-3 border-l-2 border-cyan-500 bg-slate-900 mb-2"><p>{hit.visibility === 'public' && publicIndex < 4 ? `[R${publicIndex + 1}] ` : ''}{hit.text}</p><p className="text-xs text-slate-500 mt-1">{hit.kind} · {formatTime(hit.observed_at)} · {hit.origin_device}</p></div>; })}</div>}
-          </div></details>
-        </div>}
-      </Card>
-    </div>}
+  return (
+    <Shell
+      title="Disaster Assistance & Local Memory"
+      subtitle="Ask for guidance or report observations. Operates completely offline using Qdrant Edge in-process memory."
+    >
+      {/* Navigation Tabs */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-6">
+        {TABS.map(([id, label, Icon]) => {
+          const isActive = tab === id;
+          return (
+            <button
+              key={id}
+              onClick={() => { setTab(id); setError(''); setMessage(''); }}
+              className={`rounded-xl border px-3 py-3 text-sm font-semibold flex items-center justify-center gap-2 transition-all ${
+                isActive
+                  ? 'bg-red-500/20 border-red-500 text-red-500 shadow-sm'
+                  : 'bg-slate-900 border-slate-700 text-slate-300 hover:border-slate-500'
+              }`}
+            >
+              <Icon size={17} />
+              {label}
+            </button>
+          );
+        })}
+      </div>
 
-    {tab === 'report' && <div className="grid lg:grid-cols-[.9fr_1.1fr] gap-5">
-      <Card title="Share an observation">
-        <form onSubmit={submitReport} className="space-y-4">
-          <label className="block text-sm text-slate-300">Report type<select className="field mt-1" value={report.kind} onChange={(event) => setReport({ ...report, kind: event.target.value, visibility: event.target.value === 'incident' ? 'responders' : 'public' })}><option value="hazard">Hazard</option><option value="resource">Resource</option><option value="checkpoint">Checkpoint update</option><option value="incident">Medical SOS — responders only</option></select></label>
-          <label className="block text-sm text-slate-300">What happened?<textarea className="field mt-1 min-h-28" value={report.text} onChange={(event) => setReport({ ...report, text: event.target.value })} required minLength={3} placeholder="Describe what you directly observed" /></label>
-          <details className="text-sm text-slate-300"><summary className="cursor-pointer text-cyan-300">More report details</summary><div className="grid sm:grid-cols-2 gap-3 mt-3"><label>Place ID (optional)<input className="field mt-1" value={report.entity_id} onChange={(event) => setReport({ ...report, entity_id: event.target.value })} placeholder="gate-3" /></label><label>Status<input className="field mt-1" value={report.status} onChange={(event) => setReport({ ...report, status: event.target.value })} placeholder="flooded" /></label></div></details>
-          <div className="grid sm:grid-cols-2 gap-3"><label className="text-sm text-slate-300">Severity<select className="field mt-1" value={report.severity} onChange={(event) => setReport({ ...report, severity: event.target.value })}><option value="yellow">Attention</option><option value="red">Urgent</option><option value="green">Informational</option></select></label><label className="text-sm text-slate-300">Who receives it?<select disabled={report.kind === 'incident'} className="field mt-1" value={report.kind === 'incident' ? 'responders' : report.visibility} onChange={(event) => setReport({ ...report, visibility: event.target.value })}><option value="public">All nearby nodes</option><option value="group">My group</option><option value="responders">Responders only</option></select></label></div>
-          <div className="text-xs text-slate-400">Selected pin: {pin.lat.toFixed(5)}, {pin.lon.toFixed(5)}. Tap the grid to change it.</div>
-          <button className="btn-primary w-full">Save report in local memory</button>
-        </form>
-      </Card>
-      <Card title="Place the report"><div className="flex justify-end mb-3"><button className="text-sm text-cyan-300 flex items-center gap-1" onClick={useGps}><Cross size={16} /> Use my GPS</button></div><MapPanel center={center} items={items} selected={pin} onSelect={setPin} onMarker={setSelected} /></Card>
-    </div>}
+      {/* Global Status & Alerts */}
+      {error && (
+        <div role="alert" className="mb-5 p-4 rounded-xl border border-red-800 bg-red-950/40 text-red-200 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <TriangleAlert size={18} className="shrink-0 text-red-400" />
+            <span>{error}</span>
+          </div>
+          <button onClick={() => setError('')} className="text-xs text-red-300 hover:underline">Dismiss</button>
+        </div>
+      )}
+      {message && (
+        <div role="status" className="mb-5 p-4 rounded-xl border border-emerald-800 bg-emerald-950/40 text-emerald-200 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 size={18} className="shrink-0 text-emerald-400" />
+            <span>{message}</span>
+          </div>
+          <button onClick={() => setMessage('')} className="text-xs text-emerald-300 hover:underline">Dismiss</button>
+        </div>
+      )}
 
-    {tab === 'map' && <div className="grid lg:grid-cols-[1.3fr_.7fr] gap-5">
-      <Card title="Nearby memory"><div className="flex flex-wrap justify-between gap-2 mb-3"><p className="text-sm text-slate-400">{items.filter((item) => item.kind === 'presence').length} people requesting contact · 5 km radius · refreshes every 30 s{mapUpdatedAt ? ` · updated ${mapUpdatedAt.toLocaleTimeString()}` : ''}</p><div className="flex gap-3"><button onClick={useGps} className="text-sm text-cyan-300 flex gap-1 items-center"><Cross size={15} /> My location</button><button onClick={refreshMap} className="text-sm text-cyan-300 flex gap-1 items-center"><RefreshCw size={15} /> Refresh</button></div></div><MapPanel center={center} items={items} onMarker={setSelected} /></Card>
-      <Card title="Reports on this node">{items.length ? <div className="max-h-[510px] overflow-auto space-y-2">{items.map((item) => <button key={item.id} onClick={() => setSelected(item)} className={`w-full text-left p-3 rounded-xl border ${selected?.id === item.id ? 'border-cyan-500 bg-cyan-950/30' : 'border-slate-700 bg-slate-900'}`}><div className="flex items-center gap-2 text-sm font-semibold">{item.kind === 'resource' ? <Droplets size={16} className="text-emerald-400" /> : <TriangleAlert size={16} className="text-amber-400" />}{item.kind} · {item.distance_m} m</div><p className="text-sm text-slate-300 mt-1">{item.text}</p><p className="text-xs text-slate-500 mt-1">{formatTime(item.observed_at)} · {item.origin_device}</p></button>)}</div> : <Empty>No nearby local reports yet.</Empty>}</Card>
-      {selected && <Card title="Selected observation" className="lg:col-span-2"><p className="text-slate-200">{selected.text}</p><div className="text-xs text-slate-400 mt-2">ID {selected.id} · {formatTime(selected.observed_at)} · {selected.visibility}</div></Card>}
-    </div>}
+      {/* TAB 1: ASK & TRIAGE */}
+      {tab === 'ask' && (
+        <div className="grid lg:grid-cols-[1.1fr_.9fr] gap-5">
+          <Card title="Ask Local Memory or Report Distress">
+            <form onSubmit={onFormSubmit} className="space-y-4">
+              <div className="relative">
+                <textarea
+                  className="field min-h-32 text-base leading-relaxed pr-10"
+                  placeholder="Ask in your own words... e.g. 'I can't walk and need help', 'Where is safe water?', 'Is north shelter open?'"
+                  value={text}
+                  onChange={(event) => setText(event.target.value)}
+                  required
+                  minLength={2}
+                />
+              </div>
 
-    {tab === 'group' && <div className="grid md:grid-cols-2 gap-5">
-      <Card title="Create a local group"><p className="text-sm text-slate-400 mb-4">Group reports move only between nodes joined with the same token.</p><input className="field mb-3" placeholder="Camp Alpha" value={groupName} onChange={(event) => setGroupName(event.target.value)} /><button onClick={createGroup} disabled={!groupName.trim()} className="btn-primary">Create group</button></Card>
-      <Card title="Join an existing group"><div className="space-y-3"><input className="field" placeholder="Group ID" value={joinId} onChange={(event) => setJoinId(event.target.value)} /><input className="field" type="password" placeholder="Private group token" value={joinToken} onChange={(event) => setJoinToken(event.target.value)} /><button onClick={joinGroup} disabled={!joinId || !joinToken} className="btn-secondary">Join group</button></div></Card>
-      <Card title="Current group" className="md:col-span-2"><p className="text-sm text-slate-300">{setting('groupId') || 'No group configured in this browser tab.'}</p></Card>
-    </div>}
-  </Shell>;
+              {/* Quick Prompt Pills */}
+              <div>
+                <p className="text-xs text-slate-400 font-medium mb-2">Suggested quick prompts:</p>
+                <div className="flex flex-wrap gap-2">
+                  {QUICK_PROMPTS.map((q) => {
+                    const Icon = q.icon;
+                    return (
+                      <button
+                        type="button"
+                        key={q.text}
+                        onClick={() => handleQuickPrompt(q.text)}
+                        className={`text-xs py-1.5 px-3 rounded-lg border flex items-center gap-1.5 font-medium transition-all ${
+                          q.urgent
+                            ? 'border-red-800/80 bg-red-950/30 text-red-300 hover:bg-red-900/40 hover:border-red-600'
+                            : 'btn-secondary'
+                        }`}
+                      >
+                        <Icon size={13} className={q.urgent ? 'text-red-400' : 'text-cyan-400'} />
+                        {q.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Context Strip: Location & Optional AI Enhancement */}
+              <div className="rounded-xl bg-slate-900 border border-slate-800 p-3 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-300">
+                <div className="flex items-center gap-2">
+                  <MapPin size={15} className="text-cyan-400 shrink-0" />
+                  <span>Pin: {pin.lat.toFixed(4)}, {pin.lon.toFixed(4)}</span>
+                  <button type="button" onClick={useGps} className="text-cyan-300 hover:underline flex items-center gap-1 ml-1">
+                    <Cross size={13} /> GPS
+                  </button>
+                </div>
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={shareLocation}
+                      onChange={(e) => setShareLocation(e.target.checked)}
+                      className="rounded"
+                    />
+                    <span>Attach Location</span>
+                  </label>
+                  <label className="flex items-center gap-1.5 cursor-pointer" title="Enable optional Gemini generation if online and API key configured">
+                    <input
+                      type="checkbox"
+                      checked={useAi}
+                      onChange={(e) => setUseAi(e.target.checked)}
+                      className="rounded"
+                    />
+                    <span className="flex items-center gap-1">
+                      <Sparkles size={13} className="text-cyan-400" /> Cloud AI
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Submit Button */}
+              <button
+                disabled={chatBusy}
+                className="btn-primary w-full flex items-center justify-center gap-2 text-base py-3"
+              >
+                {chatBusy ? (
+                  <>
+                    <RefreshCw size={18} className="animate-spin" />
+                    <span>Searching Qdrant Edge Memory…</span>
+                  </>
+                ) : (
+                  <>
+                    <span>{useAi ? 'Search Local Memory & Synthesize' : 'Search Offline Local Memory'}</span>
+                    <ArrowRight size={18} />
+                  </>
+                )}
+              </button>
+            </form>
+          </Card>
+
+          {/* Right Column: Answers, Guidance, and Emergency Action Cards */}
+          <div className="space-y-4">
+            {!answer && (
+              <Card title="Offline Knowledge & Evidence">
+                <Empty>
+                  Ask a question or select a prompt to retrieve guidance protocols and local field reports from this node.
+                </Empty>
+              </Card>
+            )}
+
+            {answer && (
+              <>
+                {/* 1. URGENT SOS ACTION CARD: Appears when user says 'can't walk' or indicates distress */}
+                {answer.suggested_action?.kind === 'sos' && (
+                  <div className="rounded-2xl border-2 border-red-500 bg-red-950/40 p-5 shadow-lg shadow-red-950/20">
+                    <div className="flex items-start gap-3">
+                      <div className="p-2 rounded-xl bg-red-500 text-white shrink-0 mt-0.5 animate-pulse">
+                        <AlertOctagon size={24} />
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="text-lg font-bold text-red-200">
+                          Emergency SOS: Mobility Assistance Detected
+                        </h3>
+                        <p className="text-sm text-red-300/90 mt-1 leading-relaxed">
+                          You reported being unable to walk or in distress. You can immediately broadcast your SOS to nearby responders and save this incident to the local database.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Quick 1-Tap Action Buttons */}
+                    <div className="mt-4 space-y-2.5">
+                      <button
+                        onClick={() => saveSosToLocalDatabase()}
+                        disabled={savingSos || sosSuccess}
+                        className={`w-full py-3 px-4 rounded-xl font-bold flex items-center justify-center gap-2 text-sm transition-all ${
+                          sosSuccess
+                            ? 'bg-emerald-600 text-white cursor-default'
+                            : 'bg-red-600 hover:bg-red-500 text-white shadow-md shadow-red-950/50'
+                        }`}
+                      >
+                        {savingSos ? (
+                          <>
+                            <RefreshCw size={17} className="animate-spin" />
+                            <span>Saving to Local Database…</span>
+                          </>
+                        ) : sosSuccess ? (
+                          <>
+                            <CheckCircle2 size={17} />
+                            <span>Logged to Local Database & Responders</span>
+                          </>
+                        ) : (
+                          <>
+                            <Send size={17} />
+                            <span>1-Tap Save to Local Database & Alert Responders</span>
+                          </>
+                        )}
+                      </button>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => { setTab('map'); refreshMap(); }}
+                          className="btn-secondary text-xs flex items-center justify-center gap-1.5"
+                        >
+                          <MapPin size={14} className="text-cyan-400" />
+                          <span>Show Shelters on Map</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => followAction(answer.suggested_action)}
+                          className="btn-secondary text-xs flex items-center justify-center gap-1.5"
+                        >
+                          <ShieldAlert size={14} className="text-amber-400" />
+                          <span>Customize SOS Form</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 2. MAP SUGGESTION ACTION CARD */}
+                {answer.suggested_action?.kind === 'map' && (
+                  <div className="rounded-2xl border border-cyan-600 bg-cyan-950/30 p-4 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <Navigation size={22} className="text-cyan-400 shrink-0" />
+                      <div>
+                        <h4 className="font-semibold text-cyan-200 text-sm">Relevant Locations Found Nearby</h4>
+                        <p className="text-xs text-slate-300 mt-0.5">Checkpoints, shelters, and water points are stored in local memory.</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => { setTab('map'); refreshMap(); }}
+                      className="btn-primary text-xs px-3 py-2 shrink-0 flex items-center gap-1"
+                    >
+                      <span>Open Map</span>
+                      <ArrowRight size={14} />
+                    </button>
+                  </div>
+                )}
+
+                {/* 3. REPORT SUGGESTION ACTION CARD */}
+                {answer.suggested_action?.kind === 'report' && (
+                  <div className="rounded-2xl border border-amber-600 bg-amber-950/30 p-4 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <ShieldAlert size={22} className="text-amber-400 shrink-0" />
+                      <div>
+                        <h4 className="font-semibold text-amber-200 text-sm">Field Hazard or Resource Observed</h4>
+                        <p className="text-xs text-slate-300 mt-0.5">Share this observation with nearby peer nodes.</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => followAction(answer.suggested_action)}
+                      className="btn-secondary text-xs px-3 py-2 shrink-0 flex items-center gap-1"
+                    >
+                      <span>Review Report</span>
+                      <ArrowRight size={14} />
+                    </button>
+                  </div>
+                )}
+
+                {/* 4. PRIMARY ANSWER CARD: Local Offline RAG or Cloud AI */}
+                <Card title="Grounded Response">
+                  {answer.ai_answer && (
+                    <div className="rounded-xl border border-cyan-700 bg-cyan-950/30 p-4 mb-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs uppercase tracking-wider text-cyan-300 font-bold flex items-center gap-1">
+                          <Sparkles size={14} /> Cloud AI Synthesis
+                        </span>
+                        <span className="text-[10px] bg-cyan-900/60 text-cyan-200 px-2 py-0.5 rounded">Grounded in local evidence</span>
+                      </div>
+                      <p className="text-sm whitespace-pre-wrap leading-relaxed">{answer.ai_answer}</p>
+                    </div>
+                  )}
+
+                  {/* Local Offline RAG Answer */}
+                  <div className="rounded-xl border border-slate-700 bg-slate-900 p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs uppercase tracking-wider text-cyan-300 font-bold flex items-center gap-1.5">
+                        <span className="h-2 w-2 rounded-full bg-emerald-400 inline-block animate-pulse"></span>
+                        {answer.ai_answer ? 'Local Edge Evidence Summary' : 'Offline Edge RAG Answer'}
+                      </span>
+                      <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded font-mono">
+                        Qdrant Edge
+                      </span>
+                    </div>
+                    <div className="text-sm whitespace-pre-wrap leading-relaxed text-slate-200 space-y-2">
+                      {answer.local_answer}
+                    </div>
+                  </div>
+
+                  {/* Status indicators */}
+                  {answer.ai_status === 'unavailable' && (
+                    <p role="status" className="text-xs text-amber-300 mt-2">
+                      Cloud AI is temporarily unreachable. Answering completely from local Qdrant Edge memory.
+                    </p>
+                  )}
+                  {answer.ai_status === 'not_configured' && (
+                    <p role="status" className="text-xs text-slate-400 mt-2">
+                      Operating in 100% offline local model mode (no external keys required).
+                    </p>
+                  )}
+
+                  {/* Retrieved Evidence & Guides Accordion */}
+                  <details className="rounded-xl border border-slate-700 p-3 mt-4 group">
+                    <summary className="cursor-pointer font-semibold text-sm flex items-center justify-between">
+                      <span className="flex items-center gap-2">
+                        <BookOpen size={16} className="text-cyan-400" />
+                        <span>Retrieved Reference Guides & Local Reports ({answer.cards?.length || 0} guides, {answer.memory_hits?.length || 0} reports)</span>
+                      </span>
+                      <span className="text-xs text-slate-400 group-open:rotate-180 transition-transform">▼</span>
+                    </summary>
+
+                    <div className="space-y-3 mt-3 pt-3 border-t border-slate-800">
+                      {answer.cards?.length ? (
+                        answer.cards.slice(0, 3).map((card, index) => (
+                          <div key={card.id} className="rounded-xl border border-slate-800 bg-slate-950/60 p-3.5">
+                            <div className="flex items-start gap-2">
+                              <BookOpen size={16} className="text-cyan-400 shrink-0 mt-0.5" />
+                              <div className="flex-1">
+                                <div className="flex items-center justify-between">
+                                  <h4 className="font-semibold text-sm text-slate-100">[G{index + 1}] {card.title}</h4>
+                                  <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300">
+                                    {card.review_status === 'team_reviewed' ? `Reviewed · v${card.version}` : 'Prototype card'}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-slate-300 mt-2 leading-relaxed">{card.summary}</p>
+                                {card.steps?.length > 0 && (
+                                  <ol className="list-decimal pl-4 text-xs text-slate-300 mt-2 space-y-1">
+                                    {card.steps.map((step, idx) => <li key={idx}>{step}</li>)}
+                                  </ol>
+                                )}
+                                {card.warnings?.length > 0 && (
+                                  <p className="text-xs text-amber-300 mt-2 flex items-start gap-1">
+                                    <TriangleAlert size={13} className="shrink-0 mt-0.5" />
+                                    <span>{card.warnings.join(' ')}</span>
+                                  </p>
+                                )}
+                                {card.source && (
+                                  <a
+                                    href={card.source}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-[11px] text-cyan-400 hover:underline mt-2 inline-flex items-center gap-1"
+                                  >
+                                    <span>Official source guidance</span>
+                                    <ExternalLink size={11} />
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-xs text-slate-400">No matching static reference guides.</p>
+                      )}
+
+                      {answer.memory_hits?.length > 0 && (
+                        <div className="pt-2">
+                          <h5 className="text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Nearby Observations</h5>
+                          <div className="space-y-2">
+                            {answer.memory_hits.map((hit) => (
+                              <div key={hit.id} className="text-xs p-3 rounded-lg border-l-2 border-cyan-500 bg-slate-900">
+                                <p className="text-slate-200 font-medium">{hit.text}</p>
+                                <div className="text-[10px] text-slate-400 mt-1 flex items-center gap-2">
+                                  <span className="capitalize">{hit.kind}</span>
+                                  <span>•</span>
+                                  <span>{formatTime(hit.observed_at)}</span>
+                                  <span>•</span>
+                                  <span>From: {hit.origin_device}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </details>
+                </Card>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 2: REPORT INCIDENT */}
+      {tab === 'report' && (
+        <div className="grid lg:grid-cols-[.9fr_1.1fr] gap-5">
+          <Card title="Record an Observation">
+            <form onSubmit={submitReport} className="space-y-4">
+              <div>
+                <label className="block text-sm text-slate-300 font-medium mb-1.5">Observation Type</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    ['hazard', 'Hazard', TriangleAlert, 'yellow'],
+                    ['resource', 'Resource', Droplets, 'green'],
+                    ['checkpoint', 'Checkpoint', Navigation, 'blue'],
+                    ['incident', 'Medical / SOS', AlertOctagon, 'red']
+                  ].map(([k, label, Icon]) => {
+                    const isSelected = report.kind === k;
+                    return (
+                      <button
+                        type="button"
+                        key={k}
+                        onClick={() => {
+                          setReport({
+                            ...report,
+                            kind: k,
+                            visibility: k === 'incident' ? 'responders' : 'public',
+                            severity: k === 'incident' ? 'red' : 'yellow'
+                          });
+                        }}
+                        className={`p-3 rounded-xl border flex items-center gap-2 text-sm font-semibold transition-all ${
+                          isSelected
+                            ? 'border-red-500 bg-red-500/20 text-red-400'
+                            : 'border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-600'
+                        }`}
+                      >
+                        <Icon size={16} />
+                        <span>{label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {report.kind === 'incident' && (
+                <div className="p-3 rounded-xl bg-red-950/40 border border-red-800 text-xs text-red-200 flex items-center gap-2">
+                  <ShieldAlert size={16} className="shrink-0 text-red-400" />
+                  <span>Medical SOS is private by default and relayed exclusively to authorized responder nodes.</span>
+                </div>
+              )}
+
+              <label className="block text-sm text-slate-300 font-medium">
+                Description
+                <textarea
+                  className="field mt-1 min-h-28"
+                  value={report.text}
+                  onChange={(event) => setReport({ ...report, text: event.target.value })}
+                  required
+                  minLength={3}
+                  placeholder={
+                    report.kind === 'incident'
+                      ? "Describe injuries or situation (e.g. 'Cannot walk, suspected broken leg, need stretcher')"
+                      : "Describe what you directly observed (e.g. 'Road blocked by 3 feet of water at Gate 3')"
+                  }
+                />
+              </label>
+
+              <div className="grid sm:grid-cols-2 gap-3">
+                <label className="text-sm text-slate-300 font-medium">
+                  Severity
+                  <select
+                    className="field mt-1"
+                    value={report.severity}
+                    onChange={(event) => setReport({ ...report, severity: event.target.value })}
+                  >
+                    <option value="yellow">Attention Required</option>
+                    <option value="red">Urgent / Life Threat</option>
+                    <option value="green">Informational</option>
+                  </select>
+                </label>
+
+                <label className="text-sm text-slate-300 font-medium">
+                  Visibility Scope
+                  <select
+                    disabled={report.kind === 'incident'}
+                    className="field mt-1"
+                    value={report.kind === 'incident' ? 'responders' : report.visibility}
+                    onChange={(event) => setReport({ ...report, visibility: event.target.value })}
+                  >
+                    <option value="public">Public (All nearby nodes)</option>
+                    <option value="group">My Group Only</option>
+                    <option value="responders">Responders Only</option>
+                  </select>
+                </label>
+              </div>
+
+              <div className="rounded-xl bg-slate-900 border border-slate-800 p-3 text-xs text-slate-300 flex items-center justify-between">
+                <span>Coordinates: {pin.lat.toFixed(5)}, {pin.lon.toFixed(5)}</span>
+                <button type="button" onClick={useGps} className="text-cyan-300 hover:underline flex items-center gap-1 font-semibold">
+                  <Cross size={14} /> My GPS
+                </button>
+              </div>
+
+              <button className="btn-primary w-full py-3 flex items-center justify-center gap-2">
+                <span>Save to Local Memory</span>
+                <ArrowRight size={17} />
+              </button>
+            </form>
+          </Card>
+
+          <Card title="Place Location Pin on Map">
+            <div className="flex justify-between items-center mb-3">
+              <p className="text-xs text-slate-400">Tap anywhere on the grid to adjust the report coordinates.</p>
+              <button className="text-xs text-cyan-300 hover:underline flex items-center gap-1" onClick={useGps}>
+                <Cross size={14} /> Use GPS
+              </button>
+            </div>
+            <MapPanel center={center} items={items} selected={pin} onSelect={setPin} onMarker={setSelected} />
+          </Card>
+        </div>
+      )}
+
+      {/* TAB 3: NEARBY MAP */}
+      {tab === 'map' && (
+        <div className="grid lg:grid-cols-[1.3fr_.7fr] gap-5">
+          <Card title="Nearby Local Observations">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  ['all', 'All'],
+                  ['sos', 'SOS / Incidents'],
+                  ['hazard', 'Hazards'],
+                  ['resource', 'Resources']
+                ].map(([f, label]) => (
+                  <button
+                    key={f}
+                    onClick={() => setMapFilter(f)}
+                    className={`text-xs px-2.5 py-1 rounded-lg border font-medium transition-all ${
+                      mapFilter === f
+                        ? 'border-cyan-500 bg-cyan-950/60 text-cyan-200'
+                        : 'border-slate-800 bg-slate-900 text-slate-400 hover:border-slate-700'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={useGps} className="text-xs text-cyan-300 flex items-center gap-1 hover:underline">
+                  <Cross size={13} /> GPS
+                </button>
+                <button onClick={refreshMap} className="text-xs text-cyan-300 flex items-center gap-1 hover:underline">
+                  <RefreshCw size={13} /> Refresh
+                </button>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-400 mb-2">
+              Showing {filteredItems.length} reports within 5 km • Auto-refreshes every 30s
+              {mapUpdatedAt ? ` • Updated ${mapUpdatedAt.toLocaleTimeString()}` : ''}
+            </p>
+
+            <MapPanel center={center} items={filteredItems} onMarker={setSelected} />
+          </Card>
+
+          <Card title="Observation List">
+            {filteredItems.length ? (
+              <div className="max-h-[520px] overflow-auto space-y-2 pr-1">
+                {filteredItems.map((item) => {
+                  const isSos = item.kind === 'incident' || item.kind === 'presence';
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => setSelected(item)}
+                      className={`w-full text-left p-3.5 rounded-xl border transition-all ${
+                        selected?.id === item.id
+                          ? 'border-cyan-500 bg-cyan-950/30'
+                          : 'border-slate-800 bg-slate-900 hover:border-slate-700'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-xs font-bold capitalize">
+                          {isSos ? (
+                            <AlertOctagon size={15} className="text-red-400" />
+                          ) : item.kind === 'resource' ? (
+                            <Droplets size={15} className="text-emerald-400" />
+                          ) : (
+                            <TriangleAlert size={15} className="text-amber-400" />
+                          )}
+                          <span>{item.kind}</span>
+                        </div>
+                        <span className="text-[11px] text-cyan-400 font-mono">{item.distance_m} m away</span>
+                      </div>
+                      <p className="text-xs text-slate-200 mt-1.5 leading-relaxed">{item.text}</p>
+                      <div className="text-[10px] text-slate-400 mt-2 flex items-center justify-between">
+                        <span>{formatTime(item.observed_at)}</span>
+                        <span>Node: {item.origin_device}</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <Empty>No nearby local reports recorded yet in this scope.</Empty>
+            )}
+          </Card>
+
+          {selected && (
+            <Card title="Selected Observation Details" className="lg:col-span-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2 mb-2">
+                <span className="text-xs font-bold uppercase text-cyan-400">{selected.kind} Observation</span>
+                <span className="text-xs text-slate-400 font-mono">ID: {selected.id}</span>
+              </div>
+              <p className="text-slate-100 text-sm leading-relaxed">{selected.text}</p>
+              <div className="text-xs text-slate-400 mt-3 flex flex-wrap gap-4">
+                <span>Observed: {formatTime(selected.observed_at)}</span>
+                <span>Scope: {selected.visibility}</span>
+                <span>Origin: {selected.origin_device}</span>
+                {selected.distance_m && <span>Distance: ~{selected.distance_m} meters</span>}
+              </div>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {/* TAB 4: GROUP RELAY */}
+      {tab === 'group' && (
+        <div className="grid md:grid-cols-2 gap-5">
+          <Card title="Create a Local Group">
+            <p className="text-xs text-slate-400 mb-3">Group reports move only between nodes possessing the same private token.</p>
+            <input
+              className="field mb-3"
+              placeholder="e.g. Camp Alpha, Medical Tent 2"
+              value={groupName}
+              onChange={(event) => setGroupName(event.target.value)}
+            />
+            <button onClick={createGroup} disabled={!groupName.trim()} className="btn-primary w-full">
+              Create New Group
+            </button>
+          </Card>
+
+          <Card title="Join an Existing Group">
+            <div className="space-y-3">
+              <input
+                className="field"
+                placeholder="Group ID"
+                value={joinId}
+                onChange={(event) => setJoinId(event.target.value)}
+              />
+              <input
+                className="field"
+                type="password"
+                placeholder="Private Group Token"
+                value={joinToken}
+                onChange={(event) => setJoinToken(event.target.value)}
+              />
+              <button onClick={joinGroup} disabled={!joinId || !joinToken} className="btn-secondary w-full">
+                Join Group
+              </button>
+            </div>
+          </Card>
+
+          <Card title="Active Group Scope" className="md:col-span-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-semibold text-slate-200">
+                  {setting('groupId') ? `Connected to Group ID: ${setting('groupId')}` : 'No group active'}
+                </p>
+                <p className="text-xs text-slate-400 mt-1">
+                  {setting('groupId')
+                    ? 'Group-scoped reports and map pins will be synchronized with members.'
+                    : 'Configure a group above to filter observations to your specific team.'}
+                </p>
+              </div>
+              {setting('groupId') && (
+                <button
+                  onClick={() => {
+                    saveSetting('groupId', '');
+                    saveSetting('groupToken', '');
+                    setMessage('Disconnected from group.');
+                    refreshMap();
+                  }}
+                  className="btn-secondary text-xs"
+                >
+                  Leave Group
+                </button>
+              )}
+            </div>
+          </Card>
+        </div>
+      )}
+    </Shell>
+  );
 }

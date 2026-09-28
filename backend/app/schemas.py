@@ -19,6 +19,18 @@ class ChatRequest(BaseModel):
     share_location: bool = False
     group_id: str | None = Field(default=None, max_length=100)
     visibility: Literal["group", "responders", "public"] | None = None
+    materials: list[str] = Field(default_factory=list)
+    breathing: bool | None = None
+    bleeding_type: str | None = None
+
+
+class AssessRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=1000)
+    materials: list[str] = Field(default_factory=list)
+    breathing: bool = True
+    bleeding_type: str = "none"
+    limit: int = Field(default=5, ge=1, le=20)
+
 
 
 class ReportRequest(BaseModel):

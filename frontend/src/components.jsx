@@ -81,7 +81,17 @@ export function Shell({ title, subtitle, children }) {
             <span className={`text-xs px-2.5 py-1 rounded-full border flex items-center gap-1.5 ${health ? 'text-emerald-300 border-emerald-800 bg-emerald-950' : 'text-red-300 border-red-800 bg-red-950'}`}>
               {health ? <Database size={13} /> : <CloudOff size={13} />}{health ? `${health.node_id} · Edge active` : 'Node unavailable'}
             </span>
-            <button title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`} aria-pressed={theme === 'light'} className="icon-btn" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Sun size={19} /> : <Moon size={19} />}</button>
+            <button
+              type="button"
+              title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+              aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+              aria-pressed={theme === 'light'}
+              className="theme-toggle-btn flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-semibold cursor-pointer transition-all"
+              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            >
+              {theme === 'dark' ? <Sun size={14} className="text-amber-400" /> : <Moon size={14} className="text-indigo-600" />}
+              <span>{theme === 'dark' ? 'Light' : 'Dark'}</span>
+            </button>
             <button title="Node settings" aria-label="Node settings" className="icon-btn" onClick={() => setSettingsOpen(true)}><Settings2 size={19} /></button>
             <button aria-label="Menu" className="icon-btn sm:hidden" onClick={() => setMenuOpen(!menuOpen)}><Menu size={19} /></button>
           </div>
