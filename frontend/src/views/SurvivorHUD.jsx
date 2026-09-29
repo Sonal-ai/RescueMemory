@@ -155,6 +155,8 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
   const [checkedSteps, setCheckedSteps] = useState({});
   const [isListening, setIsListening] = useState(false);
   const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
+  const [showQuickPrompts, setShowQuickPrompts] = useState(false);
+  const [showNearestExpanded, setShowNearestExpanded] = useState(false);
 
   const [messages, setMessages] = useState([
     {
@@ -712,65 +714,77 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
       {/* ========================================================================= */}
       {tab === 'ask' && (
         <div className="space-y-4">
-          {/* Prominent Live Nearest Survivor Compass Banner */}
+          {/* Streamlined Live Nearest Survivor Alert with Side Arrow */}
           {nearestCasualty && (
-            <div
-              onClick={() => setTab('map')}
-              className="p-3.5 sm:p-4 rounded-2xl border-2 border-red-500 bg-red-50/80 dark:bg-red-950/40 cursor-pointer hover:border-red-400 transition-all shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3 group"
-            >
-              <div className="flex items-start sm:items-center gap-3.5">
-                <div className="p-2.5 rounded-xl bg-red-600 text-white shrink-0 shadow-md shadow-red-600/40 animate-pulse">
-                  <Compass size={22} />
-                </div>
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-red-600 text-white">
-                      Nearest Survivor Detected
+            <div className="rounded-2xl border border-red-300 dark:border-red-800 bg-red-50/90 dark:bg-red-950/40 p-2 sm:p-2.5 px-3 shadow-xs transition-all">
+              <div className="flex items-center justify-between gap-2">
+                <div
+                  onClick={() => setTab('map')}
+                  className="flex items-center gap-2 min-w-0 cursor-pointer group flex-1"
+                  title="Tap to open 360° radar compass"
+                >
+                  <div className="p-1 rounded-lg bg-red-600 text-white shrink-0 animate-pulse">
+                    <Compass size={13} />
+                  </div>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="text-[10px] uppercase font-black px-1.5 py-0.5 rounded bg-red-600 text-white shrink-0">
+                      SOS {nearestCasualty.distance_m}m {nearestCasualty.cardinal}
                     </span>
-                    <span className="text-xs font-mono font-bold text-red-700 dark:text-red-300">
-                      {nearestCasualty.distance_m}m · {nearestCasualty.cardinal} ({String(nearestCasualty.bearing_deg || 0).padStart(3, '0')}°)
-                    </span>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono">
-                      Qdrant Synced
+                    <span className="text-xs font-bold text-red-950 dark:text-red-200 truncate group-hover:underline">
+                      {nearestCasualty.name || 'Casualty'} — {nearestCasualty.text}
                     </span>
                   </div>
-                  <p className="text-sm font-bold text-slate-900 dark:text-slate-100 mt-1 line-clamp-1 group-hover:text-red-600 dark:group-hover:text-red-300 transition-colors">
-                    {nearestCasualty.name || 'Casualty in distress'} — {nearestCasualty.text}
-                  </p>
+                </div>
+
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setTab('map')}
+                    className="px-2 py-0.5 rounded-lg bg-red-600 hover:bg-red-500 text-white text-[11px] font-bold flex items-center gap-1 transition-transform active:scale-95"
+                  >
+                    <span>Radar</span>
+                    <ArrowRight size={11} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowNearestExpanded(!showNearestExpanded)}
+                    className="p-1 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/60 rounded-lg transition-colors cursor-pointer"
+                    title={showNearestExpanded ? "Collapse details" : "Expand details"}
+                  >
+                    <ChevronDown size={13} className={`transition-transform duration-200 ${showNearestExpanded ? 'rotate-180' : ''}`} />
+                  </button>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); setTab('map'); }}
-                className="btn-primary text-xs px-3.5 py-2 shrink-0 self-start sm:self-auto"
-              >
-                <span>360° Compass</span>
-                <ArrowRight size={14} />
-              </button>
+
+              {showNearestExpanded && (
+                <div className="mt-2 pt-2 border-t border-red-200 dark:border-red-900/60 text-xs text-slate-700 dark:text-slate-300 animate-in fade-in">
+                  <p className="font-semibold text-slate-900 dark:text-slate-100">{nearestCasualty.text}</p>
+                  <div className="mt-1 flex items-center gap-2 font-mono text-[10px] text-slate-500">
+                    <span>Bearing: {String(nearestCasualty.bearing_deg || 0).padStart(3, '0')}°</span>
+                    <span>•</span>
+                    <span>Direct line of sight: ~{nearestCasualty.distance_m}m</span>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
           {/* Full ChatGPT / Antigravity Style Conversational Assistant Container */}
-          <div className="flex flex-col h-[calc(100dvh-13.5rem)] sm:h-[calc(100vh-270px)] min-h-[460px] max-h-[820px] rounded-3xl border border-[#cfe1f0] dark:border-slate-800 bg-[#f0f5fa] dark:bg-[#08121e] shadow-lg overflow-hidden transition-all">
+          <div className="flex flex-col h-[calc(100dvh-13.5rem)] sm:h-[calc(100vh-250px)] min-h-[460px] max-h-[820px] rounded-3xl border border-[#cfe1f0] dark:border-slate-800 bg-[#f0f5fa] dark:bg-[#08121e] shadow-lg overflow-hidden transition-all">
             {/* Chat Header */}
-            <div className="px-3.5 py-2.5 sm:px-5 sm:py-3.5 border-b border-[#cfe1f0] dark:border-slate-800 bg-[#e3eef7] dark:bg-[#0b1626] flex items-center justify-between gap-2.5 shrink-0">
-              <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
-                <div className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl bg-gradient-to-tr from-red-600 to-rose-500 flex items-center justify-center text-white shadow-md shadow-red-500/20 shrink-0">
-                  <Bot size={18} className="sm:w-5 sm:h-5" />
+            <div className="px-3 py-2 sm:px-4 sm:py-3 border-b border-[#cfe1f0] dark:border-slate-800 bg-[#e3eef7] dark:bg-[#0b1626] flex items-center justify-between gap-2 shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="h-7 w-7 sm:h-8 sm:w-8 rounded-xl bg-gradient-to-tr from-red-600 to-rose-500 flex items-center justify-center text-white shadow-sm shrink-0">
+                  <Bot size={16} />
                 </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5 sm:gap-2">
-                    <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 truncate">
-                      RescueMemory Assistant
-                    </h2>
-                    <span className="inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-300 border border-emerald-300/80 dark:border-emerald-700/60 shrink-0">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                      Offline Active
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-600 dark:text-slate-400 truncate hidden sm:block font-medium">
-                    420 Clinical Guidelines · Qdrant Vector Memory · Zero Cloud Needed
-                  </p>
+                <div className="min-w-0 flex items-center gap-1.5">
+                  <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 truncate">
+                    RescueMemory Assistant
+                  </h2>
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-300 border border-emerald-300/80 dark:border-emerald-700/60 shrink-0">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    Offline
+                  </span>
                 </div>
               </div>
 
@@ -1026,80 +1040,105 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Quick Emergency Prompt Chips */}
-            <div className="px-3 sm:px-4 py-2 border-t border-[#cfe1f0] dark:border-slate-800 bg-[#e3eef7] dark:bg-[#0b1626] shrink-0">
-              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5 touch-pan-x">
-                {QUICK_PROMPTS.map((q) => {
-                  const Icon = q.icon;
-                  return (
-                    <button
-                      type="button"
-                      key={q.text}
-                      onClick={() => handleQuickPrompt(q.text)}
-                      className={`shrink-0 text-xs py-1.5 px-3 rounded-full border flex items-center gap-1.5 font-bold transition-all active:scale-95 touch-manipulation ${
-                        q.urgent
-                          ? 'border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/40 text-red-800 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/60'
-                          : 'border-[#cbdbe9] dark:border-slate-800 bg-[#dce8f3] dark:bg-slate-900/60 text-slate-800 dark:text-slate-300 hover:bg-[#d0e0ec] dark:hover:bg-slate-800'
-                      }`}
-                    >
-                      <Icon size={13} className={q.urgent ? 'text-red-600 dark:text-red-400' : 'text-cyan-600 dark:text-cyan-400'} />
-                      <span>{q.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
+            {/* Quick Emergency Prompt Chips with Side Arrow Toggle in Same Row */}
+            <div className="px-2.5 sm:px-3.5 py-1.5 border-t border-[#cfe1f0] dark:border-slate-800 bg-[#e3eef7]/80 dark:bg-[#0b1626]/80 flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowQuickPrompts(!showQuickPrompts)}
+                className={`shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-xl text-[11px] font-extrabold transition-all active:scale-95 cursor-pointer border ${
+                  showQuickPrompts
+                    ? 'bg-cyan-600 text-white border-cyan-500 shadow-xs'
+                    : 'bg-[#dce8f3] dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-[#cbdbe9] dark:border-slate-700 hover:bg-[#d0e0ec] dark:hover:bg-slate-700'
+                }`}
+                title={showQuickPrompts ? 'Hide quick emergency queries' : 'Show quick emergency queries'}
+              >
+                <Zap size={12} className={showQuickPrompts ? 'text-amber-300' : 'text-amber-500'} />
+                <span>Quick</span>
+                <ChevronRight size={12} className={`transition-transform duration-200 ${showQuickPrompts ? 'rotate-90' : ''}`} />
+              </button>
+
+              {showQuickPrompts ? (
+                <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 touch-pan-x flex-1 animate-in fade-in slide-in-from-left-2 duration-150">
+                  {QUICK_PROMPTS.map((q) => {
+                    const Icon = q.icon;
+                    return (
+                      <button
+                        type="button"
+                        key={q.text}
+                        onClick={() => handleQuickPrompt(q.text)}
+                        className={`shrink-0 text-[11px] py-1 px-2.5 rounded-full border flex items-center gap-1 font-bold transition-all active:scale-95 touch-manipulation whitespace-nowrap ${
+                          q.urgent
+                            ? 'border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/40 text-red-800 dark:text-red-300 hover:bg-red-100'
+                            : 'border-[#cbdbe9] dark:border-slate-800 bg-white dark:bg-slate-900/60 text-slate-700 dark:text-slate-300 hover:bg-[#edf5fb]'
+                        }`}
+                      >
+                        <Icon size={11} className={q.urgent ? 'text-red-600 dark:text-red-400' : 'text-cyan-600 dark:text-cyan-400'} />
+                        <span>{q.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <span
+                  onClick={() => setShowQuickPrompts(true)}
+                  className="text-[11px] text-slate-500 dark:text-slate-400 truncate cursor-pointer hover:text-cyan-600 dark:hover:text-cyan-400 select-none flex-1 font-medium"
+                >
+                  Emergency prompts (can't walk, bleeding, safe water)...
+                </span>
+              )}
             </div>
 
-            {/* Bottom Input Box */}
-            <div className="p-2.5 sm:p-3.5 border-t border-[#cfe1f0] dark:border-slate-800 bg-[#e3eef7] dark:bg-[#0b1626] shrink-0 pb-safe">
-              <form onSubmit={onFormSubmit} className="relative flex items-center gap-2">
+            {/* Bottom Minimal Input Box */}
+            <div className="p-2 sm:p-2.5 border-t border-[#cfe1f0] dark:border-slate-800 bg-[#e3eef7] dark:bg-[#0b1626] shrink-0 pb-safe">
+              <form onSubmit={onFormSubmit} className="relative flex items-center gap-1.5 sm:gap-2">
                 {/* Voice speech-to-text mic trigger */}
                 <button
                   type="button"
                   onClick={toggleSpeechRecognition}
                   title={isListening ? "Listening... click to stop" : "Voice input (Dictate emergency)"}
-                  className={`p-2.5 sm:p-3 rounded-xl border transition-all shrink-0 active:scale-95 touch-manipulation ${
+                  className={`p-2.5 rounded-xl border transition-all shrink-0 active:scale-95 touch-manipulation ${
                     isListening
                       ? 'bg-red-600 text-white border-red-500 animate-pulse shadow-md shadow-red-600/40'
                       : 'bg-[#dce8f3] dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-[#cbdbe9] dark:border-slate-700 hover:bg-[#d0e0ec] dark:hover:bg-slate-700'
                   }`}
                 >
-                  <Mic size={18} />
+                  <Mic size={16} />
                 </button>
 
                 {/* Shaded Input text bar */}
                 <input
                   type="text"
-                  className="flex-1 bg-[#f8fafc] dark:bg-slate-900 border-2 border-[#cbd5e1] dark:border-slate-700 rounded-xl px-3.5 sm:px-4 py-2.5 sm:py-3 text-sm sm:text-base text-slate-900 dark:text-white placeholder:text-slate-500 shadow-inner focus:outline-none focus:ring-2 focus:ring-red-500 focus:bg-white transition-all font-medium"
+                  className="flex-1 bg-[#f8fafc] dark:bg-slate-900 border-2 border-[#cbd5e1] dark:border-slate-700 rounded-xl px-3.5 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-500 shadow-inner focus:outline-none focus:ring-2 focus:ring-red-500 focus:bg-white transition-all font-medium"
                   placeholder="Ask emergency question (e.g. Can't walk, severe bleeding, safe water)..."
                   value={text}
                   onChange={(e) => setText(e.target.value)}
                   disabled={chatBusy}
                 />
 
+                {/* Inline Cloud AI Toggle Button */}
+                <button
+                  type="button"
+                  onClick={() => setUseAi(!useAi)}
+                  title={useAi ? "Cloud AI ON (Gemini). Tap to disable" : "Offline Mode ON (Local Qdrant). Tap to enable Cloud AI"}
+                  className={`p-2 sm:py-2 sm:px-2.5 rounded-xl border text-xs font-extrabold flex items-center gap-1 transition-all active:scale-95 shrink-0 cursor-pointer ${
+                    useAi
+                      ? 'bg-emerald-600 text-white border-emerald-500 shadow-xs'
+                      : 'bg-[#dce8f3] dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-[#cbdbe9] dark:border-slate-700 hover:bg-[#d0e0ec]'
+                  }`}
+                >
+                  <Sparkles size={14} className={useAi ? 'text-amber-200 animate-pulse' : 'text-slate-400'} />
+                  <span className="hidden sm:inline text-[10px] uppercase font-bold">{useAi ? 'Cloud' : 'Local'}</span>
+                </button>
+
                 {/* Send button */}
                 <button
                   type="submit"
                   disabled={chatBusy || !text.trim()}
-                  className="p-2.5 sm:p-3 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white font-bold transition-all active:scale-95 shrink-0 shadow-md shadow-red-600/30 touch-manipulation cursor-pointer"
+                  className="p-2 sm:p-2.5 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white font-bold transition-all active:scale-95 shrink-0 shadow-md shadow-red-600/30 touch-manipulation cursor-pointer"
                 >
-                  <Send size={18} />
+                  <Send size={16} />
                 </button>
               </form>
-              <div className="mt-2 flex flex-wrap items-center justify-between gap-1 text-[11px] text-slate-600 dark:text-slate-400 px-1">
-                <span className="truncate font-medium">Runs 100% offline via local Qdrant memory</span>
-                <label className="flex items-center gap-1.5 cursor-pointer ml-auto">
-                  <input
-                    type="checkbox"
-                    checked={useAi}
-                    onChange={(e) => setUseAi(e.target.checked)}
-                    className="rounded border-[#cbdbe9] dark:border-slate-700 text-cyan-600 focus:ring-0"
-                  />
-                  <span className="flex items-center gap-1 text-slate-700 dark:text-slate-400 font-bold">
-                    <Sparkles size={11} className="text-cyan-600 dark:text-cyan-400" /> Cloud AI Synthesis
-                  </span>
-                </label>
-              </div>
             </div>
           </div>
         </div>

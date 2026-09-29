@@ -301,15 +301,15 @@ export function Shell({ title, subtitle, children }) {
 
       {/* Main Screen Canvas */}
       <main className="max-w-7xl mx-auto w-full px-4 sm:px-6 py-4 sm:py-6 flex-1">
-        {/* Calm Reassuring Header */}
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+        {/* Minimal Reassuring Header */}
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3 sm:mb-4">
           {(title || subtitle) && (
             <div>
-              <h1 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">
+              <h1 className="text-lg sm:text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">
                 {title}
               </h1>
               {subtitle && (
-                <p className="text-slate-600 dark:text-slate-400 text-xs sm:text-sm mt-0.5 leading-relaxed font-medium">
+                <p className="hidden sm:block text-slate-600 dark:text-slate-400 text-xs sm:text-sm mt-0.5 leading-relaxed font-medium">
                   {subtitle}
                 </p>
               )}
@@ -317,9 +317,9 @@ export function Shell({ title, subtitle, children }) {
           )}
 
           {last && (
-            <div className="text-xs text-slate-700 dark:text-slate-400 bg-[#e6f0f7] dark:bg-slate-900/90 border border-[#cce0ef] dark:border-slate-800/80 rounded-xl px-3 py-1.5 flex items-center gap-2 shadow-xs font-mono font-medium">
-              <Cloud size={13} className="text-cyan-600 dark:text-cyan-400" />
-              <span>Mesh sync: {new Date(last).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+            <div className="text-[11px] sm:text-xs text-slate-700 dark:text-slate-400 bg-[#e6f0f7] dark:bg-slate-900/90 border border-[#cce0ef] dark:border-slate-800/80 rounded-xl px-2.5 py-1 flex items-center gap-1.5 shadow-xs font-mono font-medium">
+              <Cloud size={12} className="text-cyan-600 dark:text-cyan-400" />
+              <span>Synced {new Date(last).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
             </div>
           )}
         </div>
