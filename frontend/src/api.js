@@ -366,6 +366,60 @@ export function formatTime(value) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
+/**
+ * Native GPS with fallback to browser navigator.geolocation
+ */
+export async function getNativeOrWebLocation() {
+  try {
+    const { Geolocation } = await import('@capacitor/geolocation');
+    const perm = await Geolocation.checkPermissions();
+    if (perm.location !== 'granted') {
+      await Geolocation.requestPermissions();
+    }
+    const position = await Geolocation.getCurrentPosition({
+      enableHighAccuracy: true,
+      timeout: 10000,
+    });
+    return {
+      lat: position.coords.latitude,
+      lon: position.coords.longitude,
+    };
+  } catch {
+    return new Promise((resolve, reject) => {
+      if (typeof navigator === 'undefined' || !navigator.geolocation) {
+        return reject(new Error('Geolocation is unavailable on this device.'));
+      }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+        (err) => reject(err),
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    });
+  }
+}
+
+// Initialize native status bar and back button when running on Android
+if (typeof window !== 'undefined') {
+  import('@capacitor/status-bar')
+    .then(({ StatusBar, Style }) => {
+      StatusBar.setStyle({ style: Style.Dark }).catch(() => {});
+      StatusBar.setBackgroundColor({ color: '#08111d' }).catch(() => {});
+    })
+    .catch(() => {});
+
+  import('@capacitor/app')
+    .then(({ App: CapApp }) => {
+      CapApp.addListener('backButton', ({ canGoBack }) => {
+        if (canGoBack) {
+          window.history.back();
+        } else {
+          CapApp.exitApp();
+        }
+      }).catch(() => {});
+    })
+    .catch(() => {});
+}
+
 export { triggerAutoSync, onSyncStateChange };
 
 

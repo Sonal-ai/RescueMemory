@@ -40,7 +40,8 @@ import {
   updateDeviceLocation,
   syncDiscoveredPeer,
   getSurvivalRadar,
-  triggerAutoSync
+  triggerAutoSync,
+  getNativeOrWebLocation
 } from '../api';
 import { Card, Empty, Shell } from '../components';
 import MapPanel from '../MapPanel';
@@ -236,31 +237,26 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
     }
   };
 
-  // Live GPS geolocation
-  const useGps = () => {
-    if (!navigator.geolocation) {
-      setError('GPS unavailable in this browser. Tap the map to position your pin.');
-      return;
+  // Live GPS geolocation (Native Capacitor Satellite GPS with Web fallback)
+  const useGps = async () => {
+    try {
+      const position = await getNativeOrWebLocation();
+      const location = {
+        lat: Number(position.lat.toFixed(5)),
+        lon: Number(position.lon.toFixed(5))
+      };
+      setCenter(location);
+      setPin(location);
+      setError('');
+      setMessage(`Location locked via satellite GPS (${location.lat}, ${location.lon}).`);
+      updateDeviceLocation({
+        lat: location.lat,
+        lon: location.lon,
+        status: 'survivor_active'
+      }).catch(() => {});
+    } catch {
+      setError('GPS permission required or satellites acquiring. Tap map to manually place your location pin.');
     }
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const location = {
-          lat: Number(position.coords.latitude.toFixed(5)),
-          lon: Number(position.coords.longitude.toFixed(5))
-        };
-        setCenter(location);
-        setPin(location);
-        setError('');
-        setMessage(`Location updated to GPS coordinates (${location.lat}, ${location.lon}).`);
-        updateDeviceLocation({
-          lat: location.lat,
-          lon: location.lon,
-          status: 'survivor_active'
-        }).catch(() => {});
-      },
-      () => setError('GPS permission required. Tap the map grid to manually place your location pin.'),
-      { enableHighAccuracy: true, timeout: 8000 }
-    );
   };
 
   // Peer Wi-Fi sync

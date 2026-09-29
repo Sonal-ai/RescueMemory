@@ -12,7 +12,7 @@ import {
   Users,
   Wifi
 } from 'lucide-react';
-import { api, formatTime, getDiscoveredPeers, saveSetting, setting, updateDeviceLocation } from '../api';
+import { api, formatTime, getDiscoveredPeers, saveSetting, setting, updateDeviceLocation, getNativeOrWebLocation } from '../api';
 import { Card, Empty, Shell } from '../components';
 import MapPanel from '../MapPanel';
 import SurvivalRadar from '../SurvivalRadar';
@@ -68,27 +68,22 @@ export default function VolunteerBoard() {
     return () => clearInterval(timer);
   }, [refresh]);
 
-  const useGps = () => {
-    if (!navigator.geolocation) {
-      setError('GPS is unavailable in this browser.');
-      return;
+  const useGps = async () => {
+    try {
+      const position = await getNativeOrWebLocation();
+      const loc = {
+        lat: Number(position.lat.toFixed(5)),
+        lon: Number(position.lon.toFixed(5))
+      };
+      setCenter(loc);
+      updateDeviceLocation({
+        lat: loc.lat,
+        lon: loc.lon,
+        status: 'responder_active'
+      }).catch(() => {});
+    } catch {
+      setError('GPS location permission required or satellites acquiring.');
     }
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const loc = {
-          lat: Number(position.coords.latitude.toFixed(5)),
-          lon: Number(position.coords.longitude.toFixed(5))
-        };
-        setCenter(loc);
-        updateDeviceLocation({
-          lat: loc.lat,
-          lon: loc.lon,
-          status: 'responder_active'
-        }).catch(() => {});
-      },
-      () => setError('GPS location permission required.'),
-      { enableHighAccuracy: true, timeout: 8000 }
-    );
   };
 
   const inspect = async (item) => {
