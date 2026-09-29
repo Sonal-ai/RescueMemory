@@ -76,9 +76,39 @@ export default function UnifiedRadarMap({
     }
   }, [audioEnabled]);
 
-  // Listen to Smartphone Compass / Magnetometer
+  // Listen to Smartphone Compass / Magnetometer with Low-Pass EMA Filter
   useEffect(() => {
-    let lastHeading = 0;
+    let smoothedHeading = null;
+    let animFrameId = null;
+    let targetRawHeading = null;
+
+    const updateFilter = () => {
+      if (targetRawHeading !== null) {
+        if (smoothedHeading === null) {
+          smoothedHeading = targetRawHeading;
+        } else {
+          // Calculate shortest angular distance
+          let diff = (targetRawHeading - smoothedHeading) % 360;
+          if (diff < -180) diff += 360;
+          if (diff > 180) diff -= 360;
+
+          // Low-pass exponential smoothing factor (0.16 gives silky damping without sluggishness)
+          smoothedHeading = (smoothedHeading + diff * 0.16 + 360) % 360;
+        }
+
+        const rounded = Math.round(smoothedHeading);
+        setDeviceHeading((prev) => {
+          // Deadband: Only re-render when change is at least 1 degree
+          if (Math.abs(rounded - prev) >= 1) {
+            return rounded;
+          }
+          return prev;
+        });
+        setIsCompassActive(true);
+      }
+      animFrameId = requestAnimationFrame(updateFilter);
+    };
+
     const handleOrientation = (e) => {
       let heading = null;
       if (e.webkitCompassHeading !== undefined && e.webkitCompassHeading !== null) {
@@ -87,24 +117,21 @@ export default function UnifiedRadarMap({
         heading = (360 - e.alpha) % 360;
       }
       if (heading !== null && !Number.isNaN(heading)) {
-        const rounded = Math.round(heading);
-        if (Math.abs(rounded - lastHeading) >= 2) {
-          lastHeading = rounded;
-          setDeviceHeading(rounded);
-          setIsCompassActive(true);
-        }
+        targetRawHeading = heading;
       }
     };
 
     if (typeof window !== 'undefined' && window.DeviceOrientationEvent) {
       window.addEventListener('deviceorientationabsolute', handleOrientation, true);
       window.addEventListener('deviceorientation', handleOrientation, true);
+      animFrameId = requestAnimationFrame(updateFilter);
     }
     return () => {
       if (typeof window !== 'undefined') {
         window.removeEventListener('deviceorientationabsolute', handleOrientation, true);
         window.removeEventListener('deviceorientation', handleOrientation, true);
       }
+      if (animFrameId) cancelAnimationFrame(animFrameId);
     };
   }, []);
 
@@ -226,13 +253,30 @@ export default function UnifiedRadarMap({
   const currentHeading = isCompassActive ? deviceHeading : manualHeading;
 
   // Relative Bearing: Difference between device heading and target bearing
-  // (targetBearing - currentHeading + 360) % 360
   const targetBearing = activeTarget?.bearing_deg ?? 0;
   const relativeAngle = ((targetBearing - currentHeading + 360) % 360);
 
-  // Alignment Calculation:
-  // Is user facing directly toward destination? (within +/- 10 degrees)
-  const isAligned = relativeAngle <= 10 || relativeAngle >= 350;
+  // Maintain continuous smooth needle rotation (prevents 360° flip spins)
+  const [needleAngle, setNeedleAngle] = useState(0);
+  useEffect(() => {
+    setNeedleAngle((prev) => {
+      let delta = (relativeAngle - (prev % 360) + 540) % 360 - 180;
+      return prev + delta;
+    });
+  }, [relativeAngle]);
+
+  // Alignment Calculation with Hysteresis (prevents edge flickering between aligned and turning)
+  const [isAligned, setIsAligned] = useState(false);
+  const angularError = Math.abs(((relativeAngle + 180) % 360) - 180);
+
+  useEffect(() => {
+    if (!isAligned && angularError <= 8) {
+      setIsAligned(true);
+    } else if (isAligned && angularError >= 13) {
+      setIsAligned(false);
+    }
+  }, [angularError, isAligned]);
+
   const turnRightAngle = relativeAngle > 180 ? 0 : relativeAngle;
   const turnLeftAngle = relativeAngle > 180 ? 360 - relativeAngle : 0;
 
@@ -496,9 +540,9 @@ export default function UnifiedRadarMap({
                 {/* DYNAMIC COMPASS NEEDLE POINTING TO LOCKED DESTINATION */}
                 {activeTarget && (
                   <g
-                    transform={`rotate(${relativeAngle} ${COMPASS_CENTER} ${COMPASS_CENTER})`}
+                    transform={`rotate(${needleAngle} ${COMPASS_CENTER} ${COMPASS_CENTER})`}
                     filter="url(#needleGlow)"
-                    className="transition-transform duration-300 ease-out"
+                    className="transition-transform duration-200 ease-out"
                   >
                     {/* Needle Arrowhead */}
                     <polygon
@@ -594,22 +638,22 @@ export default function UnifiedRadarMap({
 
           {/* Locked Target Navigation Telemetry & Alignment Guide */}
           <div className="flex-1 min-w-0 w-full flex flex-col gap-3.5">
-            {/* Live Alignment Action Banner */}
-            <div className="w-full text-center font-mono">
+            {/* Live Alignment Action Banner with FIXED HEIGHT to guarantee ZERO layout shift */}
+            <div className="w-full font-mono h-[52px] min-h-[52px] flex items-center justify-center">
               {isAligned ? (
-                <div className="py-3 px-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/40 text-emerald-600 dark:text-emerald-300 font-extrabold text-sm sm:text-base flex items-center justify-center gap-2 shadow-sm animate-pulse">
-                  <CheckCircle2 size={18} className="text-emerald-500 shrink-0" />
-                  <span>ON TARGET · PROCEED STRAIGHT AHEAD</span>
+                <div className="w-full h-full rounded-2xl bg-emerald-500/10 border border-emerald-500/40 text-emerald-600 dark:text-emerald-300 font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-sm animate-pulse px-3">
+                  <CheckCircle2 size={17} className="text-emerald-500 shrink-0" />
+                  <span className="truncate">ON TARGET · PROCEED STRAIGHT</span>
                 </div>
               ) : turnRightAngle > 0 ? (
-                <div className="py-3 px-4 rounded-2xl bg-amber-500/10 border border-amber-500/40 text-amber-700 dark:text-amber-300 font-bold text-xs sm:text-sm flex items-center justify-center gap-2">
-                  <ArrowRight size={16} className="text-amber-500 animate-bounce shrink-0" />
-                  <span>TURN RIGHT {Math.round(turnRightAngle)}° TO ALIGN WITH DESTINATION</span>
+                <div className="w-full h-full rounded-2xl bg-amber-500/10 border border-amber-500/40 text-amber-700 dark:text-amber-300 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 px-3">
+                  <ArrowRight size={17} className="text-amber-500 shrink-0" />
+                  <span className="truncate tabular-nums">TURN RIGHT {Math.round(turnRightAngle)}° TO ALIGN</span>
                 </div>
               ) : (
-                <div className="py-3 px-4 rounded-2xl bg-amber-500/10 border border-amber-500/40 text-amber-700 dark:text-amber-300 font-bold text-xs sm:text-sm flex items-center justify-center gap-2">
-                  <ArrowLeft size={16} className="text-amber-500 animate-bounce shrink-0" />
-                  <span>TURN LEFT {Math.round(turnLeftAngle)}° TO ALIGN WITH DESTINATION</span>
+                <div className="w-full h-full rounded-2xl bg-amber-500/10 border border-amber-500/40 text-amber-700 dark:text-amber-300 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 px-3">
+                  <ArrowLeft size={17} className="text-amber-500 shrink-0" />
+                  <span className="truncate tabular-nums">TURN LEFT {Math.round(turnLeftAngle)}° TO ALIGN</span>
                 </div>
               )}
             </div>

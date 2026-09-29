@@ -145,7 +145,7 @@ export function QuietTelemetryPill({ health, sync, error }) {
         </span>
         <span className="hidden sm:inline font-medium">Offline Ready</span>
         <span className="text-[10px] bg-emerald-900/60 text-emerald-200 px-1.5 py-0.5 rounded font-mono">
-          {health?.guides ? `${health.guides} Guides` : 'Rust Edge'}
+          {health?.guides ? `${health.guides} Guides` : 'Offline Ready'}
         </span>
         <ChevronDown size={13} className={`opacity-70 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
@@ -168,7 +168,7 @@ export function QuietTelemetryPill({ health, sync, error }) {
           <div className="space-y-2 text-slate-300 font-mono text-[11px]">
             <div className="flex justify-between">
               <span className="text-slate-400">Vector Engine:</span>
-              <strong className="text-emerald-400">{health?.engine || 'Qdrant Edge In-Process'}</strong>
+              <strong className="text-emerald-400">{health?.engine || 'Local In-Memory Vector Engine'}</strong>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">Node ID:</span>
