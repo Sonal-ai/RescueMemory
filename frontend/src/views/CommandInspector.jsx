@@ -90,7 +90,53 @@ export default function CommandInspector() {
       </Card>
       <div className="space-y-5">
         <Card title="Memory Ripple"><div className="flex items-center gap-2 text-cyan-300 text-xs uppercase tracking-widest mb-3"><GitBranch size={16} /> Known event journey</div>{journey ? <><p className="text-sm text-slate-300 mb-3">{journey.event.text}</p><div className="text-xs text-slate-400 mb-3">Known nodes: {journey.known_nodes.join(' → ')}</div><div className="space-y-2">{journey.hops.length ? journey.hops.map((hop) => <div key={hop.id} className="border-l-2 border-cyan-500 pl-3 text-sm"><strong>{hop.from_node} → {hop.to_node}</strong><p className="text-xs text-slate-500">{formatTime(hop.synced_at)}</p></div>) : <Empty>Only the origin node is known so far.</Empty>}</div></> : <Empty>Select a report to show its known transfers.</Empty>}</Card>
-        <Card title="Contradiction Radar">{timeline ? <><p className="text-sm text-slate-300 mb-2">{timeline.entity_id} · {timeline.conflict ? <span className="text-amber-300">Conflicting observations</span> : 'No conflict recorded'}</p><div className="rounded-lg p-3 bg-slate-900 border border-slate-700 text-sm mb-3">Effective state: <strong>{timeline.effective?.status || 'unknown'}</strong></div><div className="space-y-2">{timeline.timeline.map((event) => <div key={event.id} className="text-xs border-l-2 border-slate-600 pl-3"><strong>{event.status || event.kind}</strong> · {event.verified ? 'command verified' : 'reported'}<div className="text-slate-500">{formatTime(event.observed_at)} · {event.origin_device}</div></div>)}</div></> : <Empty>Select a report with a place ID to inspect its timeline.</Empty>}</Card>
+        <Card title="Contradiction Radar">
+          {timeline ? (
+            <>
+              <p className="text-sm text-slate-300 mb-2">
+                {timeline.entity_id} · {timeline.conflict ? <span className="text-amber-300 font-semibold">Conflicting observations detected</span> : 'No conflict recorded'}
+              </p>
+              <div className="rounded-lg p-3 bg-slate-900 border border-slate-700 text-sm mb-3">
+                Effective state: <strong className="uppercase text-amber-400">{timeline.effective?.status || 'unknown'}</strong>
+              </div>
+              {timeline.alternative_recommendation && (
+                <div className="rounded-xl p-3.5 mb-3 bg-emerald-950/40 border border-emerald-600/50 text-emerald-200">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">
+                      ⚡ Qdrant Vector Recommendation
+                    </span>
+                    <span className="text-xs font-mono text-emerald-300">Score: {timeline.alternative_recommendation.score}</span>
+                  </div>
+                  <div className="text-sm font-semibold text-white mt-1">
+                    Reroute to safe facility: {timeline.alternative_recommendation.name}
+                  </div>
+                  <div className="text-xs text-slate-300 mt-1">
+                    {timeline.alternative_recommendation.rationale}
+                  </div>
+                  {timeline.alternative_recommendation.facilities?.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {timeline.alternative_recommendation.facilities.map((fac) => (
+                        <span key={fac} className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-900/60 border border-emerald-700/50 text-emerald-200 font-mono">
+                          {fac}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              <div className="space-y-2">
+                {timeline.timeline.map((event) => (
+                  <div key={event.id} className="text-xs border-l-2 border-slate-600 pl-3">
+                    <strong>{event.status || event.kind}</strong> · {event.verified ? 'command verified' : 'reported'}
+                    <div className="text-slate-500">{formatTime(event.observed_at)} · {event.origin_device}</div>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <Empty>Select a report with a place ID to inspect its timeline.</Empty>
+          )}
+        </Card>
       </div>
     </div>
     <div className="grid lg:grid-cols-2 gap-5 mt-5">

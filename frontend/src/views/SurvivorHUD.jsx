@@ -50,6 +50,8 @@ export default function SurvivorHUD() {
   const [items, setItems] = useState([]);
   const [mapUpdatedAt, setMapUpdatedAt] = useState(null);
   const [selected, setSelected] = useState(null);
+  const [alternativeRec, setAlternativeRec] = useState(null);
+  const [loadingAltRec, setLoadingAltRec] = useState(false);
   const [report, setReport] = useState({
     kind: 'hazard',
     text: '',
@@ -91,6 +93,48 @@ export default function SurvivorHUD() {
     const timer = setInterval(refreshMap, 30000);
     return () => clearInterval(timer);
   }, [refreshMap]);
+
+  const handleSelectObservation = async (item) => {
+    setSelected(item);
+    setAlternativeRec(null);
+    if (!item) return;
+    const targetId = item.entity_id || (item.kind === 'checkpoint' ? item.id : null);
+    if (targetId) {
+      try {
+        setLoadingAltRec(true);
+        const entityData = await api(`/api/entities/${encodeURIComponent(targetId)}`);
+        if (entityData?.alternative_recommendation) {
+          setAlternativeRec(entityData.alternative_recommendation);
+        } else if (item.status === 'danger' || item.status === 'blocked' || item.status === 'flooded') {
+          const recData = await api('/api/checkpoints/recommend-alternative', {
+            method: 'POST',
+            body: { compromised_id: targetId, avoid_hazard: item.text || 'flooded hazard' }
+          });
+          if (recData?.recommended) {
+            setAlternativeRec(recData.recommended);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load alternative recommendation:', err);
+      } finally {
+        setLoadingAltRec(false);
+      }
+    } else if (item.status === 'danger' || item.status === 'blocked' || item.status === 'flooded') {
+      try {
+        setLoadingAltRec(true);
+        const recData = await api('/api/checkpoints/recommend-alternative', {
+          method: 'POST',
+          body: { compromised_id: 'cp_17', avoid_hazard: item.text || 'flooded hazard' }
+        });
+        if (recData?.recommended) {
+          setAlternativeRec(recData.recommended);
+        }
+      } catch (err) {
+      } finally {
+        setLoadingAltRec(false);
+      }
+    }
+  };
 
   const useGps = () => {
     if (!navigator.geolocation) {
@@ -770,7 +814,7 @@ export default function SurvivorHUD() {
                 <Cross size={14} /> Use GPS
               </button>
             </div>
-            <MapPanel center={center} items={items} selected={pin} onSelect={setPin} onMarker={setSelected} />
+            <MapPanel center={center} items={items} selected={pin} onSelect={setPin} onMarker={handleSelectObservation} />
           </Card>
         </div>
       )}
@@ -815,7 +859,7 @@ export default function SurvivorHUD() {
               {mapUpdatedAt ? ` • Updated ${mapUpdatedAt.toLocaleTimeString()}` : ''}
             </p>
 
-            <MapPanel center={center} items={filteredItems} onMarker={setSelected} />
+            <MapPanel center={center} items={filteredItems} onMarker={handleSelectObservation} />
           </Card>
 
           <Card title="Observation List">
@@ -826,7 +870,7 @@ export default function SurvivorHUD() {
                   return (
                     <button
                       key={item.id}
-                      onClick={() => setSelected(item)}
+                      onClick={() => handleSelectObservation(item)}
                       className={`w-full text-left p-3.5 rounded-xl border transition-all ${
                         selected?.id === item.id
                           ? 'border-cyan-500 bg-cyan-950/30'
@@ -873,6 +917,42 @@ export default function SurvivorHUD() {
                 <span>Origin: {selected.origin_device}</span>
                 {selected.distance_m && <span>Distance: ~{selected.distance_m} meters</span>}
               </div>
+
+              {loadingAltRec && (
+                <div className="text-xs text-cyan-400 mt-3 flex items-center gap-1.5 animate-pulse bg-cyan-950/30 p-2.5 rounded-lg border border-cyan-800/40">
+                  <RefreshCw size={13} className="animate-spin" /> Querying Qdrant vector memory for alternative safe facility...
+                </div>
+              )}
+
+              {alternativeRec && (
+                <div className="mt-4 p-4 rounded-xl border border-emerald-500/50 bg-emerald-950/40 text-emerald-200 shadow-lg shadow-emerald-950/20">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+                      <CheckCircle2 size={15} /> ⚡ Qdrant Recommended Safe Alternative
+                    </span>
+                    {alternativeRec.score && (
+                      <span className="text-[10px] font-mono bg-emerald-900/80 border border-emerald-700/60 px-2 py-0.5 rounded text-emerald-300">
+                        Score: {alternativeRec.score}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-sm font-bold text-white mt-1.5">
+                    {alternativeRec.name}
+                  </div>
+                  <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+                    {alternativeRec.rationale}
+                  </p>
+                  {alternativeRec.facilities?.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mt-2.5">
+                      {alternativeRec.facilities.map((fac) => (
+                        <span key={fac} className="text-[10px] px-2 py-0.5 rounded bg-emerald-900/80 border border-emerald-700/60 text-emerald-200 font-mono">
+                          ✓ {fac.replace(/_/g, ' ')}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </Card>
           )}
         </div>
