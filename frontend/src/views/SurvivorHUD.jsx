@@ -747,36 +747,36 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
           )}
 
           {/* Full ChatGPT / Antigravity Style Conversational Assistant Container */}
-          <div className="flex flex-col h-[700px] max-h-[80vh] rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#08121e] shadow-lg overflow-hidden">
+          <div className="flex flex-col h-[calc(100dvh-13.5rem)] sm:h-[calc(100vh-270px)] min-h-[460px] max-h-[820px] rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#08121e] shadow-lg overflow-hidden transition-all">
             {/* Chat Header */}
-            <div className="px-4 py-3 sm:px-5 sm:py-3.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/90 dark:bg-[#0b1626] flex items-center justify-between gap-3 shrink-0">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-red-600 to-rose-500 flex items-center justify-center text-white shadow-md shadow-red-500/20 shrink-0">
-                  <Bot size={20} />
+            <div className="px-3.5 py-2.5 sm:px-5 sm:py-3.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/90 dark:bg-[#0b1626] flex items-center justify-between gap-2.5 shrink-0">
+              <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+                <div className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl bg-gradient-to-tr from-red-600 to-rose-500 flex items-center justify-center text-white shadow-md shadow-red-500/20 shrink-0">
+                  <Bot size={18} className="sm:w-5 sm:h-5" />
                 </div>
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white truncate">
+                  <div className="flex items-center gap-1.5 sm:gap-2">
+                    <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 truncate">
                       RescueMemory Assistant
                     </h2>
-                    <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300/60 dark:border-emerald-700/60 shrink-0">
+                    <span className="inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-medium px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300/60 dark:border-emerald-700/60 shrink-0">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                      Offline Edge Active
+                      Offline Active
                     </span>
                   </div>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate hidden sm:block">
                     420 Clinical Guidelines · Qdrant Vector Memory · Zero Cloud Needed
                   </p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
                 {/* GPS location pill */}
                 <button
                   type="button"
                   onClick={useGps}
                   title="Click to refresh GPS pin"
-                  className="hidden sm:inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-cyan-500 dark:hover:text-cyan-400 font-mono transition-colors"
+                  className="hidden md:inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-cyan-500 dark:hover:text-cyan-400 font-mono transition-colors"
                 >
                   <MapPin size={13} className="text-cyan-500" />
                   <span>{pin.lat.toFixed(3)}, {pin.lon.toFixed(3)}</span>
@@ -790,33 +790,33 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                   className="inline-flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-red-500 dark:hover:text-red-400 transition-colors"
                 >
                   <Trash2 size={13} />
-                  <span className="hidden md:inline">Clear</span>
+                  <span>Clear</span>
                 </button>
               </div>
             </div>
 
             {/* Scrollable Message History Area */}
-            <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 sm:space-y-5 bg-slate-50/50 dark:bg-[#07111e]/70">
+            <div className="flex-1 overflow-y-auto p-3.5 sm:p-5 space-y-3.5 sm:space-y-4 bg-slate-50/50 dark:bg-[#07111e]/70">
               {messages.map((msg) => {
                 const isUser = msg.role === 'user';
                 return (
                   <div
                     key={msg.id}
-                    className={`flex items-start gap-3 ${isUser ? 'justify-end' : 'justify-start'}`}
+                    className={`flex items-start gap-2.5 sm:gap-3 ${isUser ? 'justify-end' : 'justify-start'}`}
                   >
                     {/* Assistant Avatar */}
                     {!isUser && (
-                      <div className="h-8 w-8 rounded-xl bg-gradient-to-tr from-cyan-600 to-blue-600 flex items-center justify-center text-white shadow-md shadow-cyan-600/20 shrink-0 mt-0.5">
-                        <Bot size={16} />
+                      <div className="h-7 w-7 sm:h-8 sm:w-8 rounded-xl bg-gradient-to-tr from-cyan-600 to-blue-600 flex items-center justify-center text-white shadow-md shadow-cyan-600/20 shrink-0 mt-0.5">
+                        <Bot size={15} />
                       </div>
                     )}
 
                     {/* Message Bubble Container */}
                     <div
-                      className={`max-w-[88%] sm:max-w-[78%] rounded-2xl p-4 shadow-sm transition-all ${
+                      className={`chat-assistant-bubble transition-all ${
                         isUser
-                          ? 'bg-red-600 text-white rounded-tr-xs'
-                          : 'bg-white dark:bg-[#0b1626] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-tl-xs'
+                          ? 'max-w-[85%] sm:max-w-[70%] rounded-2xl p-3 sm:p-3.5 shadow-sm bg-red-600 text-white rounded-tr-xs ml-auto'
+                          : 'max-w-[92%] sm:max-w-[80%] rounded-2xl p-3.5 sm:p-4 shadow-sm bg-white dark:bg-[#0b1626] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-tl-xs'
                       }`}
                     >
                       {/* Header meta */}
@@ -979,7 +979,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
 
             {/* Quick Emergency Prompt Chips */}
             <div className="px-3 sm:px-4 py-2 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0b1626] shrink-0">
-              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1">
+              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5 touch-pan-x">
                 {QUICK_PROMPTS.map((q) => {
                   const Icon = q.icon;
                   return (
@@ -987,7 +987,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                       type="button"
                       key={q.text}
                       onClick={() => handleQuickPrompt(q.text)}
-                      className={`shrink-0 text-xs py-1.5 px-3 rounded-full border flex items-center gap-1.5 font-semibold transition-all active:scale-95 ${
+                      className={`shrink-0 text-xs py-1.5 px-3 rounded-full border flex items-center gap-1.5 font-semibold transition-all active:scale-95 touch-manipulation ${
                         q.urgent
                           ? 'border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/60'
                           : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -1002,14 +1002,14 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
             </div>
 
             {/* Bottom Input Box */}
-            <div className="p-3 sm:p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0b1626] shrink-0">
+            <div className="p-2.5 sm:p-3.5 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0b1626] shrink-0 pb-safe">
               <form onSubmit={onFormSubmit} className="relative flex items-center gap-2">
                 {/* Voice speech-to-text mic trigger */}
                 <button
                   type="button"
                   onClick={toggleSpeechRecognition}
                   title={isListening ? "Listening... click to stop" : "Voice input (Dictate emergency)"}
-                  className={`p-2.5 rounded-xl border transition-all shrink-0 ${
+                  className={`p-2.5 sm:p-3 rounded-xl border transition-all shrink-0 active:scale-95 touch-manipulation ${
                     isListening
                       ? 'bg-red-600 text-white border-red-500 animate-pulse shadow-md shadow-red-600/40'
                       : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700'
@@ -1021,7 +1021,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                 {/* Input box */}
                 <input
                   type="text"
-                  className="flex-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500"
+                  className="flex-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 sm:px-4 py-2.5 sm:py-3 text-sm sm:text-base text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500 transition-all"
                   placeholder="Ask emergency question (e.g. Can't walk, severe bleeding, safe water)..."
                   value={text}
                   onChange={(e) => setText(e.target.value)}
@@ -1032,21 +1032,21 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                 <button
                   type="submit"
                   disabled={chatBusy || !text.trim()}
-                  className="p-2.5 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white font-bold transition-all active:scale-95 shrink-0 shadow-md shadow-red-600/30"
+                  className="p-2.5 sm:p-3 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white font-bold transition-all active:scale-95 shrink-0 shadow-md shadow-red-600/30 touch-manipulation"
                 >
                   <Send size={18} />
                 </button>
               </form>
-              <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400 px-1">
-                <span>Runs 100% offline via local Qdrant memory</span>
-                <label className="flex items-center gap-1.5 cursor-pointer">
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-1 text-[11px] text-slate-400 px-1">
+                <span className="truncate">Runs 100% offline via local Qdrant memory</span>
+                <label className="flex items-center gap-1.5 cursor-pointer ml-auto">
                   <input
                     type="checkbox"
                     checked={useAi}
                     onChange={(e) => setUseAi(e.target.checked)}
                     className="rounded border-slate-300 dark:border-slate-700 text-cyan-600 focus:ring-0"
                   />
-                  <span className="flex items-center gap-1 text-slate-500 dark:text-slate-400">
+                  <span className="flex items-center gap-1 text-slate-500 dark:text-slate-400 font-medium">
                     <Sparkles size={11} className="text-cyan-500" /> Cloud AI Synthesis
                   </span>
                 </label>

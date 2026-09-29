@@ -27,7 +27,7 @@ function parseInline(text) {
     const matchedStr = match[0];
     if (matchedStr.startsWith('**') && matchedStr.endsWith('**')) {
       parts.push(
-        <strong key={keyIndex++} className="font-bold text-slate-900 dark:text-white">
+        <strong key={keyIndex++} className="font-bold text-slate-900 dark:text-slate-100">
           {matchedStr.slice(2, -2)}
         </strong>
       );
@@ -134,7 +134,7 @@ export default function MarkdownContent({ content, className = '' }) {
     // 3. Headings: ### Heading, or **Bold Heading:** on single line
     if (trimmed.startsWith('### ')) {
       elements.push(
-        <h4 key={`h3-${elementIndex++}`} className="text-base font-extrabold text-slate-900 dark:text-white mt-4 mb-1.5 flex items-center gap-1.5">
+        <h4 key={`h3-${elementIndex++}`} className="text-base font-extrabold text-slate-900 dark:text-slate-100 mt-4 mb-1.5 flex items-center gap-1.5">
           {parseInline(trimmed.replace(/^###\s+/, ''))}
         </h4>
       );
@@ -143,7 +143,7 @@ export default function MarkdownContent({ content, className = '' }) {
 
     if (trimmed.startsWith('## ')) {
       elements.push(
-        <h3 key={`h2-${elementIndex++}`} className="text-lg font-black text-slate-900 dark:text-white mt-4 mb-2">
+        <h3 key={`h2-${elementIndex++}`} className="text-lg font-black text-slate-900 dark:text-slate-100 mt-4 mb-2">
           {parseInline(trimmed.replace(/^##\s+/, ''))}
         </h3>
       );
@@ -153,7 +153,7 @@ export default function MarkdownContent({ content, className = '' }) {
     // Check if whole line is **Heading text**
     if (/^\*\*[^*]+\*\*$/.test(trimmed) || /^\*\*[^*]+:\*\*$/.test(trimmed)) {
       elements.push(
-        <h4 key={`bh-${elementIndex++}`} className="text-sm sm:text-base font-bold text-slate-900 dark:text-white mt-3.5 mb-1.5 flex items-center gap-1.5">
+        <h4 key={`bh-${elementIndex++}`} className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 mt-3.5 mb-1.5 flex items-center gap-1.5">
           <span className="w-1.5 h-1.5 rounded-full bg-red-500 inline-block" />
           <span>{trimmed.replace(/\*\*/g, '')}</span>
         </h4>
