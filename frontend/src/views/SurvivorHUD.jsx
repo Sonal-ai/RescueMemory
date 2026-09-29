@@ -48,12 +48,11 @@ import SurvivalRadar from '../SurvivalRadar';
 const DEFAULT_CENTER = { lat: 28.7041, lon: 77.1025 };
 
 const TABS = [
-  ['ask', 'Chat & Triage', HeartPulse],
-  ['compass', 'Survivor Compass', Compass],
+  ['ask', 'Assistant', HeartPulse],
+  ['compass', 'Compass', Compass],
   ['map', 'Tactical Map', MapPin],
-  ['radar', 'Survival Radar', Radio],
-  ['report', 'SOS / Report', ShieldAlert],
-  ['group', 'Mesh Relay', Users]
+  ['report', 'Emergency SOS', AlertOctagon],
+  ['group', 'Mesh Squad', Users]
 ];
 
 const QUICK_PROMPTS = [
@@ -477,90 +476,12 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
 
   return (
     <Shell
-      title="Disaster Assistance HUD"
-      subtitle="Operates completely offline with Qdrant Edge. Instant survival triage, offline coordinate navigation, and decentralized mesh relay."
+      title="RescueMemory Assistant"
+      subtitle="100% offline emergency memory. Instant triage, shelter guidance, and peer SOS."
     >
-      {/* Tactical Status & Network Telemetry Bar */}
-      <div className="mb-6 grid grid-cols-1 sm:grid-cols-3 gap-3">
-        {/* Brain Mode Indicator */}
-        <div className="p-3 sm:p-3.5 rounded-2xl border border-slate-800 bg-[#091424] flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <span className="relative flex h-3 w-3">
-              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isOfflineBrain ? 'bg-amber-400' : 'bg-emerald-400'}`}></span>
-              <span className={`relative inline-flex rounded-full h-3 w-3 ${isOfflineBrain ? 'bg-amber-500' : 'bg-emerald-500'}`}></span>
-            </span>
-            <div>
-              <div className="text-xs font-bold text-slate-100 flex items-center gap-1.5">
-                {isOfflineBrain ? 'Phone Vector Brain' : 'Qdrant Edge Active'}
-                <span className="text-[10px] px-1.5 py-0.2 rounded bg-cyan-950 text-cyan-300 border border-cyan-800/40">
-                  {isOfflineBrain ? 'ONNX' : 'RUST'}
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-400">
-                {isOfflineBrain ? 'Standalone client-side vectors' : 'In-process embedded engine'}
-              </p>
-            </div>
-          </div>
-          <Zap size={16} className={isOfflineBrain ? 'text-amber-400' : 'text-emerald-400'} />
-        </div>
-
-        {/* GPS Coordinates with Quick Refresh */}
-        <div className="p-3 sm:p-3.5 rounded-2xl border border-slate-800 bg-[#091424] flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
-              <Crosshair size={16} />
-            </div>
-            <div>
-              <div className="text-xs font-bold font-mono text-slate-100">
-                {pin.lat.toFixed(4)}, {pin.lon.toFixed(4)}
-              </div>
-              <p className="text-[11px] text-slate-400">Your tactical location pin</p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={useGps}
-            title="Update to current GPS"
-            className="text-xs px-2.5 py-1.5 rounded-lg bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20 border border-cyan-500/30 flex items-center gap-1 font-semibold transition-all active:scale-95"
-          >
-            <Cross size={12} />
-            <span>GPS</span>
-          </button>
-        </div>
-
-        {/* Mesh Peer Radar Telemetry */}
-        <div className="p-3 sm:p-3.5 rounded-2xl border border-slate-800 bg-[#091424] flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              <Radio size={16} className={peers.length ? 'animate-pulse' : ''} />
-            </div>
-            <div>
-              <div className="text-xs font-bold text-slate-100 flex items-center gap-1.5">
-                <span>{peers.length} Nearby Peer{peers.length === 1 ? '' : 's'}</span>
-                {syncInfo.pendingCount > 0 && (
-                  <span className="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.2 rounded border border-amber-500/30">
-                    {syncInfo.pendingCount} in outbox
-                  </span>
-                )}
-              </div>
-              <p className="text-[11px] text-slate-400">Wi-Fi broadcast auto-discovery</p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={refreshPeers}
-            title="Scan Wi-Fi for peers"
-            className="text-xs px-2.5 py-1.5 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700 flex items-center gap-1 font-semibold transition-all active:scale-95"
-          >
-            <RefreshCw size={12} />
-            <span>Scan</span>
-          </button>
-        </div>
-      </div>
-
       {/* Global Status & Alerts */}
       {error && (
-        <div role="alert" className="mb-6 p-4 rounded-2xl border border-red-800/80 bg-red-950/40 text-red-200 text-sm flex items-center justify-between shadow-lg shadow-red-950/20">
+        <div role="alert" className="mb-4 p-4 rounded-2xl border border-red-800/80 bg-red-950/40 text-red-200 text-sm flex items-center justify-between shadow-lg shadow-red-950/20">
           <div className="flex items-center gap-2.5">
             <TriangleAlert size={18} className="shrink-0 text-red-400" />
             <span>{error}</span>
@@ -569,7 +490,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
         </div>
       )}
       {message && (
-        <div role="status" className="mb-6 p-4 rounded-2xl border border-emerald-800/80 bg-emerald-950/40 text-emerald-200 text-sm flex items-center justify-between shadow-lg shadow-emerald-950/20">
+        <div role="status" className="mb-4 p-4 rounded-2xl border border-emerald-800/80 bg-emerald-950/40 text-emerald-200 text-sm flex items-center justify-between shadow-lg shadow-emerald-950/20">
           <div className="flex items-center gap-2.5">
             <CheckCircle2 size={18} className="shrink-0 text-emerald-400" />
             <span>{message}</span>
@@ -579,20 +500,20 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
       )}
 
       {/* Desktop HUD Segmented Navigation Pills */}
-      <div className="hidden sm:grid sm:grid-cols-6 gap-2 mb-6">
+      <div className="hidden sm:grid sm:grid-cols-5 gap-2 mb-5">
         {TABS.map(([id, label, Icon]) => {
           const isActive = tab === id;
           return (
             <button
               key={id}
               onClick={() => { setTab(id); setError(''); setMessage(''); }}
-              className={`rounded-2xl border px-3 py-3.5 text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+              className={`rounded-2xl border px-3 py-3 text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
                 isActive
                   ? 'bg-red-500 text-white border-red-600 shadow-md shadow-red-500/25 scale-[1.01]'
                   : 'bg-[#091424] border-slate-800 text-slate-300 hover:border-slate-700 hover:text-white'
               }`}
             >
-              <Icon size={15} />
+              <Icon size={16} />
               <span className="truncate">{label}</span>
             </button>
           );
@@ -642,62 +563,64 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
             </div>
           )}
 
-          {/* Quick 1-Tap Tactical Navigation Row */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+          {/* Reassuring Calm Greeting & 3 Big Panic Action Tiles */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <button
+              type="button"
+              onClick={() => handleQuickPrompt("How do I stop severe bleeding from a deep wound?")}
+              className="p-4 rounded-2xl border border-red-900/60 bg-red-950/30 hover:bg-red-900/40 text-left transition-all active:scale-98 shadow-sm group"
+            >
+              <div className="p-2.5 rounded-xl bg-red-600 text-white w-fit mb-2.5 shadow-md shadow-red-600/30">
+                <HeartPulse size={20} />
+              </div>
+              <div className="text-sm font-bold text-red-200 group-hover:text-white">
+                Medical First Aid
+              </div>
+              <p className="text-xs text-red-300/80 mt-1 leading-relaxed">
+                Severe bleeding, CPR, burns, broken bones, trauma care.
+              </p>
+            </button>
+
             <button
               type="button"
               onClick={() => setTab('compass')}
-              className="p-3 rounded-2xl border border-slate-800 bg-[#091424] hover:border-red-500/60 text-slate-200 hover:text-white flex items-center gap-2.5 text-xs font-bold transition-all active:scale-98"
+              className="p-4 rounded-2xl border border-emerald-900/60 bg-emerald-950/30 hover:bg-emerald-900/40 text-left transition-all active:scale-98 shadow-sm group"
             >
-              <div className="p-1.5 rounded-xl bg-red-500/10 text-red-400 shrink-0">
-                <Compass size={17} />
+              <div className="p-2.5 rounded-xl bg-emerald-600 text-white w-fit mb-2.5 shadow-md shadow-emerald-600/30">
+                <Compass size={20} />
               </div>
-              <div className="text-left min-w-0">
-                <div className="truncate font-extrabold">Survivor Compass</div>
-                <div className="text-[10px] text-slate-400 font-normal truncate">360° Direct Guidance</div>
+              <div className="text-sm font-bold text-emerald-200 group-hover:text-white">
+                Safe Shelter & Water
               </div>
+              <p className="text-xs text-emerald-300/80 mt-1 leading-relaxed">
+                Direct 360° compass navigation to nearest verified shelter.
+              </p>
             </button>
 
             <button
               type="button"
-              onClick={() => setTab('map')}
-              className="p-3 rounded-2xl border border-slate-800 bg-[#091424] hover:border-cyan-500/60 text-slate-200 hover:text-white flex items-center gap-2.5 text-xs font-bold transition-all active:scale-98"
+              onClick={() => {
+                setReport({
+                  kind: 'incident',
+                  text: "Survivor cannot walk and requests immediate rescue assistance.",
+                  entity_id: '',
+                  status: 'needs_help',
+                  severity: 'red',
+                  visibility: 'responders'
+                });
+                setTab('report');
+              }}
+              className="p-4 rounded-2xl border border-amber-900/60 bg-amber-950/30 hover:bg-amber-900/40 text-left transition-all active:scale-98 shadow-sm group"
             >
-              <div className="p-1.5 rounded-xl bg-cyan-500/10 text-cyan-400 shrink-0">
-                <MapPin size={17} />
+              <div className="p-2.5 rounded-xl bg-amber-600 text-white w-fit mb-2.5 shadow-md shadow-amber-600/30">
+                <AlertOctagon size={20} />
               </div>
-              <div className="text-left min-w-0">
-                <div className="truncate font-extrabold">Tactical Map</div>
-                <div className="text-[10px] text-slate-400 font-normal truncate">Shelters & Grid</div>
+              <div className="text-sm font-bold text-amber-200 group-hover:text-white">
+                Cannot Walk / Trapped
               </div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setTab('radar')}
-              className="p-3 rounded-2xl border border-slate-800 bg-[#091424] hover:border-emerald-500/60 text-slate-200 hover:text-white flex items-center gap-2.5 text-xs font-bold transition-all active:scale-98"
-            >
-              <div className="p-1.5 rounded-xl bg-emerald-500/10 text-emerald-400 shrink-0">
-                <Radio size={17} />
-              </div>
-              <div className="text-left min-w-0">
-                <div className="truncate font-extrabold">Survival Radar</div>
-                <div className="text-[10px] text-slate-400 font-normal truncate">Polar & BLE Range</div>
-              </div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setTab('report')}
-              className="p-3 rounded-2xl border border-slate-800 bg-[#091424] hover:border-amber-500/60 text-slate-200 hover:text-white flex items-center gap-2.5 text-xs font-bold transition-all active:scale-98"
-            >
-              <div className="p-1.5 rounded-xl bg-amber-500/10 text-amber-400 shrink-0">
-                <ShieldAlert size={17} />
-              </div>
-              <div className="text-left min-w-0">
-                <div className="truncate font-extrabold">Log SOS / Report</div>
-                <div className="text-[10px] text-slate-400 font-normal truncate">Record to Memory</div>
-              </div>
+              <p className="text-xs text-amber-300/80 mt-1 leading-relaxed">
+                Dispatch 1-tap emergency SOS to nearby volunteer responders.
+              </p>
             </button>
           </div>
 
@@ -1534,8 +1457,8 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
       {/* ANDROID / MOBILE FIXED BOTTOM NAVIGATION BAR */}
       {/* Thumb-friendly, accessible, ergonomic navigation for smartphones */}
       {/* ========================================================================= */}
-      <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#091322]/98 border-t border-slate-800/90 backdrop-blur-lg pb-safe">
-        <div className="grid grid-cols-6 h-16">
+      <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-slate-900/95 dark:bg-[#091322]/98 border-t border-slate-200 dark:border-slate-800/90 backdrop-blur-lg pb-safe">
+        <div className="grid grid-cols-5 h-16">
           {TABS.map(([id, label, Icon]) => {
             const isActive = tab === id;
             return (
@@ -1548,7 +1471,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                   window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
                 className={`flex flex-col items-center justify-center gap-1 transition-all active:scale-95 ${
-                  isActive ? 'text-red-500 font-black' : 'text-slate-400 hover:text-slate-200'
+                  isActive ? 'text-red-500 font-bold' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
                 }`}
               >
                 <div className="relative">
@@ -1556,14 +1479,11 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                   {id === 'compass' && nearestCasualty && (
                     <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-red-500 animate-ping" />
                   )}
-                  {id === 'radar' && (
-                    <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
-                  )}
                   {id === 'map' && peers.length > 0 && (
                     <span className="absolute -top-1 -right-1.5 w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
                   )}
                 </div>
-                <span className="text-[8.5px] tracking-tight font-medium">{label.split(' ')[0]}</span>
+                <span className="text-[10px] tracking-tight font-medium">{label.split(' ')[0]}</span>
               </button>
             );
           })}

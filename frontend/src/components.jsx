@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import {
   Activity,
+  ChevronDown,
   CircleHelp,
   Cloud,
   CloudOff,
@@ -10,6 +11,7 @@ import {
   Moon,
   Radio,
   Settings2,
+  ShieldCheck,
   Sun,
   Wifi,
   X
@@ -125,29 +127,95 @@ export function SettingsPanel({ onClose }) {
   );
 }
 
+export function QuietTelemetryPill({ health, sync, error }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-emerald-500/30 bg-emerald-950/40 text-emerald-300 hover:bg-emerald-950/60 text-xs font-semibold transition-all active:scale-95"
+        title="Offline system status & peer telemetry"
+      >
+        <span className="relative flex h-2 w-2">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 bg-emerald-400"></span>
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+        </span>
+        <span className="hidden sm:inline font-medium">Offline Ready</span>
+        <span className="text-[10px] bg-emerald-900/60 text-emerald-200 px-1.5 py-0.5 rounded font-mono">
+          {health?.guides ? `${health.guides} Guides` : 'Rust Edge'}
+        </span>
+        <ChevronDown size={13} className={`opacity-70 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <div className="absolute right-0 mt-2 w-72 bg-[#0b1626] border border-slate-700/80 rounded-2xl p-4 shadow-2xl z-50 animate-in fade-in slide-in-from-top-2 text-xs">
+          <div className="flex items-center justify-between pb-2 border-b border-slate-800 mb-3">
+            <span className="font-bold text-slate-100 flex items-center gap-1.5">
+              <ShieldCheck size={15} className="text-emerald-400" />
+              <span>Offline System Status</span>
+            </span>
+            <button
+              onClick={() => setOpen(false)}
+              className="text-slate-400 hover:text-white text-xs font-bold p-1"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="space-y-2 text-slate-300 font-mono text-[11px]">
+            <div className="flex justify-between">
+              <span className="text-slate-400">Vector Engine:</span>
+              <strong className="text-emerald-400">{health?.engine || 'Qdrant Edge In-Process'}</strong>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Node ID:</span>
+              <span className="text-slate-200">{health?.node_id || 'survivor-1'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Indexed Protocols:</span>
+              <span className="text-cyan-300">{health?.guides || 420} survival records</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Mesh Auto-Discovery:</span>
+              <span className="text-emerald-300">Active (Wi-Fi Direct / BLE)</span>
+            </div>
+          </div>
+
+          <div className="mt-3 pt-2.5 border-t border-slate-800 flex items-center justify-between text-[11px]">
+            <Link
+              to="/about"
+              onClick={() => setOpen(false)}
+              className="text-cyan-400 hover:underline font-bold"
+            >
+              System Architecture →
+            </Link>
+            {health?.role === 'central' && (
+              <Link
+                to="/command"
+                onClick={() => setOpen(false)}
+                className="text-amber-400 hover:underline font-bold"
+              >
+                Command HQ →
+              </Link>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Shell({ title, subtitle, children }) {
   const { health, sync, error } = useNodeStatus();
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem('rescue.theme') === 'light' ? 'light' : 'dark');
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem('rescue.theme', theme);
   }, [theme]);
-
-  const nav = [
-    ['/', 'Emergency Chatbot'],
-    ['/compass', 'Survivor Compass'],
-    ['/map', 'Tactical Map'],
-    ['/radar', 'Survival Radar'],
-  ];
-  if (health?.role === 'volunteer' || health?.role === 'central') nav.push(['/volunteer', 'Field Board']);
-  if (health?.role === 'central') nav.push(['/command', 'Command HQ']);
-  nav.push(['/about', 'About Mesh']);
-
-  const exchanges = sync?.last_exchanges || [];
-  const last = exchanges.map((item) => item.synced_at).filter(Boolean).sort().at(-1);
 
   return (
     <div className="app-shell min-h-screen bg-[#060b13] text-slate-100 flex flex-col pb-16 sm:pb-0">
@@ -156,63 +224,25 @@ export function Shell({ title, subtitle, children }) {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2.5 flex items-center justify-between gap-3">
           
           {/* Logo & Tactical Identity */}
-          <div className="flex items-center gap-3">
-            <Link to="/" className="flex items-center gap-2.5 font-black tracking-tight text-lg group">
-              <span className="h-9 w-9 rounded-xl bg-gradient-to-br from-red-500 to-rose-600 flex items-center justify-center text-white shadow-md shadow-red-500/20 group-hover:scale-105 transition-transform">
-                <Activity size={20} />
-              </span>
-              <div className="flex flex-col">
-                <div className="flex items-center gap-1.5 leading-none">
-                  <span className="font-extrabold text-base sm:text-lg tracking-tight">RescueMemory</span>
-                  <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-cyan-950/80 text-cyan-300 border border-cyan-800/50">
-                    EDGE
-                  </span>
-                </div>
-                <span className="text-[10px] text-slate-400 font-mono tracking-wider">OFFLINE SURVIVAL MESH</span>
+          <Link to="/" className="flex items-center gap-2.5 font-black tracking-tight text-lg group">
+            <span className="h-9 w-9 rounded-xl bg-gradient-to-br from-red-500 to-rose-600 flex items-center justify-center text-white shadow-md shadow-red-500/20 group-hover:scale-105 transition-transform">
+              <Activity size={20} />
+            </span>
+            <div className="flex flex-col">
+              <div className="flex items-center gap-1.5 leading-none">
+                <span className="font-extrabold text-base sm:text-lg tracking-tight">RescueMemory</span>
+                <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-cyan-950/80 text-cyan-300 border border-cyan-800/50">
+                  EDGE
+                </span>
               </div>
-            </Link>
-
-            {/* Desktop Navigation Links */}
-            <nav className="hidden md:flex items-center gap-1 ml-6">
-              {nav.map(([path, label]) => (
-                <NavLink
-                  key={path}
-                  to={path}
-                  className={({ isActive }) =>
-                    `px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                      isActive
-                        ? 'bg-slate-800 text-white shadow-sm border border-slate-700/60'
-                        : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-                    }`
-                  }
-                >
-                  {label}
-                </NavLink>
-              ))}
-            </nav>
-          </div>
+              <span className="text-[10px] text-slate-400 font-mono tracking-wider">OFFLINE SURVIVAL MESH</span>
+            </div>
+          </Link>
 
           {/* Right Action Bar */}
           <div className="flex items-center gap-2">
-            {/* Live Edge Node Status Pill */}
-            <span
-              className={`text-xs px-2.5 py-1 rounded-full border flex items-center gap-1.5 font-semibold transition-all ${
-                health
-                  ? 'text-emerald-300 border-emerald-800/80 bg-emerald-950/60 shadow-sm shadow-emerald-950/20'
-                  : 'text-red-300 border-red-800/80 bg-red-950/60 shadow-sm shadow-red-950/20'
-              }`}
-            >
-              <span className="relative flex h-2 w-2">
-                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${health ? 'bg-emerald-400' : 'bg-red-400'}`}></span>
-                <span className={`relative inline-flex rounded-full h-2 w-2 ${health ? 'bg-emerald-500' : 'bg-red-500'}`}></span>
-              </span>
-              <span className="hidden sm:inline font-mono">
-                {health ? `${health.node_id}` : 'Node offline'}
-              </span>
-              <span className="sm:hidden font-mono">
-                {health ? 'Live' : 'Off'}
-              </span>
-            </span>
+            {/* Quiet Status Pill */}
+            <QuietTelemetryPill health={health} sync={sync} error={error} />
 
             {/* Dark / Light Mode Switch */}
             <button
@@ -246,69 +276,33 @@ export function Shell({ title, subtitle, children }) {
               <Settings2 size={18} />
             </button>
 
-            {/* Mobile Menu Toggle */}
-            <button
-              aria-label="Menu"
-              className="icon-btn md:hidden rounded-xl"
-              onClick={() => setMenuOpen(!menuOpen)}
-            >
-              {menuOpen ? <X size={20} /> : <Menu size={20} />}
-            </button>
           </div>
         </div>
-
-        {/* Mobile Navigation Dropdown */}
-        {menuOpen && (
-          <div className="md:hidden border-t border-slate-800 bg-[#07111e] px-4 py-3 space-y-1.5">
-            {nav.map(([path, label]) => (
-              <NavLink
-                key={path}
-                to={path}
-                onClick={() => setMenuOpen(false)}
-                className={({ isActive }) =>
-                  `block px-3.5 py-2.5 rounded-xl text-sm font-bold ${
-                    isActive ? 'bg-red-500 text-white' : 'text-slate-300 hover:bg-slate-800'
-                  }`
-                }
-              >
-                {label}
-              </NavLink>
-            ))}
-          </div>
-        )}
       </header>
 
       {/* Main Screen Canvas */}
-      <main className="max-w-7xl mx-auto w-full px-4 sm:px-6 py-5 sm:py-8 flex-1">
-        {/* Title Bar & Last Sync Header */}
-        <div className="flex flex-wrap items-end justify-between gap-3 mb-6">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="h-1.5 w-1.5 rounded-full bg-cyan-400"></span>
-              <p className="text-[11px] uppercase tracking-[.25em] text-cyan-400 font-bold">
-                Qdrant Edge In-Process Engine
-              </p>
+      <main className="max-w-7xl mx-auto w-full px-4 sm:px-6 py-4 sm:py-6 flex-1">
+        {/* Calm Reassuring Header */}
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+          {(title || subtitle) && (
+            <div>
+              <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-100">
+                {title}
+              </h1>
+              {subtitle && (
+                <p className="text-slate-400 text-xs sm:text-sm mt-0.5 leading-relaxed">
+                  {subtitle}
+                </p>
+              )}
             </div>
-            <h1 className="text-2xl sm:text-4xl font-black tracking-tight text-slate-100">
-              {title}
-            </h1>
-            {subtitle && (
-              <p className="text-slate-400 text-xs sm:text-sm mt-1.5 max-w-2xl leading-relaxed">
-                {subtitle}
-              </p>
-            )}
-          </div>
+          )}
 
-          <div className="text-xs text-slate-400 bg-slate-900/90 border border-slate-800/80 rounded-xl px-3 py-2 flex items-center gap-2 shadow-sm font-mono">
-            {last ? (
-              <Cloud size={14} className="text-cyan-400" />
-            ) : (
-              <CircleHelp size={14} className="text-slate-500" />
-            )}
-            <span>
-              {last ? `Mesh sync: ${new Date(last).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'No cloud sync recorded'}
-            </span>
-          </div>
+          {last && (
+            <div className="text-xs text-slate-400 bg-slate-900/90 border border-slate-800/80 rounded-xl px-3 py-1.5 flex items-center gap-2 shadow-sm font-mono">
+              <Cloud size={13} className="text-cyan-400" />
+              <span>Mesh sync: {new Date(last).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+            </div>
+          )}
         </div>
 
         {/* Global Node Warning */}

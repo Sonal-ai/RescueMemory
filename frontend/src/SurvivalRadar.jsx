@@ -215,6 +215,12 @@ export default function SurvivalRadar({
     active_peers: 0
   };
 
+  const casualties = useMemo(() => items.filter((i) => i.category === 'casualty'), [items]);
+  const shelters = useMemo(() => items.filter((i) => i.category === 'shelter'), [items]);
+  const resources = useMemo(() => items.filter((i) => i.category === 'resource'), [items]);
+  const peers = useMemo(() => items.filter((i) => i.category === 'peer'), [items]);
+  const hazards = useMemo(() => items.filter((i) => i.category === 'hazard'), [items]);
+
   // Compute Active Target for Compass HUD:
   // Defaults to Nearest Casualty (from local Qdrant memory synced from central),
   // then falls back to Selected Target, then Nearest Shelter, then first item.
@@ -253,84 +259,71 @@ export default function SurvivalRadar({
   }, [isAligned, activeCompassTarget, lastHapticTime]);
 
   return (
-    <div className="flex flex-col gap-5 text-slate-100">
-      {/* Header & Tactical Scope Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900/90 border border-slate-800 rounded-3xl p-4 sm:p-5 shadow-2xl backdrop-blur-md">
-        <div className="flex items-center gap-3">
-          <div className="relative flex items-center justify-center w-12 h-12 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
-            <Radio className="w-6 h-6 animate-pulse" />
-            <span className="absolute -top-1 -right-1 flex h-3 w-3">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-3 w-3 bg-cyan-500"></span>
-            </span>
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-lg sm:text-xl font-black tracking-tight text-white uppercase">
-                Survival Radar & Compass HUD
-              </h2>
-              <span className="px-2 py-0.5 text-[10px] font-mono tracking-widest bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 rounded-full font-bold">
-                QDRANT RAG + SYNC
-              </span>
-            </div>
-            <p className="text-xs text-slate-400 font-mono">
-              Local memory retrieval · Proximity compass lock · Polar azimuth tracking
-            </p>
-          </div>
+    <div className="flex flex-col gap-4 text-slate-900 dark:text-slate-100">
+      {/* Calm Primary Navigation Toolbar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-white/90 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-2xl p-3 sm:p-4 shadow-sm backdrop-blur-md">
+        {/* Mode Switcher */}
+        <div className="flex bg-slate-100 dark:bg-slate-950 p-1 rounded-xl border border-slate-200 dark:border-slate-800">
+          <button
+            type="button"
+            onClick={() => {
+              setViewMode('compass');
+              if (summary.nearest_casualty) setSelectedTarget(summary.nearest_casualty);
+            }}
+            className={`px-3.5 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-all ${
+              viewMode === 'compass'
+                ? 'bg-red-500 text-white shadow-md shadow-red-500/25'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <Compass className="w-4 h-4 text-inherit" />
+            <span>Survivor Compass</span>
+            {summary.total_casualties > 0 && (
+              <span className="w-2 h-2 rounded-full bg-red-400 animate-pulse"></span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setViewMode('radar')}
+            className={`px-3.5 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-all ${
+              viewMode === 'radar'
+                ? 'bg-cyan-600 dark:bg-cyan-500 text-white dark:text-slate-950 shadow-md shadow-cyan-500/20'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <Radio className="w-4 h-4 text-inherit" />
+            <span>Polar Radar</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setViewMode('list')}
+            className={`px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+              viewMode === 'list'
+                ? 'bg-slate-800 text-white dark:bg-slate-700'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <Crosshair className="w-4 h-4 text-inherit" />
+            <span className="hidden sm:inline">Directory</span>
+            <span>({items.length})</span>
+          </button>
         </div>
 
-        {/* Action Controls & View Switcher */}
-        <div className="flex flex-wrap items-center gap-2">
-          {/* View Mode Segmented Switcher */}
-          <div className="flex bg-slate-950/90 p-1 rounded-2xl border border-slate-800 shadow-inner">
-            <button
-              type="button"
-              onClick={() => setViewMode('radar')}
-              className={`px-3 sm:px-3.5 py-1.5 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 transition-all ${
-                viewMode === 'radar'
-                  ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <Radio className="w-3.5 h-3.5" />
-              <span>Polar Radar</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setViewMode('compass');
-                if (summary.nearest_casualty) setSelectedTarget(summary.nearest_casualty);
-              }}
-              className={`px-3 sm:px-3.5 py-1.5 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 transition-all ${
-                viewMode === 'compass'
-                  ? 'bg-red-500 text-white shadow-md shadow-red-500/30'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <Compass className="w-3.5 h-3.5 text-red-400" />
-              <span>Survivor Compass</span>
-              {summary.total_casualties > 0 && (
-                <span className="w-2 h-2 rounded-full bg-red-400 animate-pulse"></span>
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setViewMode('list')}
-              className={`px-3 sm:px-3.5 py-1.5 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 transition-all ${
-                viewMode === 'list'
-                  ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <Crosshair className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Directory</span>
-              <span>({items.length})</span>
-            </button>
+        {/* Right side telemetry & quick actions */}
+        <div className="flex items-center gap-2">
+          {/* Compass Sensor Status Badge */}
+          <div className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 text-[11px] font-mono flex items-center gap-1.5">
+            <RotateCw className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
+            <span className="text-slate-700 dark:text-slate-300 font-bold">{String(currentHeading).padStart(3, '0')}°</span>
+            <span className="text-slate-400">|</span>
+            <span className={isCompassActive ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : 'text-amber-600 dark:text-amber-400'}>
+              {isCompassActive ? 'GYRO' : 'NORTH REF'}
+            </span>
           </div>
 
-          {/* Audio Ping Toggle */}
+          {/* Audio Chirp Toggle */}
           <button
             type="button"
             onClick={() => {
@@ -339,195 +332,114 @@ export default function SurvivalRadar({
               if (next) playChirp(900);
             }}
             aria-label="Toggle Radar Audio Ping"
-            className={`p-2 rounded-2xl border transition-all text-xs font-mono flex items-center gap-1.5 ${
+            className={`p-2 rounded-xl border transition-all text-xs font-mono flex items-center gap-1.5 ${
               audioEnabled
-                ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300 shadow-lg shadow-cyan-500/10'
-                : 'bg-slate-800/80 border-slate-700 text-slate-400 hover:text-white'
+                ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-600 dark:text-cyan-300'
+                : 'bg-slate-100 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400'
             }`}
           >
-            {audioEnabled ? <Volume2 className="w-4 h-4 text-cyan-400" /> : <VolumeX className="w-4 h-4" />}
-            <span className="hidden md:inline">{audioEnabled ? 'PING' : 'MUTE'}</span>
+            {audioEnabled ? <Volume2 className="w-4 h-4 text-cyan-500" /> : <VolumeX className="w-4 h-4" />}
+            <span className="hidden md:inline">{audioEnabled ? 'SOUND' : 'MUTE'}</span>
           </button>
 
-          {/* Sweep Refresh */}
+          {/* Refresh / Sync */}
           <button
             type="button"
             onClick={fetchRadar}
             disabled={loading}
-            className="p-2 rounded-2xl bg-slate-800/80 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white transition-all text-xs font-mono flex items-center gap-1.5"
+            aria-label="Refresh Radar Data"
+            className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800/80 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 transition-all text-xs font-mono flex items-center gap-1.5"
           >
-            <RefreshCw className={`w-4 h-4 text-cyan-400 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-4 h-4 text-cyan-600 dark:text-cyan-400 ${loading ? 'animate-spin' : ''}`} />
             <span className="hidden md:inline">SYNC</span>
           </button>
         </div>
       </div>
 
-      {/* KPI Triage Banners */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div
-          onClick={() => {
-            if (summary.nearest_casualty) {
-              setSelectedTarget(summary.nearest_casualty);
-              setViewMode('compass');
-            }
-          }}
-          className="bg-red-950/30 border border-red-800/50 rounded-2xl p-3 sm:p-4 backdrop-blur-sm cursor-pointer hover:border-red-500/80 transition-all"
-        >
-          <div className="flex items-center justify-between text-xs text-red-400 font-mono font-bold uppercase tracking-wider mb-1">
-            <span>Nearest Survivor</span>
-            <HeartPulse className="w-4 h-4 text-red-500 animate-pulse" />
-          </div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-2xl sm:text-3xl font-black text-red-200">
-              {summary.nearest_casualty ? `${summary.nearest_casualty.distance_m}m` : '0'}
-            </span>
-            {summary.urgent_casualties > 0 && (
-              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-500 text-white animate-pulse">
-                {summary.urgent_casualties} URGENT
-              </span>
-            )}
-          </div>
-          <div className="text-[11px] text-red-300/80 font-mono mt-0.5 flex items-center gap-1">
-            <Compass className="w-3 h-3 text-red-400" />
-            <span>
-              {summary.nearest_casualty ? `${summary.nearest_casualty.cardinal} (${String(summary.nearest_casualty.bearing_deg).padStart(3, '0')}°) · Tap for Compass` : 'No casualties in range'}
-            </span>
-          </div>
-        </div>
-
-        <div
-          onClick={() => {
-            if (summary.nearest_shelter) {
-              setSelectedTarget(summary.nearest_shelter);
-              setViewMode('compass');
-            }
-          }}
-          className="bg-emerald-950/30 border border-emerald-800/50 rounded-2xl p-3 sm:p-4 backdrop-blur-sm cursor-pointer hover:border-emerald-500/80 transition-all"
-        >
-          <div className="flex items-center justify-between text-xs text-emerald-400 font-mono font-bold uppercase tracking-wider mb-1">
-            <span>Safe Shelter</span>
-            <ShieldCheck className="w-4 h-4 text-emerald-500" />
-          </div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-2xl sm:text-3xl font-black text-emerald-200">
-              {summary.operational_shelters}
-            </span>
-            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-              ACTIVE
-            </span>
-          </div>
-          <div className="text-[11px] text-emerald-300/80 font-mono mt-0.5 truncate flex items-center gap-1">
-            <Compass className="w-3 h-3 text-emerald-400" />
-            <span>
-              {summary.nearest_shelter ? `${summary.nearest_shelter.distance_m}m · ${summary.nearest_shelter.cardinal}` : 'None in range'}
-            </span>
-          </div>
-        </div>
-
-        <div className="bg-amber-950/30 border border-amber-800/50 rounded-2xl p-3 sm:p-4 backdrop-blur-sm">
-          <div className="flex items-center justify-between text-xs text-amber-400 font-mono font-bold uppercase tracking-wider mb-1">
-            <span>Wi-Fi / Mesh</span>
-            <Wifi className="w-4 h-4 text-amber-500" />
-          </div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-2xl sm:text-3xl font-black text-amber-200">
-              {summary.active_peers}
-            </span>
-            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">
-              DIRECT
-            </span>
-          </div>
-          <div className="text-[11px] text-amber-300/80 font-mono mt-0.5">
-            Decentralized Hotspots
-          </div>
-        </div>
-
-        <div className="bg-cyan-950/30 border border-cyan-800/50 rounded-2xl p-3 sm:p-4 backdrop-blur-sm">
-          <div className="flex items-center justify-between text-xs text-cyan-400 font-mono font-bold uppercase tracking-wider mb-1">
-            <span>Radar Scale</span>
-            <Navigation className="w-4 h-4 text-cyan-500" />
-          </div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-2xl sm:text-3xl font-black text-cyan-200">
-              {(rangeMeters / 1000).toFixed(1)}
-            </span>
-            <span className="text-xs font-mono text-cyan-300">KM</span>
-          </div>
-          <div className="text-[11px] text-cyan-300/80 font-mono mt-0.5 truncate">
-            Origin: {userLocation.lat.toFixed(4)}, {userLocation.lon.toFixed(4)}
-          </div>
-        </div>
-      </div>
-
       {/* ========================================================================= */}
-      {/* MODE 1: SURVIVOR COMPASS HUD (Dynamic 360° Vector Pointing Directly at Survivor) */}
+      {/* MODE 1: SURVIVOR COMPASS HUD (Dynamic 360° Vector Pointing Directly at Destination) */}
       {/* ========================================================================= */}
       {viewMode === 'compass' && (
-        <div className="flex flex-col gap-5">
-          {/* Compass Steering Banner */}
-          <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 shadow-2xl">
-            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-red-500/20 text-red-400 border border-red-500/30">
-                  <Compass className="w-5 h-5 animate-pulse" />
+        <div className="flex flex-col gap-4">
+          {/* Destination Dropdown Selector (Ergonomic for stress/panic) */}
+          <div className="bg-white/90 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-2xl p-3 sm:p-4 shadow-sm">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <div className="p-2 rounded-xl bg-red-500/10 text-red-500 shrink-0">
+                  <Navigation className="w-5 h-5" />
                 </div>
-                <div>
-                  <h3 className="text-base font-black text-white uppercase tracking-tight flex items-center gap-2">
-                    <span>Emergency Compass Vector Lock</span>
-                    {activeCompassTarget?.category === 'casualty' && (
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-red-500 text-white font-bold animate-pulse">
-                        NEAREST CASUALTY LOCKED
-                      </span>
+                <div className="min-w-0 flex-1">
+                  <label htmlFor="compass-target-select" className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                    Select Navigation Destination ({items.length} in range)
+                  </label>
+                  <select
+                    id="compass-target-select"
+                    value={activeCompassTarget?.id || ''}
+                    onChange={(e) => {
+                      const tgt = items.find((i) => i.id === e.target.value);
+                      if (tgt) setSelectedTarget(tgt);
+                    }}
+                    className="w-full font-bold text-sm bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-xl px-3 py-2 outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/20"
+                  >
+                    {casualties.length > 0 && (
+                      <optgroup label="🚨 Casualties (SOS Needs Help)">
+                        {casualties.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name} — {c.distance_m}m ({c.cardinal} · {String(c.bearing_deg).padStart(3, '0')}°)
+                          </option>
+                        ))}
+                      </optgroup>
                     )}
-                  </h3>
-                  <p className="text-xs text-slate-400 font-mono">
-                    Retrieved from local Qdrant memory (synced from central HQ). Needle points straight at the survivor.
-                  </p>
+                    {shelters.length > 0 && (
+                      <optgroup label="🛡️ Safe Shelters & Clinics">
+                        {shelters.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name} — {s.distance_m}m ({s.cardinal} · {String(s.bearing_deg).padStart(3, '0')}°)
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {resources.length > 0 && (
+                      <optgroup label="💧 Water & Supplies">
+                        {resources.map((r) => (
+                          <option key={r.id} value={r.id}>
+                            {r.name} — {r.distance_m}m ({r.cardinal} · {String(r.bearing_deg).padStart(3, '0')}°)
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {peers.length > 0 && (
+                      <optgroup label="📶 Mesh Nodes & Volunteers">
+                        {peers.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name} — {p.distance_m}m ({p.cardinal} · {String(p.bearing_deg).padStart(3, '0')}°)
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {hazards.length > 0 && (
+                      <optgroup label="⚠️ Hazards to Avoid">
+                        {hazards.map((h) => (
+                          <option key={h.id} value={h.id}>
+                            {h.name} — {h.distance_m}m ({h.cardinal} · {String(h.bearing_deg).padStart(3, '0')}°)
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
                 </div>
               </div>
 
-              {/* Compass Telemetry / Device Sensor Pill */}
-              <div className="flex items-center gap-2">
-                <div className="px-3 py-1.5 rounded-xl bg-slate-950/80 border border-slate-800 text-[11px] font-mono text-cyan-400 flex items-center gap-1.5">
-                  <RotateCw className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>HEADING: {String(currentHeading).padStart(3, '0')}°</span>
-                  <span className="text-slate-500">|</span>
-                  <span className={isCompassActive ? 'text-emerald-400' : 'text-amber-400'}>
-                    {isCompassActive ? 'GYRO ACTIVE' : 'NORTH REF'}
-                  </span>
+              {activeCompassTarget?.category === 'casualty' && (
+                <div className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-400 text-xs font-bold">
+                  <span className="w-2 h-2 rounded-full bg-red-500 animate-ping"></span>
+                  <span>SOS Lock Active</span>
                 </div>
-              </div>
+              )}
             </div>
+          </div>
 
-            {/* Target Switcher Chips */}
-            <div className="flex items-center gap-2 overflow-x-auto pb-2 mb-4 no-scrollbar">
-              <span className="text-xs font-mono text-slate-400 uppercase font-bold shrink-0">Track:</span>
-              {items
-                .filter((i) => i.category === 'casualty' || i.category === 'shelter')
-                .slice(0, 5)
-                .map((tgt) => {
-                  const isCur = activeCompassTarget?.id === tgt.id;
-                  const isCas = tgt.category === 'casualty';
-                  return (
-                    <button
-                      key={tgt.id}
-                      type="button"
-                      onClick={() => setSelectedTarget(tgt)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold whitespace-nowrap transition-all flex items-center gap-1.5 border ${
-                        isCur
-                          ? isCas
-                            ? 'bg-red-500 text-white border-red-600 shadow-md shadow-red-500/30'
-                            : 'bg-emerald-500 text-slate-950 border-emerald-600 shadow-md'
-                          : 'bg-slate-800/80 text-slate-300 border-slate-700 hover:text-white'
-                      }`}
-                    >
-                      {isCas ? <HeartPulse className="w-3.5 h-3.5" /> : <ShieldCheck className="w-3.5 h-3.5" />}
-                      <span>{tgt.name}</span>
-                      <span className="text-[10px] opacity-80">({tgt.distance_m}m)</span>
-                    </button>
-                  );
-                })}
-            </div>
+          <div className="bg-white/90 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 shadow-lg">
 
             {/* Main Compass Dial & Target Navigation Display */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
@@ -749,82 +661,115 @@ export default function SurvivalRadar({
                 )}
               </div>
 
-              {/* Locked Survivor Details & Provenance Card */}
+              {/* Locked Destination Details & Provenance Card */}
               <div className="lg:col-span-6 flex flex-col gap-3.5">
                 {activeCompassTarget ? (
-                  <div className="bg-slate-950/80 border-2 border-red-500/60 rounded-3xl p-5 shadow-2xl relative overflow-hidden">
+                  <div className={`rounded-3xl p-5 shadow-xl relative overflow-hidden border-2 transition-all ${
+                    activeCompassTarget.category === 'casualty'
+                      ? 'bg-red-500/5 dark:bg-slate-950/80 border-red-500/60 shadow-red-500/10'
+                      : activeCompassTarget.category === 'shelter'
+                      ? 'bg-emerald-500/5 dark:bg-slate-950/80 border-emerald-500/60 shadow-emerald-500/10'
+                      : 'bg-cyan-500/5 dark:bg-slate-950/80 border-cyan-500/60 shadow-cyan-500/10'
+                  }`}>
                     {/* Corner Tag */}
-                    <div className="absolute top-0 right-0 px-3 py-1 bg-red-500/20 text-red-300 font-mono text-[10px] font-black tracking-widest uppercase rounded-bl-xl border-l border-b border-red-500/40">
+                    <div className="absolute top-0 right-0 px-3 py-1 bg-slate-900/80 text-cyan-300 dark:text-cyan-400 font-mono text-[10px] font-black tracking-widest uppercase rounded-bl-xl border-l border-b border-slate-700/60">
                       AZIMUTH {String(activeCompassTarget.bearing_deg).padStart(3, '0')}° · {activeCompassTarget.cardinal}
                     </div>
 
                     <div className="flex items-start gap-3.5 mb-3">
-                      <div className="p-3 rounded-2xl bg-red-500/20 text-red-400 border border-red-500/40 flex items-center justify-center">
-                        <HeartPulse className="w-7 h-7 animate-pulse" />
+                      <div className={`p-3 rounded-2xl flex items-center justify-center shrink-0 ${
+                        activeCompassTarget.category === 'casualty'
+                          ? 'bg-red-500/20 text-red-500 border border-red-500/40'
+                          : activeCompassTarget.category === 'shelter'
+                          ? 'bg-emerald-500/20 text-emerald-500 border border-emerald-500/40'
+                          : 'bg-cyan-500/20 text-cyan-500 border border-cyan-500/40'
+                      }`}>
+                        {activeCompassTarget.category === 'casualty' ? (
+                          <HeartPulse className="w-7 h-7 animate-pulse" />
+                        ) : activeCompassTarget.category === 'shelter' ? (
+                          <ShieldCheck className="w-7 h-7" />
+                        ) : activeCompassTarget.category === 'peer' ? (
+                          <Wifi className="w-7 h-7" />
+                        ) : (
+                          <Droplets className="w-7 h-7" />
+                        )}
                       </div>
                       <div className="flex-1 min-w-0 pr-10">
                         <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-black font-mono px-2 py-0.5 rounded-full bg-red-500 text-white uppercase tracking-wider">
+                          <span className={`text-[10px] font-bold font-mono px-2 py-0.5 rounded-full uppercase ${
+                            activeCompassTarget.triage_level === 'immediate_red'
+                              ? 'bg-red-500 text-white animate-pulse'
+                              : activeCompassTarget.triage_level === 'safe_green'
+                              ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 border border-emerald-500/40'
+                              : 'bg-cyan-500/20 text-cyan-600 dark:text-cyan-300 border border-cyan-500/40'
+                          }`}>
                             {activeCompassTarget.triage_level.replace('_', ' ')}
                           </span>
-                          <span className="text-[10px] font-mono text-slate-400">
+                          <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400">
                             ID: {activeCompassTarget.id}
                           </span>
                         </div>
-                        <h3 className="text-lg font-black text-white truncate mt-1">
+                        <h3 className="text-lg font-black text-slate-900 dark:text-white truncate mt-1">
                           {activeCompassTarget.name}
                         </h3>
                       </div>
                     </div>
 
                     {/* Navigation Telemetry Matrix */}
-                    <div className="grid grid-cols-3 gap-2 bg-slate-900/80 p-3 rounded-2xl border border-slate-800 text-center font-mono mb-3">
+                    <div className="grid grid-cols-3 gap-2 bg-slate-100 dark:bg-slate-900/80 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 text-center font-mono mb-3">
                       <div>
-                        <div className="text-[10px] text-slate-400 uppercase">Exact Range</div>
-                        <div className="text-base font-black text-cyan-300">{activeCompassTarget.distance_m} m</div>
+                        <div className="text-[10px] text-slate-500 dark:text-slate-400 uppercase font-semibold">Exact Range</div>
+                        <div className="text-base font-black text-slate-900 dark:text-cyan-300">{activeCompassTarget.distance_m} m</div>
                       </div>
                       <div>
-                        <div className="text-[10px] text-slate-400 uppercase">Bearing</div>
-                        <div className="text-base font-black text-cyan-300">
+                        <div className="text-[10px] text-slate-500 dark:text-slate-400 uppercase font-semibold">Bearing</div>
+                        <div className="text-base font-black text-slate-900 dark:text-cyan-300">
                           {String(activeCompassTarget.bearing_deg).padStart(3, '0')}° {activeCompassTarget.cardinal}
                         </div>
                       </div>
                       <div>
-                        <div className="text-[10px] text-slate-400 uppercase">Walking Pace</div>
-                        <div className="text-base font-black text-cyan-300">~{activeCompassTarget.walk_time_min} min</div>
+                        <div className="text-[10px] text-slate-500 dark:text-slate-400 uppercase font-semibold">Walking Pace</div>
+                        <div className="text-base font-black text-slate-900 dark:text-cyan-300">~{activeCompassTarget.walk_time_min} min</div>
                       </div>
                     </div>
 
                     {/* Survivor Condition / Observation Text */}
-                    <div className="bg-slate-900/60 p-3.5 rounded-2xl border border-slate-800/80 text-xs text-slate-200 leading-relaxed mb-3">
-                      <div className="text-[10px] font-mono text-red-400 uppercase font-bold mb-1 flex items-center gap-1.5">
-                        <AlertOctagon className="w-3.5 h-3.5" />
-                        <span>Casualty Condition & Triage Need:</span>
+                    {activeCompassTarget.text && (
+                      <div className="bg-slate-50 dark:bg-slate-900/60 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800/80 text-xs leading-relaxed mb-3">
+                        <div className="text-[10px] font-mono text-slate-500 dark:text-slate-400 uppercase font-bold mb-1 flex items-center gap-1.5">
+                          <AlertOctagon className="w-3.5 h-3.5 text-red-500" />
+                          <span>Condition & Situation Details:</span>
+                        </div>
+                        <p className="font-medium text-slate-800 dark:text-slate-100">{activeCompassTarget.text}</p>
                       </div>
-                      <p className="font-medium text-slate-100">{activeCompassTarget.text}</p>
-                    </div>
+                    )}
 
-                    {/* RAG Retrieval & Sync Provenance Box */}
-                    <div className="bg-[#07111e] p-3 rounded-2xl border border-cyan-900/40 text-[11px] font-mono text-slate-300 space-y-1 mb-4">
-                      <div className="text-[10px] text-cyan-400 font-bold uppercase tracking-wider flex items-center gap-1.5">
-                        <Zap className="w-3.5 h-3.5 text-cyan-400" />
-                        <span>Local Memory & Central Sync Provenance:</span>
+                    {/* RAG Retrieval & Sync Provenance Accordion (Intelligently Hidden for Stress Reduction) */}
+                    <details className="group rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 p-3 mb-3">
+                      <summary className="cursor-pointer text-xs font-mono text-cyan-700 dark:text-cyan-400 font-bold flex items-center justify-between select-none list-none">
+                        <div className="flex items-center gap-1.5">
+                          <Zap className="w-3.5 h-3.5 text-cyan-500" />
+                          <span>Technical Verification & Qdrant Provenance</span>
+                        </div>
+                        <ChevronDown className="w-4 h-4 transition-transform group-open:rotate-180" />
+                      </summary>
+                      <div className="mt-3 space-y-1.5 text-[11px] font-mono border-t border-slate-200 dark:border-slate-800 pt-2 text-slate-600 dark:text-slate-400">
+                        <div className="flex justify-between">
+                          <span>Vector Engine:</span>
+                          <strong className="text-cyan-700 dark:text-cyan-300">Qdrant Edge In-Process HNSW</strong>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Origin Node:</span>
+                          <strong className="text-slate-800 dark:text-slate-200">{activeCompassTarget.origin_device || 'Survivor Local SOS'}</strong>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>GPS Coordinates:</span>
+                          <strong className="text-slate-800 dark:text-slate-200">
+                            {activeCompassTarget.location?.lat?.toFixed(5)}, {activeCompassTarget.location?.lon?.toFixed(5)}
+                          </strong>
+                        </div>
                       </div>
-                      <div className="flex justify-between text-slate-400">
-                        <span>Retrieved via:</span>
-                        <strong className="text-cyan-300">Qdrant Edge HNSW (GeoRadius)</strong>
-                      </div>
-                      <div className="flex justify-between text-slate-400">
-                        <span>Origin Device:</span>
-                        <strong className="text-slate-200">{activeCompassTarget.origin_device || 'Survivor Local SOS'}</strong>
-                      </div>
-                      <div className="flex justify-between text-slate-400">
-                        <span>Coordinates:</span>
-                        <strong className="text-slate-200">
-                          {activeCompassTarget.location?.lat?.toFixed(5)}, {activeCompassTarget.location?.lon?.toFixed(5)}
-                        </strong>
-                      </div>
-                    </div>
+                    </details>
 
                     {/* Compass Actions */}
                     <div className="flex items-center gap-2">
@@ -832,7 +777,7 @@ export default function SurvivalRadar({
                         <button
                           type="button"
                           onClick={() => onNavigateTarget(activeCompassTarget)}
-                          className="flex-1 py-3 px-4 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs font-mono uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-cyan-500/20 transition-all"
+                          className="flex-1 py-3 px-4 rounded-xl bg-cyan-600 hover:bg-cyan-500 dark:bg-cyan-500 dark:hover:bg-cyan-400 text-white dark:text-slate-950 font-bold text-xs font-mono uppercase tracking-wider flex items-center justify-center gap-2 shadow-md transition-all"
                         >
                           <Navigation className="w-4 h-4" />
                           <span>View on Grid Map</span>
@@ -841,15 +786,15 @@ export default function SurvivalRadar({
                       <button
                         type="button"
                         onClick={() => setViewMode('radar')}
-                        className="py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-mono text-xs uppercase"
+                        className="py-3 px-4 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-mono text-xs font-bold uppercase transition-all"
                       >
-                        Return to Radar
+                        Radar Scope
                       </button>
                     </div>
                   </div>
                 ) : (
-                  <div className="bg-slate-950/60 border border-slate-800 rounded-3xl p-8 text-center text-slate-400 font-mono text-xs">
-                    No active targets available in memory. Trigger a scan or sync from central.
+                  <div className="bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-3xl p-8 text-center text-slate-500 dark:text-slate-400 font-mono text-xs">
+                    No active targets available in local memory. Trigger a sync from central.
                   </div>
                 )}
               </div>
@@ -870,20 +815,20 @@ export default function SurvivalRadar({
                 setSelectedTarget(summary.nearest_casualty);
                 setViewMode('compass');
               }}
-              className="bg-red-950/40 hover:bg-red-900/50 border border-red-700/60 rounded-2xl p-3 sm:p-4 flex items-center justify-between gap-3 cursor-pointer shadow-lg transition-all"
+              className="bg-red-500/10 hover:bg-red-500/15 dark:bg-red-950/40 dark:hover:bg-red-900/50 border border-red-300 dark:border-red-700/60 rounded-2xl p-3 sm:p-4 flex items-center justify-between gap-3 cursor-pointer shadow-sm transition-all"
             >
               <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-xl bg-red-500/20 text-red-400 border border-red-500/40">
+                <div className="p-2.5 rounded-xl bg-red-500/20 text-red-500 border border-red-500/40">
                   <Compass className="w-5 h-5 animate-pulse" />
                 </div>
                 <div>
-                  <div className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-1.5">
+                  <div className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-1.5">
                     <span>Nearest Survivor Lock Available: {summary.nearest_casualty.name}</span>
                     <span className="text-[10px] px-1.5 py-0.2 rounded bg-red-500 text-white font-bold animate-pulse">
                       SOS
                     </span>
                   </div>
-                  <p className="text-[11px] text-red-200/80 font-mono mt-0.5">
+                  <p className="text-[11px] text-red-700 dark:text-red-200/80 font-mono mt-0.5">
                     {summary.nearest_casualty.distance_m}m away · Bearing {String(summary.nearest_casualty.bearing_deg).padStart(3, '0')}° {summary.nearest_casualty.cardinal} · Tap to engage 360° Compass Needle
                   </p>
                 </div>
@@ -898,7 +843,7 @@ export default function SurvivalRadar({
           )}
 
           {/* Filter and Range Controls */}
-          <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900/60 p-3 rounded-2xl border border-slate-800">
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-white/90 dark:bg-slate-900/60 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
             {/* Category Pills */}
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 max-w-full no-scrollbar">
               {CATEGORIES.map((cat) => {
@@ -911,11 +856,11 @@ export default function SurvivalRadar({
                     onClick={() => setCategory(cat.id)}
                     className={`px-3 py-2 rounded-xl text-xs font-bold font-mono whitespace-nowrap transition-all flex items-center gap-1.5 ${
                       isAct
-                        ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20'
-                        : 'bg-slate-800/90 text-slate-300 hover:text-white border border-slate-700/60'
+                        ? 'bg-cyan-600 dark:bg-cyan-500 text-white dark:text-slate-950 shadow-md shadow-cyan-500/20'
+                        : 'bg-slate-100 dark:bg-slate-800/90 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-slate-700/60'
                     }`}
                   >
-                    <Icon className={`w-3.5 h-3.5 ${isAct ? 'text-slate-950' : 'text-cyan-400'}`} />
+                    <Icon className={`w-3.5 h-3.5 ${isAct ? 'text-white dark:text-slate-950' : 'text-cyan-600 dark:text-cyan-400'}`} />
                     <span>{cat.label}</span>
                   </button>
                 );
@@ -923,8 +868,8 @@ export default function SurvivalRadar({
             </div>
 
             {/* Range Selector */}
-            <div className="flex items-center gap-1 bg-slate-950/80 p-1 rounded-xl border border-slate-800">
-              <span className="text-[11px] font-mono text-slate-400 px-2 font-bold uppercase">Range:</span>
+            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-950/80 p-1 rounded-xl border border-slate-200 dark:border-slate-800">
+              <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 px-2 font-bold uppercase">Range:</span>
               {RANGES.map((rng) => (
                 <button
                   key={rng.value}
@@ -932,8 +877,8 @@ export default function SurvivalRadar({
                   onClick={() => setRangeMeters(rng.value)}
                   className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition-all ${
                     rangeMeters === rng.value
-                      ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50'
-                      : 'text-slate-400 hover:text-slate-200'
+                      ? 'bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 border border-cyan-500/50'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                   }`}
                 >
                   {rng.label}
@@ -1227,21 +1172,21 @@ export default function SurvivalRadar({
             <div className="lg:col-span-6 flex flex-col gap-4">
               {/* Active Target Inspector Card (if any selected) */}
               {selectedTarget ? (
-                <div className="bg-slate-900/95 border-2 border-cyan-500/60 rounded-3xl p-5 shadow-2xl relative overflow-hidden">
-                  <div className="absolute top-0 right-0 px-3 py-1 bg-cyan-500/20 text-cyan-300 font-mono text-[10px] font-black tracking-widest uppercase rounded-bl-xl border-l border-b border-cyan-500/40">
+                <div className="bg-white/95 dark:bg-slate-900/95 border-2 border-cyan-500/60 rounded-3xl p-5 shadow-xl relative overflow-hidden">
+                  <div className="absolute top-0 right-0 px-3 py-1 bg-cyan-500/15 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 font-mono text-[10px] font-black tracking-widest uppercase rounded-bl-xl border-l border-b border-cyan-500/40">
                     TARGET LOCKED · AZIMUTH {String(selectedTarget.bearing_deg).padStart(3, '0')}° {selectedTarget.cardinal}
                   </div>
 
                   <div className="flex items-start gap-3.5 mb-3">
                     <div
-                      className={`p-3 rounded-2xl flex items-center justify-center ${
+                      className={`p-3 rounded-2xl flex items-center justify-center shrink-0 ${
                         selectedTarget.category === 'casualty'
-                          ? 'bg-red-500/20 text-red-400 border border-red-500/40'
+                          ? 'bg-red-500/20 text-red-500 border border-red-500/40'
                           : selectedTarget.category === 'shelter'
-                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                          ? 'bg-emerald-500/20 text-emerald-500 border border-emerald-500/40'
                           : selectedTarget.category === 'peer'
-                          ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
-                          : 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/40'
+                          ? 'bg-amber-500/20 text-amber-500 border border-amber-500/40'
+                          : 'bg-cyan-500/20 text-cyan-500 border border-cyan-500/40'
                       }`}
                     >
                       {selectedTarget.category === 'casualty' ? (
@@ -1262,39 +1207,39 @@ export default function SurvivalRadar({
                             selectedTarget.triage_level === 'immediate_red'
                               ? 'bg-red-500 text-white animate-pulse'
                               : selectedTarget.triage_level === 'safe_green'
-                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                              : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+                              ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/40'
+                              : 'bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 border border-cyan-500/40'
                           }`}
                         >
                           {selectedTarget.triage_level.replace('_', ' ')}
                         </span>
-                        <span className="text-[10px] font-mono text-slate-400">
+                        <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400">
                           ID: {selectedTarget.id}
                         </span>
                       </div>
-                      <h3 className="text-lg font-black text-white truncate mt-1">
+                      <h3 className="text-lg font-black text-slate-900 dark:text-white truncate mt-1">
                         {selectedTarget.name}
                       </h3>
                     </div>
                   </div>
 
                   {/* Polar Navigation Coordinates Grid */}
-                  <div className="grid grid-cols-3 gap-2 bg-slate-950/70 p-3 rounded-2xl border border-slate-800/80 mb-3 font-mono text-center">
+                  <div className="grid grid-cols-3 gap-2 bg-slate-50 dark:bg-slate-950/70 p-3 rounded-2xl border border-slate-200 dark:border-slate-800/80 mb-3 font-mono text-center">
                     <div>
-                      <div className="text-[10px] text-slate-400 uppercase">Distance</div>
-                      <div className="text-base font-black text-cyan-300">
+                      <div className="text-[10px] text-slate-500 dark:text-slate-400 uppercase font-semibold">Distance</div>
+                      <div className="text-base font-black text-slate-900 dark:text-cyan-300">
                         {selectedTarget.distance_m} m
                       </div>
                     </div>
                     <div>
-                      <div className="text-[10px] text-slate-400 uppercase">Bearing</div>
-                      <div className="text-base font-black text-cyan-300">
+                      <div className="text-[10px] text-slate-500 dark:text-slate-400 uppercase font-semibold">Bearing</div>
+                      <div className="text-base font-black text-slate-900 dark:text-cyan-300">
                         {String(selectedTarget.bearing_deg).padStart(3, '0')}° {selectedTarget.cardinal}
                       </div>
                     </div>
                     <div>
-                      <div className="text-[10px] text-slate-400 uppercase">Est. Walk</div>
-                      <div className="text-base font-black text-cyan-300">
+                      <div className="text-[10px] text-slate-500 dark:text-slate-400 uppercase font-semibold">Est. Walk</div>
+                      <div className="text-base font-black text-slate-900 dark:text-cyan-300">
                         ~{selectedTarget.walk_time_min} min
                       </div>
                     </div>
@@ -1302,8 +1247,8 @@ export default function SurvivalRadar({
 
                   {/* Observation / Details Text */}
                   {selectedTarget.text && (
-                    <div className="bg-slate-950/40 p-3 rounded-xl border border-slate-800 text-xs text-slate-300 leading-relaxed mb-3">
-                      <div className="text-[10px] font-mono text-slate-400 uppercase mb-1 font-bold">Observation Record:</div>
+                    <div className="bg-slate-50 dark:bg-slate-950/40 p-3 rounded-xl border border-slate-200 dark:border-slate-800 text-xs text-slate-700 dark:text-slate-300 leading-relaxed mb-3">
+                      <div className="text-[10px] font-mono text-slate-500 dark:text-slate-400 uppercase mb-1 font-bold">Observation Record:</div>
                       {selectedTarget.text}
                     </div>
                   )}
@@ -1313,7 +1258,7 @@ export default function SurvivalRadar({
                     <button
                       type="button"
                       onClick={() => setViewMode('compass')}
-                      className="flex-1 py-3 px-4 rounded-xl bg-red-500 hover:bg-red-400 text-white font-black text-xs font-mono uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-red-500/20 transition-all"
+                      className="flex-1 py-3 px-4 rounded-xl bg-red-500 hover:bg-red-600 text-white font-black text-xs font-mono uppercase tracking-wider flex items-center justify-center gap-2 shadow-md transition-all"
                     >
                       <Compass className="w-4 h-4" />
                       <span>Lock 360° Compass</span>
@@ -1322,7 +1267,7 @@ export default function SurvivalRadar({
                       <button
                         type="button"
                         onClick={() => onNavigateTarget(selectedTarget)}
-                        className="py-3 px-4 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs font-mono uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg"
+                        className="py-3 px-4 rounded-xl bg-cyan-600 hover:bg-cyan-500 dark:bg-cyan-500 dark:hover:bg-cyan-400 text-white dark:text-slate-950 font-black text-xs font-mono uppercase tracking-wider flex items-center justify-center gap-2 shadow-md transition-all"
                       >
                         <Navigation className="w-4 h-4" />
                         <span>Map</span>
@@ -1331,36 +1276,36 @@ export default function SurvivalRadar({
                     <button
                       type="button"
                       onClick={() => setSelectedTarget(null)}
-                      className="py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-mono text-xs uppercase"
+                      className="py-3 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-mono text-xs font-bold uppercase transition-all"
                     >
                       Dismiss
                     </button>
                   </div>
                 </div>
               ) : (
-                <div className="bg-slate-900/40 border border-slate-800/80 rounded-3xl p-4 text-center">
-                  <p className="text-xs text-slate-400 font-mono">
+                <div className="bg-white/60 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800/80 rounded-3xl p-4 text-center">
+                  <p className="text-xs text-slate-500 dark:text-slate-400 font-mono">
                     Click any blip on the polar radar scope to lock on, or switch to the Survivor Compass HUD.
                   </p>
                 </div>
               )}
 
               {/* Tactical Target Directory List */}
-              <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-4 sm:p-5 shadow-2xl flex flex-col gap-3">
+              <div className="bg-white/90 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-3xl p-4 sm:p-5 shadow-xl flex flex-col gap-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <Crosshair className="w-4 h-4 text-cyan-400" />
-                    <h3 className="text-sm font-black text-white font-mono uppercase tracking-wider">
+                    <Crosshair className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">
                       Proximity Target Directory ({items.length})
                     </h3>
                   </div>
-                  <span className="text-[11px] font-mono text-slate-400">
+                  <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
                     Sorted by closest
                   </span>
                 </div>
 
                 {items.length === 0 ? (
-                  <div className="py-12 text-center text-slate-500 font-mono text-xs">
+                  <div className="py-12 text-center text-slate-400 font-mono text-xs">
                     No signal tracks detected in {rangeMeters}m radius for category &apos;{category}&apos;.
                   </div>
                 ) : (
@@ -1377,20 +1322,20 @@ export default function SurvivalRadar({
                           onClick={() => handleSelectBlip(item)}
                           className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
                             isSelected
-                              ? 'bg-cyan-950/40 border-cyan-500/80 shadow-md shadow-cyan-500/10'
-                              : 'bg-slate-950/60 hover:bg-slate-800/80 border-slate-800/80'
+                              ? 'bg-cyan-500/10 dark:bg-cyan-950/40 border-cyan-500/80 shadow-md shadow-cyan-500/10'
+                              : 'bg-slate-50 dark:bg-slate-950/60 hover:bg-slate-100 dark:hover:bg-slate-800/80 border-slate-200 dark:border-slate-800/80'
                           }`}
                         >
                           <div className="flex items-center gap-3 min-w-0">
                             <div
                               className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
                                 isCasualty
-                                  ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                                  ? 'bg-red-500/20 text-red-500 border border-red-500/30'
                                   : isShelter
-                                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                  ? 'bg-emerald-500/20 text-emerald-500 border border-emerald-500/30'
                                   : isPeer
-                                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                                  : 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
+                                  ? 'bg-amber-500/20 text-amber-500 border border-amber-500/30'
+                                  : 'bg-cyan-500/20 text-cyan-500 border border-cyan-500/30'
                               }`}
                             >
                               {isCasualty ? (
@@ -1406,16 +1351,16 @@ export default function SurvivalRadar({
 
                             <div className="min-w-0">
                               <div className="flex items-center gap-1.5">
-                                <span className="text-xs font-black text-white truncate">
+                                <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
                                   {item.name}
                                 </span>
                                 {item.triage_level === 'immediate_red' && (
-                                  <span className="text-[9px] font-bold px-1 py-0.2 rounded bg-red-500 text-white shrink-0">
+                                  <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-red-500 text-white shrink-0">
                                     URGENT
                                   </span>
                                 )}
                               </div>
-                              <div className="text-[11px] font-mono text-slate-400 truncate mt-0.5">
+                              <div className="text-[11px] font-mono text-slate-500 dark:text-slate-400 truncate mt-0.5">
                                 {item.text || `${item.category.toUpperCase()} signal track`}
                               </div>
                             </div>
@@ -1423,13 +1368,13 @@ export default function SurvivalRadar({
 
                           {/* Distance & Bearing Pill */}
                           <div className="text-right shrink-0 font-mono">
-                            <div className="text-xs font-black text-cyan-400">
+                            <div className="text-xs font-bold text-cyan-700 dark:text-cyan-400">
                               {item.distance_m}m
                             </div>
-                            <div className="text-[10px] text-slate-400 font-bold">
+                            <div className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold">
                               {String(item.bearing_deg).padStart(3, '0')}° {item.cardinal}
                             </div>
-                            <div className="text-[9px] text-slate-500">
+                            <div className="text-[9px] text-slate-400 dark:text-slate-500">
                               ~{item.walk_time_min}m walk
                             </div>
                           </div>
@@ -1448,18 +1393,18 @@ export default function SurvivalRadar({
       {/* MODE 3: FULLSCREEN TARGET DIRECTORY (Detailed Proximity Directory) */}
       {/* ========================================================================= */}
       {viewMode === 'list' && (
-        <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 shadow-2xl flex flex-col gap-4">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4">
+        <div className="bg-white/90 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 shadow-xl flex flex-col gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-4">
             <div className="flex items-center gap-2">
-              <Crosshair className="w-5 h-5 text-cyan-400" />
-              <h3 className="text-base font-black text-white uppercase font-mono tracking-wider">
+              <Crosshair className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
+              <h3 className="text-base font-bold text-slate-900 dark:text-white uppercase tracking-wider">
                 Full Proximity Target Directory ({items.length} Tracks)
               </h3>
             </div>
             <button
               type="button"
               onClick={() => setViewMode('compass')}
-              className="py-2 px-3.5 rounded-xl bg-red-500/20 text-red-300 border border-red-500/40 text-xs font-mono font-bold flex items-center gap-1.5"
+              className="py-2 px-3.5 rounded-xl bg-red-500/10 text-red-600 dark:text-red-300 border border-red-500/30 text-xs font-bold flex items-center gap-1.5 hover:bg-red-500 hover:text-white transition-all"
             >
               <Compass className="w-4 h-4" />
               <span>Engage Survivor Compass</span>
@@ -1473,7 +1418,7 @@ export default function SurvivalRadar({
               return (
                 <div
                   key={item.id}
-                  className="p-4 rounded-2xl bg-slate-950/70 border border-slate-800/80 hover:border-slate-700 flex flex-col justify-between gap-3"
+                  className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800/80 hover:border-slate-300 dark:hover:border-slate-700 flex flex-col justify-between gap-3 shadow-sm transition-all"
                 >
                   <div>
                     <div className="flex items-center justify-between gap-2 mb-2">
@@ -1482,22 +1427,22 @@ export default function SurvivalRadar({
                           item.triage_level === 'immediate_red'
                             ? 'bg-red-500 text-white animate-pulse'
                             : item.triage_level === 'safe_green'
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                            : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+                            ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/40'
+                            : 'bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 border border-cyan-500/40'
                         }`}
                       >
                         {item.triage_level.replace('_', ' ')}
                       </span>
-                      <span className="text-xs font-black font-mono text-cyan-400">
+                      <span className="text-xs font-bold font-mono text-cyan-700 dark:text-cyan-400">
                         {item.distance_m}m · {String(item.bearing_deg).padStart(3, '0')}° {item.cardinal}
                       </span>
                     </div>
 
-                    <h4 className="text-sm font-black text-white">{item.name}</h4>
-                    <p className="text-xs text-slate-300 mt-1 leading-relaxed">{item.text}</p>
+                    <h4 className="text-sm font-bold text-slate-900 dark:text-white">{item.name}</h4>
+                    <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">{item.text}</p>
                   </div>
 
-                  <div className="flex items-center justify-between pt-3 border-t border-slate-800/60 text-xs font-mono">
+                  <div className="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-slate-800/60 text-xs font-mono">
                     <span className="text-slate-500 text-[11px]">
                       Pace: ~{item.walk_time_min} min walk
                     </span>
@@ -1507,7 +1452,7 @@ export default function SurvivalRadar({
                         setSelectedTarget(item);
                         setViewMode('compass');
                       }}
-                      className="py-1.5 px-3 rounded-xl bg-red-500/20 hover:bg-red-500 text-red-300 hover:text-white border border-red-500/40 text-xs font-bold transition-all flex items-center gap-1.5"
+                      className="py-1.5 px-3 rounded-xl bg-red-500/10 hover:bg-red-500 text-red-600 hover:text-white dark:text-red-300 border border-red-500/30 text-xs font-bold transition-all flex items-center gap-1.5"
                     >
                       <Compass className="w-3.5 h-3.5" />
                       <span>Lock Compass</span>
