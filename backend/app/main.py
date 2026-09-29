@@ -14,7 +14,8 @@ from .config import Settings
 from .discovery import PeerDiscovery
 from .schemas import (AssessRequest, ChatRequest, CreateGroupRequest, DeviceLocationUpdate,
                       DiscoverySyncRequest, GuidePublishRequest, JoinGroupRequest,
-                      NearbyRequest, PeerSyncRequest, RecommendAlternativeRequest, ReportRequest)
+                      NearbyRequest, PeerSyncRequest, RecommendAlternativeRequest, ReportRequest,
+                      SurvivalRadarRequest)
 from .service import RescueService
 from .sync import authorize, sync_with_peer, uplink_sos
 
@@ -125,6 +126,49 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if not valid_responder_token(x_responder_key):
                 raise HTTPException(403, "responder key required")
         return {"items": s.nearby(request)}
+
+    @app.post("/api/survival-finder/radar")
+    def survival_radar_endpoint(
+        request: SurvivalRadarRequest,
+        x_group_token: str | None = Header(default=None),
+        x_responder_key: str | None = Header(default=None),
+        s: RescueService = Depends(service),
+    ):
+        if request.group_id and not valid_group_token(s, request.group_id, x_group_token):
+            raise HTTPException(403, "group token required")
+        if request.include_responders and not valid_responder_token(x_responder_key):
+            request.include_responders = False
+        disc: PeerDiscovery | None = getattr(app.state, "discovery", None)
+        peers = disc.get_peers() if disc else []
+        return s.survival_radar(request, peers=peers)
+
+    @app.get("/api/survival-finder/radar")
+    def survival_radar_get(
+        lat: float = Query(default=28.7041),
+        lon: float = Query(default=77.1025),
+        radius_m: float = Query(default=3500.0, ge=50.0, le=50000.0),
+        filter_category: str = Query(default="all"),
+        group_id: str | None = Query(default=None),
+        include_responders: bool = Query(default=True),
+        x_group_token: str | None = Header(default=None),
+        x_responder_key: str | None = Header(default=None),
+        s: RescueService = Depends(service),
+    ):
+        if group_id and not valid_group_token(s, group_id, x_group_token):
+            raise HTTPException(403, "group token required")
+        if include_responders and not valid_responder_token(x_responder_key):
+            include_responders = False
+        disc: PeerDiscovery | None = getattr(app.state, "discovery", None)
+        peers = disc.get_peers() if disc else []
+        req = SurvivalRadarRequest(
+            lat=lat,
+            lon=lon,
+            radius_m=radius_m,
+            filter_category=filter_category,
+            group_id=group_id,
+            include_responders=include_responders,
+        )
+        return s.survival_radar(req, peers=peers)
 
     @app.get("/api/entities/{entity_id}")
     def entity(entity_id: str, group_id: str | None = None,

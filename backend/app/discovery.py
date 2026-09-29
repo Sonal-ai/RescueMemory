@@ -34,6 +34,28 @@ def distance_meters(loc1: dict[str, float] | None, loc2: dict[str, float] | None
     return round(r * c, 1)
 
 
+def calculate_bearing(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Calculates forward compass bearing in degrees (0 - 360) from point 1 to point 2."""
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    delta_lambda = math.radians(lon2 - lon1)
+    y = math.sin(delta_lambda) * math.cos(phi2)
+    x = math.cos(phi1) * math.sin(phi2) - math.sin(phi1) * math.cos(phi2) * math.cos(delta_lambda)
+    bearing = math.degrees(math.atan2(y, x))
+    return round((bearing + 360.0) % 360.0, 1)
+
+
+def calculate_cardinal(bearing_deg: float) -> str:
+    """Converts a compass bearing into a 16-point cardinal direction string."""
+    cardinals = [
+        "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+        "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"
+    ]
+    idx = int((bearing_deg + 11.25) / 22.5) % 16
+    return cardinals[idx]
+
+
+
 class PeerDiscovery:
     """Offline Wi-Fi LAN / Hotspot peer discovery using UDP broadcast beacons.
     

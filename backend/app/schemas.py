@@ -108,3 +108,13 @@ class DiscoverySyncRequest(BaseModel):
     scope: Literal["public", "group", "responders"] = "public"
     group_id: str | None = None
 
+
+class SurvivalRadarRequest(BaseModel):
+    lat: float = Field(ge=-90, le=90)
+    lon: float = Field(ge=-180, le=180)
+    radius_m: float = Field(default=3500.0, gt=0, le=50000.0)
+    filter_category: Literal["all", "casualties", "shelters", "resources", "hazards", "peers"] = "all"
+    group_id: str | None = None
+    include_responders: bool = True
+
+

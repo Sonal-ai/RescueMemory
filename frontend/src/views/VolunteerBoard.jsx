@@ -6,6 +6,7 @@ import {
   Database,
   Radio,
   RefreshCw,
+  Shield,
   ShieldAlert,
   ShieldCheck,
   Users,
@@ -14,11 +15,13 @@ import {
 import { api, formatTime, getDiscoveredPeers, saveSetting, setting, updateDeviceLocation } from '../api';
 import { Card, Empty, Shell } from '../components';
 import MapPanel from '../MapPanel';
+import SurvivalRadar from '../SurvivalRadar';
 
 const CENTER = { lat: 28.7041, lon: 77.1025 };
 
 export default function VolunteerBoard() {
   const [center, setCenter] = useState(CENTER);
+  const [displayMode, setDisplayMode] = useState('radar');
   const [scope, setScope] = useState('public');
   const [items, setItems] = useState([]);
   const [peers, setPeers] = useState([]);
@@ -186,11 +189,57 @@ export default function VolunteerBoard() {
         </div>
       </div>
 
-      <div className="grid xl:grid-cols-[1.3fr_.7fr] gap-6">
-        {/* Left Column: Tactical Map & Incident Stream */}
-        <Card title="Nearby Field Memory">
-          <div className="flex flex-wrap gap-2 mb-4 items-center justify-between">
-            <div className="flex flex-wrap gap-1.5">
+      {/* Tactical Display Mode Selector */}
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6 bg-slate-900/90 border border-slate-800 p-2.5 rounded-2xl shadow-lg">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setDisplayMode('radar')}
+            className={`px-4 py-2 rounded-xl text-xs font-mono font-bold flex items-center gap-2 transition-all ${
+              displayMode === 'radar'
+                ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20'
+                : 'text-slate-400 hover:text-white bg-slate-800/60 border border-slate-700/60'
+            }`}
+          >
+            <Radio size={15} className={displayMode === 'radar' ? 'animate-pulse' : ''} />
+            <span>POLAR PROXIMITY RADAR</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setDisplayMode('map')}
+            className={`px-4 py-2 rounded-xl text-xs font-mono font-bold flex items-center gap-2 transition-all ${
+              displayMode === 'map'
+                ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20'
+                : 'text-slate-400 hover:text-white bg-slate-800/60 border border-slate-700/60'
+            }`}
+          >
+            <Shield size={15} />
+            <span>GRID MAP & PROVENANCE</span>
+          </button>
+        </div>
+
+        <div className="hidden sm:flex items-center gap-2 text-xs font-mono text-cyan-400/80">
+          <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
+          <span>FIELD SCANNER ACTIVE</span>
+        </div>
+      </div>
+
+      {displayMode === 'radar' ? (
+        <SurvivalRadar
+          userLocation={center}
+          role="volunteer"
+          onNavigateTarget={(target) => {
+            setCenter({ lat: target.location.lat, lon: target.location.lon });
+            setSelected(target);
+            setDisplayMode('map');
+          }}
+        />
+      ) : (
+        <div className="grid xl:grid-cols-[1.3fr_.7fr] gap-6">
+          {/* Left Column: Tactical Map & Incident Stream */}
+          <Card title="Nearby Field Memory">
+            <div className="flex flex-wrap gap-2 mb-4 items-center justify-between">
+              <div className="flex flex-wrap gap-1.5">
               {['public', 'group', 'responders'].map((value) => (
                 <button
                   key={value}
@@ -396,6 +445,7 @@ export default function VolunteerBoard() {
           </Card>
         </div>
       </div>
-    </Shell>
+    )}
+  </Shell>
   );
 }

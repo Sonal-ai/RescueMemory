@@ -164,6 +164,125 @@ async function handleOfflineFallback(path, method, body) {
     };
   }
 
+  // 5b. Survival Finder Radar
+  if (path === '/api/survival-finder/radar') {
+    const lat = body?.lat ?? 28.7041;
+    const lon = body?.lon ?? 77.1025;
+    const radiusM = body?.radius_m ?? 3500;
+    const filterCat = body?.filter_category ?? 'all';
+    const localReports = await getAllLocalReports();
+
+    function distM(lat1, lon1, lat2, lon2) {
+      const R = 6371000;
+      const phi1 = (lat1 * Math.PI) / 180;
+      const phi2 = (lat2 * Math.PI) / 180;
+      const deltaPhi = ((lat2 - lat1) * Math.PI) / 180;
+      const deltaLambda = ((lon2 - lon1) * Math.PI) / 180;
+      const a =
+        Math.sin(deltaPhi / 2) ** 2 +
+        Math.cos(phi1) * Math.cos(phi2) * Math.sin(deltaLambda / 2) ** 2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    function bearingDeg(lat1, lon1, lat2, lon2) {
+      const phi1 = (lat1 * Math.PI) / 180;
+      const phi2 = (lat2 * Math.PI) / 180;
+      const deltaLambda = ((lon2 - lon1) * Math.PI) / 180;
+      const y = Math.sin(deltaLambda) * Math.cos(phi2);
+      const x =
+        Math.cos(phi1) * Math.sin(phi2) -
+        Math.sin(phi1) * Math.cos(phi2) * Math.cos(deltaLambda);
+      return Math.round(((Math.atan2(y, x) * 180) / Math.PI + 360) % 360);
+    }
+
+    const cardinals = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+    function cardinal(b) {
+      const idx = Math.round((b % 360) / 22.5) % 16;
+      return cardinals[idx];
+    }
+
+    const radarItems = [];
+    for (const rep of localReports) {
+      if (!rep.location?.lat || !rep.location?.lon) continue;
+      const d = distM(lat, lon, rep.location.lat, rep.location.lon);
+      if (d <= radiusM) {
+        const b = bearingDeg(lat, lon, rep.location.lat, rep.location.lon);
+        const isCas = rep.kind === 'incident' || (rep.text && (rep.text.toLowerCase().includes('trapped') || rep.text.toLowerCase().includes('injured') || rep.text.toLowerCase().includes('cannot walk') || rep.text.toLowerCase().includes('bleeding')));
+        const isHaz = rep.kind === 'hazard';
+        const isShelter = rep.kind === 'checkpoint' && !isHaz;
+        const cat = isCas ? 'casualty' : isHaz ? 'hazard' : isShelter ? 'shelter' : 'resource';
+        radarItems.push({
+          id: rep.id || `rep_${Math.random()}`,
+          name: rep.title || rep.entity_id || `${cat.toUpperCase()} Alert`,
+          category: cat,
+          triage_level: isCas ? (rep.severity === 'red' ? 'immediate_red' : 'delayed_yellow') : isHaz ? 'hazard_warning' : 'safe_green',
+          text: rep.text || '',
+          status: rep.status || 'active',
+          severity: rep.severity || 'yellow',
+          distance_m: Math.round(d),
+          bearing_deg: b,
+          cardinal: cardinal(b),
+          walk_time_min: Math.max(1, Math.round(d / 75)),
+          location: rep.location,
+          signal_source: 'local_indexeddb',
+          verified: rep.verified || false
+        });
+      }
+    }
+
+    const baseline = [
+      { id: 'shelter_alpha', name: 'Shelter Alpha (Central High)', lat: 28.7120, lon: 77.0980, facilities: ['Shelter', 'Medical', 'Food'], status: 'operational' },
+      { id: 'clinic_beta', name: 'Clinic Beta (West District)', lat: 28.7090, lon: 77.0940, facilities: ['Emergency Surgery', 'Clean Water'], status: 'operational' },
+      { id: 'water_tanker_4', name: 'Water Tanker 4 (North Gate)', lat: 28.7060, lon: 77.1080, facilities: ['Clean Water'], status: 'operational' },
+      { id: 'cp_17', name: 'Checkpoint CP-17 (North Bridge)', lat: 28.7041, lon: 77.1025, facilities: ['Checkpoint'], status: 'danger_warning', hazard: 'Flooded entrance live wires' }
+    ];
+    for (const cp of baseline) {
+      const d = distM(lat, lon, cp.lat, cp.lon);
+      if (d <= radiusM) {
+        const b = bearingDeg(lat, lon, cp.lat, cp.lon);
+        const isDanger = cp.status === 'danger_warning';
+        radarItems.push({
+          id: cp.id,
+          name: cp.name,
+          category: isDanger ? 'hazard' : 'shelter',
+          triage_level: isDanger ? 'hazard_warning' : 'safe_green',
+          text: cp.hazard || `Verified disaster shelter with facilities: ${cp.facilities.join(', ')}`,
+          status: cp.status,
+          severity: isDanger ? 'red' : 'green',
+          distance_m: Math.round(d),
+          bearing_deg: b,
+          cardinal: cardinal(b),
+          walk_time_min: Math.max(1, Math.round(d / 75)),
+          location: { lat: cp.lat, lon: cp.lon },
+          facilities: cp.facilities,
+          signal_source: 'reference_baseline',
+          verified: true
+        });
+      }
+    }
+
+    radarItems.sort((a, b) => a.distance_m - b.distance_m);
+    const casualties = radarItems.filter(i => i.category === 'casualty');
+    const shelters = radarItems.filter(i => i.category === 'shelter');
+    const urgent = casualties.filter(c => c.triage_level === 'immediate_red');
+
+    return {
+      center: { lat, lon },
+      radius_m: radiusM,
+      total_found: radarItems.length,
+      summary: {
+        urgent_casualties: urgent.length,
+        total_casualties: casualties.length,
+        operational_shelters: shelters.length,
+        active_peers: 0,
+        nearest_casualty: casualties[0] || null,
+        nearest_shelter: shelters[0] || null,
+      },
+      radar_items: filterCat === 'all' ? radarItems : radarItems.filter(i => i.category === filterCat || (filterCat === 'casualties' && i.category === 'casualty') || (filterCat === 'shelters' && i.category === 'shelter') || (filterCat === 'hazards' && i.category === 'hazard')),
+      local_fallback: true
+    };
+  }
+
   // 6. Health & Status
   if (path === '/health' || path === '/api/sync/status') {
     const unsynced = await getUnsyncedReports();
@@ -217,6 +336,30 @@ export async function syncDiscoveredPeer(syncData) {
   });
 }
 
+export async function getSurvivalRadar(params = {}) {
+  const {
+    lat = 28.7041,
+    lon = 77.1025,
+    radius_m = 3500,
+    filter_category = 'all',
+    include_responders = true,
+    group_id = null,
+  } = params;
+  return api('/api/survival-finder/radar', {
+    method: 'POST',
+    body: {
+      lat,
+      lon,
+      radius_m,
+      filter_category,
+      include_responders,
+      group_id,
+    },
+    responder: Boolean(setting('responderKey')),
+    group: Boolean(group_id),
+  });
+}
+
 export function formatTime(value) {
   if (!value) return 'Never';
   const date = new Date(value);
@@ -224,4 +367,5 @@ export function formatTime(value) {
 }
 
 export { triggerAutoSync, onSyncStateChange };
+
 

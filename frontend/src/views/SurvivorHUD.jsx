@@ -42,14 +42,16 @@ import {
 } from '../api';
 import { Card, Empty, Shell } from '../components';
 import MapPanel from '../MapPanel';
+import SurvivalRadar from '../SurvivalRadar';
 
 const DEFAULT_CENTER = { lat: 28.7041, lon: 77.1025 };
 
 const TABS = [
   ['ask', 'Ask & Triage', HeartPulse],
-  ['map', 'Tactical Map & Shelters', Compass],
-  ['report', 'Report SOS / Hazard', ShieldAlert],
-  ['group', 'Mesh Team Relay', Users]
+  ['radar', 'Survival Radar', Radio],
+  ['map', 'Tactical Map', Compass],
+  ['report', 'Report SOS', ShieldAlert],
+  ['group', 'Mesh Relay', Users]
 ];
 
 const QUICK_PROMPTS = [
@@ -541,7 +543,7 @@ export default function SurvivorHUD() {
       )}
 
       {/* Desktop HUD Segmented Navigation Pills */}
-      <div className="hidden sm:grid sm:grid-cols-4 gap-2 mb-6">
+      <div className="hidden sm:grid sm:grid-cols-5 gap-2 mb-6">
         {TABS.map(([id, label, Icon]) => {
           const isActive = tab === id;
           return (
@@ -922,7 +924,22 @@ export default function SurvivorHUD() {
       )}
 
       {/* ========================================================================= */}
-      {/* TAB 2: TACTICAL MAP & SHELTERS (With Qdrant Negative Vector Rerouting) */}
+      {/* TAB 2: SURVIVAL POLAR RADAR (Qdrant + Wi-Fi Direct + BLE Proximity) */}
+      {/* ========================================================================= */}
+      {tab === 'radar' && (
+        <SurvivalRadar
+          userLocation={pin}
+          onNavigateTarget={(target) => {
+            setCenter({ lat: target.location.lat, lon: target.location.lon });
+            setSelected(target);
+            setTab('map');
+          }}
+          role="survivor"
+        />
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 3: TACTICAL MAP & SHELTERS (With Qdrant Negative Vector Rerouting) */}
       {/* ========================================================================= */}
       {tab === 'map' && (
         <div className="grid lg:grid-cols-[1.25fr_.75fr] gap-6">
@@ -1355,7 +1372,7 @@ export default function SurvivorHUD() {
       {/* Thumb-friendly, accessible, ergonomic navigation for smartphones */}
       {/* ========================================================================= */}
       <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#091322]/98 border-t border-slate-800/90 backdrop-blur-lg pb-safe">
-        <div className="grid grid-cols-4 h-16">
+        <div className="grid grid-cols-5 h-16">
           {TABS.map(([id, label, Icon]) => {
             const isActive = tab === id;
             return (
@@ -1372,12 +1389,15 @@ export default function SurvivorHUD() {
                 }`}
               >
                 <div className="relative">
-                  <Icon size={20} className={isActive ? 'stroke-[2.5]' : 'stroke-[1.75]'} />
+                  <Icon size={19} className={isActive ? 'stroke-[2.5]' : 'stroke-[1.75]'} />
+                  {id === 'radar' && (
+                    <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+                  )}
                   {id === 'map' && peers.length > 0 && (
-                    <span className="absolute -top-1 -right-2 w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                    <span className="absolute -top-1 -right-1.5 w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
                   )}
                 </div>
-                <span className="text-[10px] tracking-tight">{label.split(' ')[0]}</span>
+                <span className="text-[9px] tracking-tight">{label.split(' ')[0]}</span>
               </button>
             );
           })}

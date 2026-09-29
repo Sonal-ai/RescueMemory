@@ -6,6 +6,7 @@ import json
 import re
 import secrets
 from datetime import datetime, timedelta, timezone
+import math
 from math import asin, cos, radians, sin, sqrt
 from pathlib import Path
 
@@ -14,10 +15,12 @@ from pydantic import BaseModel, Field
 from qdrant_edge import FieldCondition, Filter, MatchValue
 
 from .config import Settings
+from .discovery import calculate_bearing, calculate_cardinal
 from .gemini import grounded_answer
 from .memory import Memory
 from .schemas import (AssessRequest, ChatRequest, CreateGroupRequest, GuidePublishRequest,
-                      JoinGroupRequest, Location, NearbyRequest, ReportRequest)
+                      JoinGroupRequest, Location, NearbyRequest, ReportRequest, SurvivalRadarRequest)
+
 
 
 def utc_now() -> datetime:
@@ -358,7 +361,197 @@ class RescueService:
             "recommended": rec,
         }
 
+    def survival_radar(self, request: SurvivalRadarRequest, peers: list[dict] | None = None) -> dict:
+        """Unified survival finder radar combining Qdrant Edge memory, Wi-Fi peers, and Bluetooth proximity."""
+        self.purge_expired()
+        user_loc = {"lat": request.lat, "lon": request.lon}
+        now = utc_now()
+        radar_items = []
+        seen_keys = set()
+
+        # 1. Dynamic Events from Local Qdrant Memory
+        nearby_events = self.memory.nearby(user_loc, request.radius_m)
+        for event in nearby_events:
+            if event.get("expires_at") and datetime.fromisoformat(event["expires_at"]) < now:
+                continue
+            if event.get("visibility") == "group" and event.get("group_id") != request.group_id:
+                continue
+            if event.get("visibility") == "responders" and not request.include_responders:
+                continue
+
+            dist = distance_m(user_loc, event["location"])
+            if dist > request.radius_m:
+                continue
+
+            bearing = calculate_bearing(request.lat, request.lon, event["location"]["lat"], event["location"]["lon"])
+            cardinal = calculate_cardinal(bearing)
+            walk_min = max(1, round(dist / 75.0))
+
+            kind = event.get("kind", "incident")
+            text = event.get("text", "")
+            severity = event.get("severity", "yellow")
+            status = event.get("status", "active")
+
+            is_casualty = kind in {"incident", "presence"} or any(w in text.lower() for w in ["injured", "cannot walk", "cant walk", "bleeding", "trapped", "broken", "unconscious"])
+            is_hazard = kind == "hazard" or status in {"danger", "flooded", "blocked"}
+            is_resource = kind == "resource" or "water" in text.lower()
+            is_shelter = kind == "checkpoint" and not is_hazard
+
+            if is_casualty:
+                cat = "casualty"
+                triage = "immediate_red" if (severity == "red" or any(w in text.lower() for w in ["cannot walk", "cant walk", "bleeding", "unresponsive", "trapped", "broken"])) else "delayed_yellow"
+            elif is_hazard:
+                cat = "hazard"
+                triage = "hazard_warning"
+            elif is_resource:
+                cat = "resource"
+                triage = "resource_green"
+            elif is_shelter:
+                cat = "shelter"
+                triage = "safe_green"
+            else:
+                cat = "other"
+                triage = "informational"
+
+            if request.filter_category != "all":
+                if request.filter_category == "casualties" and cat != "casualty":
+                    continue
+                if request.filter_category == "shelters" and cat != "shelter":
+                    continue
+                if request.filter_category == "resources" and cat != "resource":
+                    continue
+                if request.filter_category == "hazards" and cat != "hazard":
+                    continue
+
+            key = (cat, event.get("entity_id") or event.get("id"))
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+
+            radar_items.append({
+                "id": event.get("id"),
+                "name": event.get("title") or event.get("entity_id") or f"{cat.title()} Signal",
+                "category": cat,
+                "triage_level": triage,
+                "text": text,
+                "status": status,
+                "severity": severity,
+                "distance_m": round(dist),
+                "bearing_deg": bearing,
+                "cardinal": cardinal,
+                "walk_time_min": walk_min,
+                "location": event["location"],
+                "origin_device": event.get("origin_device", "local"),
+                "observed_at": event.get("observed_at"),
+                "signal_source": "qdrant_memory",
+                "verified": event.get("verified", False),
+            })
+
+        # 2. Baseline Checkpoints from Reference Collection
+        baseline_checkpoints = [
+            {"id": "shelter_alpha", "name": "Shelter Alpha (Central High)", "lat": 28.7120, "lon": 77.0980, "facilities": ["Shelter", "Medical", "Food", "Power"], "capacity": 250, "status": "operational"},
+            {"id": "clinic_beta", "name": "Clinic Beta (West District)", "lat": 28.7090, "lon": 77.0940, "facilities": ["Emergency Surgery", "Clean Water"], "capacity": 80, "status": "operational"},
+            {"id": "water_tanker_4", "name": "Water Tanker 4 (North Gate)", "lat": 28.7060, "lon": 77.1080, "facilities": ["Clean Water", "Purification"], "capacity": 5000, "status": "operational"},
+            {"id": "cp_17", "name": "Checkpoint CP-17 (North Bridge)", "lat": 28.7041, "lon": 77.1025, "facilities": ["Checkpoint"], "capacity": 0, "status": "danger_warning", "hazard": "Flooded entrance live wires"},
+        ]
+        for cp in baseline_checkpoints:
+            cp_loc = {"lat": cp["lat"], "lon": cp["lon"]}
+            dist = distance_m(user_loc, cp_loc)
+            if dist <= request.radius_m:
+                bearing = calculate_bearing(request.lat, request.lon, cp["lat"], cp["lon"])
+                cardinal = calculate_cardinal(bearing)
+                walk_min = max(1, round(dist / 75.0))
+                is_danger = cp["status"] == "danger_warning"
+                cat = "hazard" if is_danger else "shelter"
+
+                if request.filter_category == "all" or (request.filter_category == "shelters" and not is_danger) or (request.filter_category == "hazards" and is_danger):
+                    key = (cat, cp["id"])
+                    if key not in seen_keys:
+                        seen_keys.add(key)
+                        radar_items.append({
+                            "id": cp["id"],
+                            "name": cp["name"],
+                            "category": cat,
+                            "triage_level": "hazard_warning" if is_danger else "safe_green",
+                            "text": cp.get("hazard", f"Verified disaster shelter with facilities: {', '.join(cp['facilities'])}"),
+                            "status": cp["status"],
+                            "severity": "red" if is_danger else "green",
+                            "distance_m": round(dist),
+                            "bearing_deg": bearing,
+                            "cardinal": cardinal,
+                            "walk_time_min": walk_min,
+                            "location": cp_loc,
+                            "facilities": cp.get("facilities", []),
+                            "capacity": cp.get("capacity"),
+                            "signal_source": "reference_baseline",
+                            "verified": True,
+                        })
+
+        # 3. Discovered Wi-Fi & Simulated Bluetooth Proximity Peers
+        if peers:
+            for p in peers:
+                if p.get("lat") is not None and p.get("lon") is not None:
+                    p_loc = {"lat": p["lat"], "lon": p["lon"]}
+                    dist = distance_m(user_loc, p_loc)
+                    if dist <= request.radius_m:
+                        bearing = calculate_bearing(request.lat, request.lon, p["lat"], p["lon"])
+                        cardinal = calculate_cardinal(bearing)
+                        walk_min = max(1, round(dist / 75.0))
+
+                        # Simulated BLE / Wi-Fi Direct path loss in dBm
+                        dbm = -min(95, max(40, int(42 + 20 * math.log10(max(1.0, dist)))))
+                        quality = "strong" if dbm >= -62 else ("moderate" if dbm >= -76 else "weak")
+
+                        if request.filter_category in {"all", "peers"}:
+                            key = ("peer", p["node_id"])
+                            if key not in seen_keys:
+                                seen_keys.add(key)
+                                radar_items.append({
+                                    "id": f"peer_{p['node_id']}",
+                                    "name": f"Peer: {p['node_id']} ({p.get('role', 'device')})",
+                                    "category": "peer",
+                                    "triage_level": "peer_cyan",
+                                    "text": f"Active {p.get('role', 'survivor')} node discovered on Wi-Fi/Bluetooth hotspot",
+                                    "status": "online" if p.get("is_online", True) else "recent",
+                                    "severity": "green",
+                                    "distance_m": round(dist),
+                                    "bearing_deg": bearing,
+                                    "cardinal": cardinal,
+                                    "walk_time_min": walk_min,
+                                    "location": p_loc,
+                                    "signal_source": "wifi_direct",
+                                    "signal_dbm": dbm,
+                                    "signal_quality": quality,
+                                    "ip_port": f"{p.get('ip')}:{p.get('port')}",
+                                    "node_id": p["node_id"],
+                                    "node_role": p.get("role", "survivor"),
+                                    "verified": False,
+                                })
+
+        radar_items.sort(key=lambda x: x["distance_m"])
+
+        casualties = [i for i in radar_items if i["category"] == "casualty"]
+        shelters = [i for i in radar_items if i["category"] == "shelter"]
+        peers_found = [i for i in radar_items if i["category"] == "peer"]
+        urgent = [c for c in casualties if c["triage_level"] == "immediate_red"]
+
+        return {
+            "center": user_loc,
+            "radius_m": request.radius_m,
+            "total_found": len(radar_items),
+            "summary": {
+                "urgent_casualties": len(urgent),
+                "total_casualties": len(casualties),
+                "operational_shelters": len(shelters),
+                "active_peers": len(peers_found),
+                "nearest_casualty": casualties[0] if casualties else None,
+                "nearest_shelter": shelters[0] if shelters else None,
+            },
+            "radar_items": radar_items
+        }
+
     def signed_guides(self) -> list[dict]:
+
         return [card for card in self.memory.all("reference") if card.get("auth_tag")]
 
     def _guide_tag(self, guide: dict) -> str:
