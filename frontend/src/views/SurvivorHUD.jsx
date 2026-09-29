@@ -92,11 +92,14 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
   const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
 
   // Poll survival radar to detect nearest survivor in real-time
+  const pinLat = pin?.lat ?? 28.7041;
+  const pinLon = pin?.lon ?? 77.1025;
+
   const refreshRadarSummary = useCallback(async () => {
     try {
       const data = await getSurvivalRadar({
-        lat: pin.lat,
-        lon: pin.lon,
+        lat: pinLat,
+        lon: pinLon,
         radius_m: 5000,
         filter_category: 'all',
         include_responders: true,
@@ -109,11 +112,11 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
     } catch {
       // offline silent
     }
-  }, [pin]);
+  }, [pinLat, pinLon]);
 
   useEffect(() => {
     refreshRadarSummary();
-    const radarTimer = setInterval(refreshRadarSummary, 10000);
+    const radarTimer = setInterval(refreshRadarSummary, 15000);
     return () => clearInterval(radarTimer);
   }, [refreshRadarSummary]);
 
@@ -153,7 +156,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
     const unsubBrain = onBrainStatusChange(setIsOfflineBrain);
     const unsubSync = onSyncStateChange(setSyncInfo);
     refreshPeers();
-    const peerTimer = setInterval(refreshPeers, 6000);
+    const peerTimer = setInterval(refreshPeers, 10000);
     return () => {
       unsubBrain();
       unsubSync();
@@ -162,6 +165,9 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
   }, [refreshPeers]);
 
   // Refresh nearby map observations
+  const centerLat = center?.lat ?? 28.7041;
+  const centerLon = center?.lon ?? 77.1025;
+
   const refreshMap = useCallback(async () => {
     try {
       const groupId = setting('groupId');
@@ -169,7 +175,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
         method: 'POST',
         group: Boolean(groupId),
         body: {
-          location: center,
+          location: { lat: centerLat, lon: centerLon },
           radius_m: 5000,
           ...(groupId ? { group_id: groupId } : {})
         }
@@ -179,7 +185,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
     } catch (err) {
       setError(err.message);
     }
-  }, [center]);
+  }, [centerLat, centerLon]);
 
   useEffect(() => {
     refreshMap();

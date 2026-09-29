@@ -60,7 +60,7 @@ export default function VolunteerBoard() {
     } catch (err) {
       setError(err.message);
     }
-  }, [scope, center]);
+  }, [scope, center.lat, center.lon]);
 
   useEffect(() => {
     refresh();

@@ -74,7 +74,6 @@ export default function SurvivalRadar({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [audioEnabled, setAudioEnabled] = useState(false);
-  const [sweepAngle, setSweepAngle] = useState(0);
   const [viewMode, setViewMode] = useState(initialMode);
   const [lastRefreshed, setLastRefreshed] = useState(null);
 
@@ -115,20 +114,23 @@ export default function SurvivalRadar({
     }
   }, [audioEnabled]);
 
-  // Listen to Smartphone Compass / Magnetometer
+  // Listen to Smartphone Compass / Magnetometer with deadband to avoid render floods
   useEffect(() => {
+    let lastHeading = 0;
     const handleOrientation = (e) => {
       let heading = null;
       if (e.webkitCompassHeading !== undefined && e.webkitCompassHeading !== null) {
-        // iOS Safari provides direct 0..360 magnetic heading
         heading = e.webkitCompassHeading;
       } else if (e.alpha !== null && e.alpha !== undefined) {
-        // Android / Chrome: alpha is counter-clockwise degrees
         heading = (360 - e.alpha) % 360;
       }
       if (heading !== null && !Number.isNaN(heading)) {
-        setDeviceHeading(Math.round(heading));
-        setIsCompassActive(true);
+        const rounded = Math.round(heading);
+        if (Math.abs(rounded - lastHeading) >= 2) {
+          lastHeading = rounded;
+          setDeviceHeading(rounded);
+          setIsCompassActive(true);
+        }
       }
     };
 
@@ -145,13 +147,16 @@ export default function SurvivalRadar({
   }, []);
 
   // Fetch Radar Signals from Qdrant Edge Memory
+  const locLat = userLocation?.lat ?? 28.7041;
+  const locLon = userLocation?.lon ?? 77.1025;
+
   const fetchRadar = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
       const data = await getSurvivalRadar({
-        lat: userLocation.lat,
-        lon: userLocation.lon,
+        lat: locLat,
+        lon: locLon,
         radius_m: rangeMeters,
         filter_category: category,
         include_responders: true,
@@ -159,37 +164,24 @@ export default function SurvivalRadar({
       setRadarData(data);
       setLastRefreshed(new Date());
 
-      // If a target was previously selected, refresh its details
-      if (selectedTarget) {
-        const stillPresent = data.radar_items?.find((i) => i.id === selectedTarget.id);
-        if (stillPresent) setSelectedTarget(stillPresent);
-      }
+      // If a target was previously selected, refresh its details using functional update
+      setSelectedTarget((prev) => {
+        if (!prev) return null;
+        const stillPresent = data.radar_items?.find((i) => i.id === prev.id);
+        return stillPresent || prev;
+      });
     } catch (err) {
       setError(err.message || 'Failed to scan radar space');
     } finally {
       setLoading(false);
     }
-  }, [userLocation, rangeMeters, category, selectedTarget]);
+  }, [locLat, locLon, rangeMeters, category]);
 
   useEffect(() => {
     fetchRadar();
-    const interval = setInterval(fetchRadar, 12000);
+    const interval = setInterval(fetchRadar, 20000);
     return () => clearInterval(interval);
   }, [fetchRadar]);
-
-  // Animate Sweep Line for Polar Radar
-  useEffect(() => {
-    let animId;
-    let start = performance.now();
-    const animate = (time) => {
-      const elapsed = time - start;
-      const angle = (elapsed / 4000 * 360) % 360;
-      setSweepAngle(angle);
-      animId = requestAnimationFrame(animate);
-    };
-    animId = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(animId);
-  }, []);
 
   // Polar Projection: Converts Bearing (degrees) and Distance (meters) to SVG (cx, cy)
   const projectPolar = (bearingDeg, distanceM) => {
@@ -1014,8 +1006,16 @@ export default function SurvivalRadar({
                   <text x={CENTER_X} y={CENTER_Y + MAX_RADIUS + 22} textAnchor="middle" fill="#38bdf8" fontSize="12" fontWeight="bold" fontFamily="monospace">S</text>
                   <text x={CENTER_X - MAX_RADIUS - 18} y={CENTER_Y + 4} textAnchor="middle" fill="#38bdf8" fontSize="12" fontWeight="bold" fontFamily="monospace">W</text>
 
-                  {/* Sweeping Radar Beam (Conical Sector) */}
-                  <g transform={`rotate(${sweepAngle} ${CENTER_X} ${CENTER_Y})`}>
+                  {/* Sweeping Radar Beam (Conical Sector) with native GPU compositor transform */}
+                  <g>
+                    <animateTransform
+                      attributeName="transform"
+                      type="rotate"
+                      from={`0 ${CENTER_X} ${CENTER_Y}`}
+                      to={`360 ${CENTER_X} ${CENTER_Y}`}
+                      dur="4s"
+                      repeatCount="indefinite"
+                    />
                     <path
                       d={`M ${CENTER_X} ${CENTER_Y} L ${CENTER_X} ${CENTER_Y - MAX_RADIUS} A ${MAX_RADIUS} ${MAX_RADIUS} 0 0 1 ${
                         CENTER_X + MAX_RADIUS * Math.sin((35 * Math.PI) / 180)

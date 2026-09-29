@@ -88,7 +88,10 @@ class RescueService:
         self.settings = settings
         self.memory = Memory(settings.data_dir, settings.model_cache)
         with open(Path(__file__).resolve().parent.parent / "data" / "knowledge.json", encoding="utf-8") as stream:
-            self.memory.seed(json.load(stream))
+            knowledge_data = json.load(stream)
+            self.guides_count = len(knowledge_data)
+            self.memory.seed(knowledge_data)
+        self.events_count = len(list(self.memory.all("events")))
 
     def close(self):
         self.memory.close()
@@ -144,6 +147,7 @@ class RescueService:
                 raise HTTPException(409, "idempotency key reused with different report")
             return {"event": existing, "duplicate": True}
         self.memory.upsert("events", event_id, event, body["text"])
+        self.events_count = getattr(self, "events_count", 0) + 1
         return {"event": event, "duplicate": False}
 
     def report(self, request: ReportRequest) -> dict:

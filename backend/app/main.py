@@ -74,8 +74,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def health(s: RescueService = Depends(service)):
         return {"status": "ok", "node_id": settings.node_id, "role": settings.role,
                 "engine": "qdrant-edge-py", "offline_model": True,
-                "events": len(list(s.memory.all("events"))),
-                "guides": len(list(s.memory.all("reference"))),
+                "events": getattr(s, "events_count", 0),
+                "guides": getattr(s, "guides_count", 420),
                 "guides_enabled": bool(settings.guide_trust_key),
                 "gemini_configured": bool(settings.gemini_api_key),
                 "central_configured": bool(settings.central_url),
