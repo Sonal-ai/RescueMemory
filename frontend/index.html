@@ -2,11 +2,16 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
     <link rel="manifest" href="/manifest.json" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <meta name="theme-color" content="#08111d" />
-    <meta name="description" content="RescueMemory local disaster memory and relay" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="RescueMemory" />
+    <meta name="description" content="RescueMemory offline-first AI disaster memory and relay platform" />
     <title>RescueMemory</title>
   </head>
   <body>
@@ -16,8 +21,12 @@
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
           navigator.serviceWorker.register('/sw.js')
-            .then(reg => console.log('SW registered!', reg))
-            .catch(err => console.err('SW registration failed:', err));
+            .then(reg => {
+              console.log('RescueMemory ServiceWorker active:', reg.scope);
+            })
+            .catch(err => {
+              console.error('ServiceWorker registration failed:', err);
+            });
         });
       }
     </script>
