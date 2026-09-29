@@ -148,7 +148,7 @@ export default function MeshSyncScanner({
   return (
     <div className="flex flex-col gap-5 text-slate-900 dark:text-slate-100">
       {/* Top Header */}
-      <div className="bg-white dark:bg-gradient-to-b dark:from-[#0d172b]/95 dark:to-[#091222]/95 border border-slate-200 dark:border-cyan-500/15 rounded-3xl p-4 sm:p-5 shadow-xl flex flex-wrap items-center justify-between gap-3">
+      <div className="bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 rounded-3xl p-4 sm:p-5 shadow-xs flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-cyan-600 to-emerald-600 flex items-center justify-center text-white shadow-md shadow-cyan-600/20 shrink-0">
             <Radio size={20} className={scanning || syncingAll ? 'animate-spin' : ''} />
@@ -160,7 +160,7 @@ export default function MeshSyncScanner({
                 Zero-Conf LAN
               </span>
             </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-medium">
               Automatic peer-to-peer discovery on UDP port 8888. No internet or setup required.
             </p>
           </div>
@@ -191,9 +191,9 @@ export default function MeshSyncScanner({
       )}
 
       {/* Tactical Radar Scan Grid Visual */}
-      <div className="bg-white dark:bg-gradient-to-b dark:from-[#0d172b]/95 dark:to-[#091222]/95 border border-slate-200 dark:border-cyan-500/15 rounded-3xl p-5 sm:p-6 shadow-xl flex flex-col items-center">
+      <div className="bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xs flex flex-col items-center">
         <div className="text-center mb-4">
-          <span className="text-xs uppercase font-bold tracking-wider text-slate-600 dark:text-slate-300">
+          <span className="text-xs uppercase font-bold tracking-wider text-slate-700 dark:text-slate-300">
             Local Wi-Fi Subnet Radar Scan Grid
           </span>
           <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
@@ -332,7 +332,7 @@ export default function MeshSyncScanner({
       </div>
 
       {/* Discovered Beacons / Peer Devices List */}
-      <div className="bg-white dark:bg-gradient-to-b dark:from-[#0d172b]/95 dark:to-[#091222]/95 border border-slate-200 dark:border-cyan-500/15 rounded-3xl p-5 shadow-xl">
+      <div className="bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 rounded-3xl p-5 shadow-xs">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-2">
             <Wifi size={16} className="text-emerald-500" />
@@ -358,7 +358,7 @@ export default function MeshSyncScanner({
               return (
                 <div
                   key={peer.node_id}
-                  className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 hover:border-cyan-500 dark:hover:border-cyan-500/80 transition-all flex flex-col justify-between"
+                  className="p-4 rounded-2xl border border-[#dbe6f0] dark:border-slate-800 bg-[#f8fafc] dark:bg-slate-900/60 hover:border-cyan-500 dark:hover:border-cyan-500/80 transition-all flex flex-col justify-between"
                 >
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
@@ -408,7 +408,7 @@ export default function MeshSyncScanner({
             })}
           </div>
         ) : (
-          <div className="p-6 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 text-center bg-slate-50/50 dark:bg-slate-900/30">
+          <div className="p-6 rounded-2xl border border-dashed border-[#cbdbe9] dark:border-slate-800 text-center bg-[#f8fafc]/60 dark:bg-slate-900/30">
             <Radio size={28} className="mx-auto text-slate-400 mb-2 animate-pulse" />
             <p className="text-xs text-slate-600 dark:text-slate-400 max-w-sm mx-auto">
               No peer beacons found on this subnet yet. Connect to a mobile hotspot or Wi-Fi network where other RescueMemory nodes are running.
@@ -418,8 +418,8 @@ export default function MeshSyncScanner({
       </div>
 
       {/* Direct IP Fallback Endpoint Card */}
-      <div className="bg-white dark:bg-gradient-to-b dark:from-[#0d172b]/95 dark:to-[#091222]/95 border border-slate-200 dark:border-cyan-500/15 rounded-3xl p-5 shadow-xl">
-        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-2 flex items-center gap-1.5">
+      <div className="bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 rounded-3xl p-5 shadow-xs">
+        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-2 flex items-center gap-1.5">
           <ExternalLink size={14} className="text-cyan-500" />
           <span>Manual Direct IP Connect</span>
         </h4>
@@ -438,7 +438,7 @@ export default function MeshSyncScanner({
           <button
             type="submit"
             disabled={!directIp.trim() || syncingAll}
-            className="py-2.5 px-4 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center gap-1.5 shrink-0 transition-all shadow-sm"
+            className="py-2.5 px-4 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center gap-1.5 shrink-0 transition-all shadow-xs"
           >
             <Send size={14} />
             <span>Connect & Sync</span>

@@ -17,10 +17,15 @@
     <script>
       (function() {
         try {
-          var t = localStorage.getItem('rescue.theme') || 'dark';
+          var t = localStorage.getItem('rescue.theme') || 'light';
           document.documentElement.dataset.theme = t;
-          if (t === 'dark') document.documentElement.classList.add('dark');
-          else document.documentElement.classList.remove('dark');
+          if (t === 'dark') {
+            document.documentElement.classList.add('dark');
+            document.documentElement.classList.remove('light');
+          } else {
+            document.documentElement.classList.remove('dark');
+            document.documentElement.classList.add('light');
+          }
         } catch(e) {}
       })();
     </script>
