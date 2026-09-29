@@ -228,7 +228,7 @@ export function Shell({ title, subtitle, children }) {
           </Link>
 
           {/* Right Action Bar */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
             {/* Quiet Status Pill */}
             <QuietTelemetryPill health={health} sync={sync} error={error} />
 
@@ -238,7 +238,7 @@ export function Shell({ title, subtitle, children }) {
               title={online ? 'Internet Connected (Cloud AI Gemini & Sync ON). Tap to switch to Disconnected Offline Mode' : 'Offline Disaster Mode (Local Edge Memory Only). Tap to enable Internet & Cloud AI'}
               aria-label={online ? 'Disconnect Internet (Enter Offline Mode)' : 'Connect Internet (Enable Cloud AI)'}
               aria-pressed={online}
-              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl border text-xs font-bold cursor-pointer transition-all active:scale-95 ${
+              className={`flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-xl border text-xs font-bold cursor-pointer transition-all active:scale-95 ${
                 online
                   ? 'bg-emerald-100 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-400 border-emerald-300 dark:border-emerald-500/30 hover:bg-emerald-200/60 dark:hover:bg-emerald-500/20'
                   : 'bg-amber-100 dark:bg-amber-500/10 text-amber-800 dark:text-amber-400 border-amber-300 dark:border-amber-500/30 hover:bg-amber-200/60 dark:hover:bg-amber-500/20'
@@ -252,13 +252,13 @@ export function Shell({ title, subtitle, children }) {
                     <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-600"></span>
                   </span>
                   <Wifi size={13} className="text-emerald-600 dark:text-emerald-500" />
-                  <span className="hidden sm:inline">Online</span>
+                  <span className="hidden md:inline">Online</span>
                 </>
               ) : (
                 <>
                   <span className="inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
                   <WifiOff size={13} className="text-amber-600 dark:text-amber-500" />
-                  <span className="hidden sm:inline">Offline</span>
+                  <span className="hidden md:inline">Offline</span>
                 </>
               )}
             </button>
@@ -269,18 +269,18 @@ export function Shell({ title, subtitle, children }) {
               title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
               aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
               aria-pressed={theme === 'light'}
-              className="theme-toggle-btn flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#cbdbe9] dark:border-slate-700 bg-[#e6f0f7] dark:bg-slate-800 text-xs font-bold cursor-pointer transition-all active:scale-95 text-slate-800 dark:text-slate-200"
+              className="theme-toggle-btn flex items-center justify-center p-1.5 sm:px-3 sm:py-1.5 rounded-xl border border-[#cbdbe9] dark:border-slate-700 bg-[#e6f0f7] dark:bg-slate-800 text-xs font-bold cursor-pointer transition-all active:scale-95 text-slate-800 dark:text-slate-200"
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
             >
               {theme === 'dark' ? (
                 <>
-                  <Sun size={14} className="text-amber-400" />
-                  <span className="hidden sm:inline text-slate-200">Light</span>
+                  <Sun size={15} className="text-amber-400" />
+                  <span className="hidden md:inline text-slate-200">Light</span>
                 </>
               ) : (
                 <>
-                  <Moon size={14} className="text-indigo-600" />
-                  <span className="hidden sm:inline text-slate-800">Dark</span>
+                  <Moon size={15} className="text-indigo-600" />
+                  <span className="hidden md:inline text-slate-800">Dark</span>
                 </>
               )}
             </button>
@@ -289,12 +289,11 @@ export function Shell({ title, subtitle, children }) {
             <button
               title="Device & Mesh Settings"
               aria-label="Device & Mesh Settings"
-              className="icon-btn rounded-xl text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+              className="icon-btn p-1.5 rounded-xl text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:white"
               onClick={() => setSettingsOpen(true)}
             >
-              <Settings2 size={18} />
+              <Settings2 size={17} />
             </button>
-
           </div>
         </div>
       </header>
