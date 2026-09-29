@@ -12,8 +12,9 @@
  */
 
 import { saveOfflineReport, getUnsyncedReports, markReportsSynced, getAllLocalReports } from './offlineStorage.js';
+import embeddedCards from '../../public/data/knowledge_cards.json';
 
-let cachedCards = null;
+let cachedCards = embeddedCards || [];
 let cachedVectors = null;
 let isInitializing = false;
 let initPromise = null;
