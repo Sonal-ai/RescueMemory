@@ -1,58 +1,33 @@
-<#
-.SYNOPSIS
-    Builds the standalone RescueMemory Android APK locally using Capacitor and Gradle.
-.DESCRIPTION
-    Compiles the frontend production bundle, syncs assets and plugins to the native
-    Android project, and builds the debug APK.
-#>
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host " Building RescueMemory Offline APK locally" -ForegroundColor Cyan
+Write-Host "========================================" -ForegroundColor Cyan
 
-$ErrorActionPreference = "Stop"
+$ROOT_DIR = Split-Path -Parent $MyInvocation.MyCommand.Definition
+$FRONTEND_DIR = Join-Path $ROOT_DIR "frontend"
+$ANDROID_DIR = Join-Path $FRONTEND_DIR "android"
 
-Write-Host "=========================================" -ForegroundColor Cyan
-Write-Host "   RescueMemory Android APK Builder      " -ForegroundColor Cyan
-Write-Host "=========================================" -ForegroundColor Cyan
+# 1. Compile React Web Assets
+Set-Location $FRONTEND_DIR
+Write-Host "`n[1/3] Building Web Distribution..." -ForegroundColor Yellow
+npm run build
+if ($LASTEXITCODE -ne 0) { Write-Error "Frontend build failed"; exit 1 }
 
-$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$frontendDir = Join-Path $scriptDir "frontend"
-$androidDir = Join-Path $frontendDir "android"
+# 2. Sync Capacitor Android
+Write-Host "`n[2/3] Syncing Capacitor Android Assets..." -ForegroundColor Yellow
+npx cap sync android
+if ($LASTEXITCODE -ne 0) { Write-Error "Capacitor sync failed"; exit 1 }
 
-# 1. Build frontend bundle
-Write-Host "`n[1/3] Building frontend production bundle..." -ForegroundColor Yellow
-Push-Location $frontendDir
-try {
-    npm run build
-} finally {
-    Pop-Location
-}
+# 3. Compile APK via Gradle
+Set-Location $ANDROID_DIR
+Write-Host "`n[3/3] Compiling Debug APK with Gradle..." -ForegroundColor Yellow
+.\gradlew.bat assembleDebug
+if ($LASTEXITCODE -ne 0) { Write-Error "Gradle build failed"; exit 1 }
 
-# 2. Sync Capacitor native Android
-Write-Host "`n[2/3] Syncing Capacitor native Android project..." -ForegroundColor Yellow
-Push-Location $frontendDir
-try {
-    npx cap sync android
-} finally {
-    Pop-Location
-}
-
-# 3. Compile Android APK via Gradle
-Write-Host "`n[3/3] Compiling Android APK with Gradle..." -ForegroundColor Yellow
-Push-Location $androidDir
-try {
-    if (Test-Path ".\gradlew.bat") {
-        .\gradlew.bat assembleDebug
-    } else {
-        gradle assembleDebug
-    }
-} finally {
-    Pop-Location
-}
-
-$apkPath = Join-Path $androidDir "app\build\outputs\apk\debug\app-debug.apk"
-if (Test-Path $apkPath) {
-    Write-Host "`n=========================================" -ForegroundColor Green
-    Write-Host "   APK BUILT SUCCESSFULLY!               " -ForegroundColor Green
-    Write-Host "   Location: $apkPath" -ForegroundColor Green
-    Write-Host "=========================================" -ForegroundColor Green
+$APK_PATH = Join-Path $ANDROID_DIR "app\build\outputs\apk\debug\app-debug.apk"
+if (Test-Path $APK_PATH) {
+    Write-Host "`nSUCCESS! APK Generated at:" -ForegroundColor Green
+    Write-Host "$APK_PATH" -ForegroundColor White
+    explorer.exe /select,$APK_PATH
 } else {
-    Write-Host "`nBuild completed. Open 'frontend/android' in Android Studio to run or sign the APK." -ForegroundColor Cyan
+    Write-Error "APK file not found after build"
 }
