@@ -1,0 +1,54 @@
+[
+  {
+    "id": "cp_17",
+    "name": "Checkpoint CP-17 (North Sector Bridge Entrance)",
+    "location": {
+      "lat": 28.7495,
+      "lon": 77.1182
+    },
+    "base_capacity": 250,
+    "facilities": [
+      "drinking_water",
+      "first_aid_station",
+      "solar_charging"
+    ],
+    "operational_status": "operational",
+    "warning": null,
+    "last_verified": "08:50"
+  },
+  {
+    "id": "shelter_alpha",
+    "name": "Shelter Alpha (Central Community High School)",
+    "location": {
+      "lat": 28.7420,
+      "lon": 77.1250
+    },
+    "base_capacity": 500,
+    "facilities": [
+      "drinking_water",
+      "food_cache",
+      "medical_tent",
+      "emergency_generator"
+    ],
+    "operational_status": "operational",
+    "warning": null,
+    "last_verified": "09:00"
+  },
+  {
+    "id": "clinic_beta",
+    "name": "Clinic Beta (West District Health Center)",
+    "location": {
+      "lat": 28.7550,
+      "lon": 77.1100
+    },
+    "base_capacity": 120,
+    "facilities": [
+      "trauma_care",
+      "antivenom_supply",
+      "clean_water"
+    ],
+    "operational_status": "operational",
+    "warning": null,
+    "last_verified": "08:45"
+  }
+]
