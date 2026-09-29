@@ -655,8 +655,8 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
 
   return (
     <Shell
-      title="RescueMemory Assistant"
-      subtitle="100% offline emergency memory. Instant triage, shelter guidance, and peer SOS."
+      title={tab === 'ask' ? '' : tab === 'map' ? 'Tactical Radar & Map' : tab === 'report' ? 'Emergency SOS' : 'Mesh Sync'}
+      subtitle=""
     >
       {/* Global Status & Alerts */}
       {error && (
@@ -789,44 +789,6 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
               </div>
 
               <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-                {/* Online / Offline status badge */}
-                <div
-                  className={`hidden sm:inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-xl border font-bold ${
-                    useAi
-                      ? 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-400 border-emerald-400/40 dark:border-emerald-500/20'
-                      : 'bg-amber-500/15 text-amber-800 dark:text-amber-400 border-amber-400/40 dark:border-amber-500/20'
-                  }`}
-                  title={useAi ? 'Connected to Internet: Cloud AI answers by default' : 'Offline Mode: Answers synthesized locally from Qdrant Edge Memory'}
-                >
-                  {useAi ? (
-                    <>
-                      <span className="relative flex h-1.5 w-1.5">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
-                      </span>
-                      <Wifi size={12} className="text-emerald-600 dark:text-emerald-500" />
-                      <span>Cloud AI Active</span>
-                    </>
-                  ) : (
-                    <>
-                      <span className="inline-flex rounded-full h-1.5 w-1.5 bg-amber-500"></span>
-                      <WifiOff size={12} className="text-amber-600 dark:text-amber-500" />
-                      <span>Offline Edge Mode</span>
-                    </>
-                  )}
-                </div>
-
-                {/* GPS location pill */}
-                <button
-                  type="button"
-                  onClick={useGps}
-                  title="Click to refresh GPS pin"
-                  className="hidden md:inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-xl border border-[#cbdbe9] dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-cyan-700 dark:hover:text-cyan-400 font-mono transition-colors font-semibold"
-                >
-                  <MapPin size={13} className="text-cyan-600 dark:text-cyan-400" />
-                  <span>{pin.lat.toFixed(3)}, {pin.lon.toFixed(3)}</span>
-                </button>
-
                 {/* Clear chat button */}
                 <button
                   type="button"
@@ -1152,6 +1114,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
           userLocation={pin}
           items={items}
           peers={peers}
+          onRefreshGps={useGps}
           onSelectLocation={(loc) => {
             setPin(loc);
             setCenter(loc);
@@ -1173,13 +1136,12 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
       {tab === 'report' && (
         <div className="max-w-2xl mx-auto space-y-4">
           <Card
-            title="Immediate Emergency SOS Broadcast"
-            subtitle="1-tap select situation. Broadcasts instantly to local Qdrant memory and nearby Wi-Fi mesh."
+            title="Emergency SOS Broadcast"
           >
             {/* 4 Clear High-Contrast Emergency Situation Tiles */}
             <div className="mb-4">
-              <label className="block text-xs text-slate-900 dark:text-slate-200 font-extrabold uppercase tracking-wider mb-2.5">
-                1. What is your immediate emergency?
+              <label className="block text-xs text-slate-700 dark:text-slate-300 font-bold uppercase tracking-wider mb-2">
+                Emergency Type:
               </label>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 {EMERGENCY_TYPES.map((type) => {
@@ -1224,12 +1186,9 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
             <form onSubmit={submitReport} className="space-y-4">
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs text-slate-900 dark:text-slate-200 font-extrabold uppercase tracking-wider">
-                    2. Situation Details (Pre-filled, edit if needed)
+                  <label className="text-xs text-slate-700 dark:text-slate-300 font-bold uppercase tracking-wider">
+                    Situation Details:
                   </label>
-                  <span className="text-[10px] text-slate-600 dark:text-slate-400 font-mono font-bold">
-                    {(report.text || '').length} chars
-                  </span>
                 </div>
                 <textarea
                   className="field min-h-20 w-full text-sm font-sans"
@@ -1242,14 +1201,11 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
               </div>
 
               {/* Real-time GPS Location Status Badge */}
-              <div className="rounded-xl bg-[#eef6fb] dark:bg-[#07111e] border border-cyan-400/50 p-3 text-xs text-slate-800 dark:text-slate-300 flex items-center justify-between">
+              <div className="rounded-xl bg-[#eef6fb] dark:bg-[#07111e] border border-cyan-400/40 p-2.5 text-xs text-slate-800 dark:text-slate-300 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-500 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
-                  </span>
+                  <span className="w-2 h-2 rounded-full bg-cyan-500 animate-pulse"></span>
                   <span className="font-mono text-cyan-950 dark:text-cyan-300 font-bold">
-                    GPS: {pin.lat.toFixed(5)}, {pin.lon.toFixed(5)} · Offline Lock
+                    Location: {pin.lat.toFixed(3)}, {pin.lon.toFixed(3)}
                   </span>
                 </div>
                 <button
@@ -1257,7 +1213,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                   onClick={useGps}
                   className="text-cyan-700 dark:text-cyan-400 hover:text-cyan-900 dark:hover:text-cyan-300 text-xs font-bold flex items-center gap-1 transition-colors"
                 >
-                  <Cross size={13} /> Update GPS
+                  <Cross size={12} /> Update
                 </button>
               </div>
 
@@ -1265,11 +1221,11 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
               <button
                 type="submit"
                 disabled={savingSos}
-                className="btn-sos-broadcast w-full py-4 rounded-2xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-rose-600 text-white font-black text-base sm:text-lg shadow-xl shadow-red-700/40 flex items-center justify-center gap-3 transition-all active:scale-[0.98] disabled:opacity-50 cursor-pointer"
+                className="btn-sos-broadcast w-full py-3.5 rounded-2xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-rose-600 text-white font-black text-base shadow-xl shadow-red-700/40 flex items-center justify-center gap-2.5 transition-all active:scale-[0.98] disabled:opacity-50 cursor-pointer"
               >
-                <AlertOctagon size={22} className="animate-pulse text-white" />
-                <span className="text-white">{savingSos ? 'Broadcasting to Mesh…' : 'BROADCAST EMERGENCY SOS NOW'}</span>
-                <ArrowRight size={20} className="text-white" />
+                <AlertOctagon size={20} className="animate-pulse text-white" />
+                <span className="text-white">{savingSos ? 'Broadcasting…' : 'SEND EMERGENCY SOS'}</span>
+                <ArrowRight size={18} className="text-white" />
               </button>
 
               {/* Optional Collapsed Accordion for Severity, Scope & Map Crosshair */}

@@ -113,9 +113,6 @@ export function QuietTelemetryPill({ health, sync, error }) {
           <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-600"></span>
         </span>
         <span className="hidden sm:inline font-bold">Offline Ready</span>
-        <span className="text-[10px] bg-emerald-200 dark:bg-emerald-900/60 text-emerald-950 dark:text-emerald-200 px-1.5 py-0.5 rounded font-mono font-bold">
-          {health?.guides ? `${health.guides} Guides` : 'Rust Edge'}
-        </span>
         <ChevronDown size={13} className={`opacity-70 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
@@ -212,19 +209,13 @@ export function Shell({ title, subtitle, children }) {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2.5 flex items-center justify-between gap-3">
           
           {/* Logo & Tactical Identity */}
-          <Link to="/" className="flex items-center gap-2.5 font-black tracking-tight text-lg group">
-            <span className="h-9 w-9 rounded-xl bg-gradient-to-br from-red-500 via-rose-500 to-red-600 flex items-center justify-center text-white shadow-md shadow-red-500/30 group-hover:scale-105 transition-transform">
-              <Activity size={20} />
+          <Link to="/" className="flex items-center gap-2 font-black tracking-tight text-lg group">
+            <span className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl bg-gradient-to-br from-red-500 via-rose-500 to-red-600 flex items-center justify-center text-white shadow-md shadow-red-500/25 group-hover:scale-105 transition-transform">
+              <Activity size={18} />
             </span>
-            <div className="flex flex-col">
-              <div className="flex items-center gap-1.5 leading-none">
-                <span className="font-extrabold text-base sm:text-lg tracking-tight text-slate-900 dark:bg-gradient-to-r dark:from-white dark:via-slate-100 dark:to-cyan-200 dark:bg-clip-text dark:text-transparent">RescueMemory</span>
-                <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-cyan-100 dark:bg-cyan-950/80 text-cyan-800 dark:text-cyan-300 border border-cyan-300 dark:border-cyan-500/30">
-                  EDGE
-                </span>
-              </div>
-              <span className="text-[10px] text-cyan-700 dark:text-cyan-400/80 font-mono tracking-wider font-semibold">OFFLINE SURVIVAL MESH</span>
-            </div>
+            <span className="font-extrabold text-base sm:text-lg tracking-tight text-slate-900 dark:text-white">
+              RescueMemory
+            </span>
           </Link>
 
           {/* Right Action Bar */}
@@ -302,27 +293,31 @@ export function Shell({ title, subtitle, children }) {
       {/* Main Screen Canvas */}
       <main className="max-w-7xl mx-auto w-full px-4 sm:px-6 py-4 sm:py-6 flex-1">
         {/* Minimal Reassuring Header */}
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-3 sm:mb-4">
-          {(title || subtitle) && (
-            <div>
-              <h1 className="text-lg sm:text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">
-                {title}
-              </h1>
-              {subtitle && (
-                <p className="hidden sm:block text-slate-600 dark:text-slate-400 text-xs sm:text-sm mt-0.5 leading-relaxed font-medium">
-                  {subtitle}
-                </p>
-              )}
-            </div>
-          )}
+        {(title || subtitle || last) && (
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3 sm:mb-4">
+            {(title || subtitle) && (
+              <div>
+                {title && (
+                  <h1 className="text-lg sm:text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">
+                    {title}
+                  </h1>
+                )}
+                {subtitle && (
+                  <p className="hidden sm:block text-slate-600 dark:text-slate-400 text-xs sm:text-sm mt-0.5 leading-relaxed font-medium">
+                    {subtitle}
+                  </p>
+                )}
+              </div>
+            )}
 
-          {last && (
-            <div className="text-[11px] sm:text-xs text-slate-700 dark:text-slate-400 bg-[#e6f0f7] dark:bg-slate-900/90 border border-[#cce0ef] dark:border-slate-800/80 rounded-xl px-2.5 py-1 flex items-center gap-1.5 shadow-xs font-mono font-medium">
-              <Cloud size={12} className="text-cyan-600 dark:text-cyan-400" />
-              <span>Synced {new Date(last).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-            </div>
-          )}
-        </div>
+            {last && (
+              <div className="text-[11px] sm:text-xs text-slate-700 dark:text-slate-400 bg-[#e6f0f7] dark:bg-slate-900/90 border border-[#cce0ef] dark:border-slate-800/80 rounded-xl px-2.5 py-1 flex items-center gap-1.5 shadow-xs font-mono font-medium">
+                <Cloud size={12} className="text-cyan-600 dark:text-cyan-400" />
+                <span>Synced {new Date(last).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Global Node Warning */}
         {error && (

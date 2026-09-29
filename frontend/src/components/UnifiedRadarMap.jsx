@@ -35,6 +35,7 @@ export default function UnifiedRadarMap({
   peers = [],
   onSelectLocation = null,
   onNavigateTarget = null,
+  onRefreshGps = null,
   role = 'survivor'
 }) {
   const [radarData, setRadarData] = useState(null);
@@ -286,8 +287,20 @@ export default function UnifiedRadarMap({
             </h2>
           </div>
 
-          {/* Right Action Menu: Options and Refresh */}
+          {/* Right Action Menu: GPS Pill, Options and Refresh */}
           <div className="flex items-center gap-1.5">
+            {userLocation?.lat != null && (
+              <button
+                type="button"
+                onClick={onRefreshGps}
+                title="Your current GPS coordinates. Tap to refresh."
+                className="inline-flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-xl border border-[#cbdbe9] dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-mono font-semibold hover:border-cyan-500 transition-colors"
+              >
+                <MapPin size={11} className="text-cyan-600 dark:text-cyan-400" />
+                <span>{userLocation.lat.toFixed(3)}, {userLocation.lon.toFixed(3)}</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => setShowSettings(!showSettings)}
@@ -403,8 +416,8 @@ export default function UnifiedRadarMap({
             ))}
           </div>
 
-          <div className="text-xs text-slate-500 dark:text-slate-400 font-mono">
-            Grid Center: {userLocation.lat.toFixed(4)}, {userLocation.lon.toFixed(4)}
+          <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+            {filteredMapItems.length} active points
           </div>
         </div>
 
