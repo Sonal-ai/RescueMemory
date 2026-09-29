@@ -30,6 +30,7 @@ import {
   User,
   Users,
   Wifi,
+  WifiOff,
   Zap
 } from 'lucide-react';
 import {
@@ -37,6 +38,8 @@ import {
   formatTime,
   saveSetting,
   setting,
+  isOnlineMode,
+  onOnlineModeChange,
   onBrainStatusChange,
   onSyncStateChange,
   getDiscoveredPeers,
@@ -81,7 +84,12 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
   const [text, setText] = useState('');
   const [answer, setAnswer] = useState(null);
   const [chatBusy, setChatBusy] = useState(false);
-  const [useAi, setUseAi] = useState(false);
+  const [useAi, setUseAi] = useState(() => isOnlineMode());
+
+  useEffect(() => {
+    return onOnlineModeChange(setUseAi);
+  }, []);
+
   const [shareLocation, setShareLocation] = useState(true);
   const [center, setCenter] = useState(DEFAULT_CENTER);
   const [pin, setPin] = useState(DEFAULT_CENTER);
@@ -604,84 +612,6 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
         </div>
       )}
 
-      {/* Prominent Emergency Action Bar: Find Survivors & Sync Nearest Beacon */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-        {/* Button 1: Find Survivors */}
-        <button
-          type="button"
-          onClick={() => { setTab('compass'); setError(''); setMessage(''); }}
-          className={`p-3.5 sm:p-4 rounded-2xl border text-left transition-all active:scale-98 flex items-center justify-between gap-3 shadow-sm ${
-            tab === 'compass'
-              ? 'bg-gradient-to-r from-red-600 to-rose-600 text-white border-red-500 shadow-md ring-2 ring-red-400'
-              : 'bg-white dark:bg-[#0b1626] border-slate-200 dark:border-slate-800 hover:border-red-500 text-slate-900 dark:text-slate-100'
-          }`}
-        >
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="p-2.5 rounded-xl bg-red-600 text-white shrink-0 shadow-md shadow-red-600/30">
-              <Crosshair size={22} className={nearestCasualty ? 'animate-pulse' : ''} />
-            </div>
-            <div className="truncate">
-              <div className="text-sm font-extrabold flex items-center gap-2">
-                <span>Find Survivors</span>
-                {nearestCasualty ? (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500 text-white uppercase tracking-wider font-bold animate-pulse">
-                    Target Locked
-                  </span>
-                ) : (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono">
-                    360° Compass
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-slate-500 dark:text-red-300/80 truncate mt-0.5">
-                {nearestCasualty
-                  ? `${nearestCasualty.name || 'Casualty'} · ${nearestCasualty.distance_m}m ${nearestCasualty.cardinal} (${nearestCasualty.bearing_deg}°)`
-                  : 'Point 360° survival compass & radar to locate injured'}
-              </p>
-            </div>
-          </div>
-          <ArrowRight size={18} className="shrink-0 text-red-500" />
-        </button>
-
-        {/* Button 2: Sync with Nearest Beacon */}
-        <button
-          type="button"
-          disabled={syncingBeacon}
-          onClick={handleSyncNearestBeacon}
-          className="p-3.5 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0b1626] hover:border-cyan-500 text-slate-900 dark:text-slate-100 text-left transition-all active:scale-98 flex items-center justify-between gap-3 shadow-sm"
-        >
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="p-2.5 rounded-xl bg-cyan-600 text-white shrink-0 shadow-md shadow-cyan-600/30">
-              {syncingBeacon ? (
-                <RefreshCw size={22} className="animate-spin" />
-              ) : (
-                <Radio size={22} />
-              )}
-            </div>
-            <div className="truncate">
-              <div className="text-sm font-extrabold flex items-center gap-2">
-                <span>Sync with Nearest Beacon</span>
-                {peers.length > 0 ? (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500 text-white uppercase tracking-wider font-bold">
-                    {peers.length} Online
-                  </span>
-                ) : (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono">
-                    Auto-Mesh
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-slate-500 dark:text-cyan-300/80 truncate mt-0.5">
-                {peers.length > 0
-                  ? `Nearest: ${peers[0].node_id} (~${peers[0].distance_m ?? 0}m away)`
-                  : '1-tap peer exchange over Wi-Fi / hotspot (UDP 8888)'}
-              </p>
-            </div>
-          </div>
-          <Zap size={18} className="shrink-0 text-cyan-500" />
-        </button>
-      </div>
-
       {/* Desktop HUD Segmented Navigation Pills */}
       <div className="hidden sm:grid sm:grid-cols-5 gap-2 mb-5">
         {TABS.map(([id, label, Icon]) => {
@@ -771,6 +701,33 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
               </div>
 
               <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                {/* Online / Offline status badge */}
+                <div
+                  className={`hidden sm:inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-xl border font-semibold ${
+                    useAi
+                      ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                      : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
+                  }`}
+                  title={useAi ? 'Connected to Internet: Cloud AI answers by default' : 'Offline Mode: Answers synthesized locally from Qdrant Edge Memory'}
+                >
+                  {useAi ? (
+                    <>
+                      <span className="relative flex h-1.5 w-1.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                      </span>
+                      <Wifi size={12} className="text-emerald-500" />
+                      <span>Cloud AI Active</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="inline-flex rounded-full h-1.5 w-1.5 bg-amber-500"></span>
+                      <WifiOff size={12} className="text-amber-500" />
+                      <span>Offline Edge Mode</span>
+                    </>
+                  )}
+                </div>
+
                 {/* GPS location pill */}
                 <button
                   type="button"
@@ -821,8 +778,20 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                     >
                       {/* Header meta */}
                       <div className="flex items-center justify-between gap-3 mb-1.5 text-[11px] opacity-75">
-                        <span className="font-semibold">
-                          {isUser ? 'You' : msg.isAi ? 'Cloud AI Response' : 'RescueMemory Edge RAG'}
+                        <span className="font-semibold flex items-center gap-1.5">
+                          {isUser ? (
+                            'You'
+                          ) : msg.isAi ? (
+                            <>
+                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                              <span className="text-emerald-600 dark:text-emerald-400 font-bold">Cloud AI (Gemini)</span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="h-1.5 w-1.5 rounded-full bg-amber-500"></span>
+                              <span className="text-amber-600 dark:text-amber-400 font-bold">RescueMemory Edge RAG (Offline)</span>
+                            </>
+                          )}
                         </span>
                         <span className="font-mono">
                           {msg.timestamp ? formatTime(msg.timestamp) : ''}
@@ -881,12 +850,15 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                         </div>
                       )}
 
-                      {/* Action Steps Checklist */}
-                      {msg.cards?.[0]?.steps?.length > 0 && (
+                      {/* Action Steps Checklist - Only display when genuine medical steps match and not greeting/fallback */}
+                      {msg.cards?.[0]?.steps?.length > 0 &&
+                       !msg.text.includes("Stay Calm & Safe") &&
+                       !msg.text.includes("Hello! I am your") &&
+                       !msg.text.includes("I could not find directly matching guidance") && (
                         <div className="mt-3.5 pt-3 border-t border-slate-200 dark:border-slate-800">
                           <p className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-2 flex items-center gap-1.5">
                             <CheckCircle2 size={13} className="text-emerald-500" />
-                            <span>Checklist (Tap to mark done):</span>
+                            <span>Clinical Checklist (Tap to mark done):</span>
                           </p>
                           <div className="space-y-1.5">
                             {msg.cards[0].steps.map((step, idx) => {
@@ -916,8 +888,11 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                         </div>
                       )}
 
-                      {/* Warning Banner */}
-                      {msg.cards?.[0]?.warnings?.length > 0 && (
+                      {/* Warning Banner - Only display when genuine medical warnings match and not greeting/fallback */}
+                      {msg.cards?.[0]?.warnings?.length > 0 &&
+                       !msg.text.includes("Stay Calm & Safe") &&
+                       !msg.text.includes("Hello! I am your") &&
+                       !msg.text.includes("I could not find directly matching guidance") && (
                         <div className="mt-3 p-2.5 rounded-xl border border-red-200 dark:border-red-800/80 bg-red-50 dark:bg-red-950/30 text-red-800 dark:text-red-200 text-xs flex items-start gap-2">
                           <TriangleAlert size={14} className="text-red-500 shrink-0 mt-0.5" />
                           <div className="leading-relaxed">

@@ -227,15 +227,24 @@ class RescueService:
         if request.use_ai:
             if not self.settings.gemini_api_key:
                 ai_status = "not_configured"
-            elif not grounded_cards and not grounded_hits:
-                ai_status = "no_evidence"
             else:
                 ai_answer = grounded_answer(
                     request.text, grounded_cards, grounded_hits,
                     self.settings.gemini_api_key, self.settings.gemini_model,
                 )
                 ai_status = "answered" if ai_answer else "unavailable"
-        return {"answer_type": "retrieved_cards", "cards": cards,
+
+        # Only return cards if they genuinely match the query, preventing irrelevant checklists on greetings
+        greetings = {"hi", "hello", "hey", "halo", "greetings", "good morning", "good afternoon", "good evening"}
+        is_greeting = request.text.lower().strip() in greetings
+        if is_greeting:
+            matching_cards = []
+        elif grounded_cards:
+            matching_cards = grounded_cards
+        else:
+            matching_cards = [c for c in cards if (terms & card_terms(c)) or c.get("score", 0) > 0.45]
+
+        return {"answer_type": "retrieved_cards", "cards": matching_cards,
                 "memory_hits": memory_hits[:5],
                 "ai_answer": ai_answer, "ai_status": ai_status,
                 "local_answer": local_answer, "suggested_action": suggested_action,

@@ -18,6 +18,33 @@ export function saveSetting(name, value) {
   sessionStorage.setItem(PREFIX + name, value.trim());
 }
 
+// Simulated Global Internet / Cloud Connectivity Toggle
+const ONLINE_MODE_KEY = 'rescue.online_mode';
+let isOnline = localStorage.getItem(ONLINE_MODE_KEY) !== 'false'; // default true
+const onlineModeListeners = new Set();
+
+export function isOnlineMode() {
+  return isOnline;
+}
+
+export function setOnlineMode(enabled) {
+  isOnline = Boolean(enabled);
+  localStorage.setItem(ONLINE_MODE_KEY, isOnline ? 'true' : 'false');
+  onlineModeListeners.forEach((fn) => {
+    try {
+      fn(isOnline);
+    } catch (e) {
+      console.error(e);
+    }
+  });
+}
+
+export function onOnlineModeChange(cb) {
+  onlineModeListeners.add(cb);
+  cb(isOnline);
+  return () => onlineModeListeners.delete(cb);
+}
+
 // Global connectivity state
 let isStandaloneMobileBrain = false;
 const brainStatusListeners = new Set();

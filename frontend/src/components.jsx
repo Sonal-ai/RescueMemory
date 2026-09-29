@@ -14,9 +14,10 @@ import {
   ShieldCheck,
   Sun,
   Wifi,
+  WifiOff,
   X
 } from 'lucide-react';
-import { api, saveSetting, setting } from './api';
+import { api, saveSetting, setting, isOnlineMode, setOnlineMode, onOnlineModeChange } from './api';
 
 export function useNodeStatus() {
   const [health, setHealth] = useState(null);
@@ -212,6 +213,11 @@ export function Shell({ title, subtitle, children }) {
   const last = sync?.last_sync || sync?.last_uplink;
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem('rescue.theme') === 'light' ? 'light' : 'dark');
+  const [online, setOnline] = useState(() => isOnlineMode());
+
+  useEffect(() => {
+    return onOnlineModeChange(setOnline);
+  }, []);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -249,6 +255,37 @@ export function Shell({ title, subtitle, children }) {
           <div className="flex items-center gap-2">
             {/* Quiet Status Pill */}
             <QuietTelemetryPill health={health} sync={sync} error={error} />
+
+            {/* Simulated Internet / Cloud Sync Switch */}
+            <button
+              type="button"
+              title={online ? 'Internet Connected (Cloud AI Gemini & Sync ON). Tap to switch to Disconnected Offline Mode' : 'Offline Disaster Mode (Local Edge Memory Only). Tap to enable Internet & Cloud AI'}
+              aria-label={online ? 'Disconnect Internet (Enter Offline Mode)' : 'Connect Internet (Enable Cloud AI)'}
+              aria-pressed={online}
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl border text-xs font-bold cursor-pointer transition-all active:scale-95 ${
+                online
+                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20'
+                  : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 hover:bg-amber-500/20'
+              }`}
+              onClick={() => setOnlineMode(!online)}
+            >
+              {online ? (
+                <>
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                  </span>
+                  <Wifi size={13} className="text-emerald-500" />
+                  <span className="hidden sm:inline">Online</span>
+                </>
+              ) : (
+                <>
+                  <span className="inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                  <WifiOff size={13} className="text-amber-500" />
+                  <span className="hidden sm:inline">Offline</span>
+                </>
+              )}
+            </button>
 
             {/* Dark / Light Mode Switch */}
             <button
