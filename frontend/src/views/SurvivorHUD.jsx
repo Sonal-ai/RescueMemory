@@ -429,12 +429,13 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
       setAnswer(result);
 
       // Append assistant response to chat thread
+      const asstAnswerText = result.ai_answer || result.local_answer || result.text || result.answer?.text || (result.cards?.[0] ? `### 🚨 Verified Protocol: ${result.cards[0].title}\n\n${result.cards[0].summary || ''}` : "### 🛡️ Stay Calm & Safe\n• **Move away from hazards:** If in immediate danger, move to open secure ground.\n• **Contact emergency services:** Call **112 / 911** or broadcast via the **Emergency SOS** tab.\n• **Offline Disaster Brain:** I have 419 emergency protocols on your device. Ask me about **inability to walk**, **severe bleeding**, **CPR**, **burns**, or **clean water**.");
       const asstMsg = {
         id: `asst_${Date.now()}`,
         role: 'assistant',
-        text: result.ai_answer || result.local_answer || result.text || result.answer?.text || "No verified procedure matched your query.",
+        text: asstAnswerText,
         ai_answer: result.ai_answer,
-        local_answer: result.local_answer || result.text || result.answer?.text,
+        local_answer: result.local_answer || result.text || result.answer?.text || asstAnswerText,
         suggested_action: result.suggested_action,
         cards: result.cards || result.answer?.source_cards || [],
         memory_hits: result.memory_hits,
@@ -843,15 +844,15 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
 
                     {/* Message Bubble Container */}
                     <div
-                      className={`chat-assistant-bubble transition-all ${
+                      className={`transition-all ${
                         isUser
-                          ? 'max-w-[85%] sm:max-w-[70%] rounded-2xl p-3 sm:p-3.5 shadow-md bg-gradient-to-r from-cyan-600 via-sky-600 to-blue-600 text-white rounded-tr-xs ml-auto'
-                          : 'max-w-[92%] sm:max-w-[80%] rounded-2xl p-3.5 sm:p-4 shadow-sm bg-white dark:bg-gradient-to-b dark:from-[#0d172b] dark:to-[#081120] border border-[#d3e3f0] dark:border-cyan-500/15 text-slate-900 dark:text-slate-100 rounded-tl-xs'
+                          ? 'user-chat-bubble max-w-[85%] sm:max-w-[70%] rounded-2xl p-3.5 sm:p-4 shadow-md bg-gradient-to-r from-sky-600 via-cyan-600 to-blue-600 text-white rounded-tr-xs ml-auto ring-1 ring-white/20'
+                          : 'chat-assistant-bubble max-w-[92%] sm:max-w-[80%] rounded-2xl p-3.5 sm:p-4 shadow-sm bg-white dark:bg-gradient-to-b dark:from-[#0d172b] dark:to-[#081120] border border-[#d3e3f0] dark:border-cyan-500/15 text-slate-900 dark:text-slate-100 rounded-tl-xs'
                       }`}
                     >
                       {/* Header meta */}
-                      <div className="flex items-center justify-between gap-3 mb-1.5 text-[11px] opacity-75">
-                        <span className="font-semibold flex items-center gap-1.5">
+                      <div className="flex items-center justify-between gap-3 mb-1.5 text-[11px] opacity-90">
+                        <span className={`font-semibold flex items-center gap-1.5 ${isUser ? 'text-white' : 'text-slate-600 dark:text-slate-400'}`}>
                           {isUser ? (
                             'You'
                           ) : msg.isAi ? (
@@ -866,15 +867,15 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                             </>
                           )}
                         </span>
-                        <span className="font-mono">
+                        <span className={`font-mono text-[10px] ${isUser ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>
                           {msg.timestamp ? formatTime(msg.timestamp) : ''}
                         </span>
                       </div>
 
                       {/* Message Body with rich Markdown parsing */}
-                      <div className={isUser ? 'text-sm text-white font-medium whitespace-pre-wrap' : 'text-sm'}>
+                      <div className={isUser ? 'text-sm text-white font-medium whitespace-pre-wrap' : 'text-sm text-slate-900 dark:text-slate-100'}>
                         {isUser ? (
-                          msg.text
+                          <span className="text-white font-semibold text-[13.5px] leading-relaxed block">{msg.text}</span>
                         ) : (
                           <MarkdownContent content={msg.text} />
                         )}

@@ -12,8 +12,9 @@
  */
 
 import { saveOfflineReport, getUnsyncedReports, markReportsSynced, getAllLocalReports } from './offlineStorage.js';
+import staticCards from '../../public/data/knowledge_cards.json';
 
-let cachedCards = null;
+let cachedCards = Array.isArray(staticCards) ? staticCards : [];
 let cachedVectors = null;
 let isInitializing = false;
 let initPromise = null;
@@ -36,7 +37,10 @@ function notifySync(state) {
  * Loads pre-computed knowledge cards and 384-d vectors into browser memory.
  */
 export async function initOfflineBrain() {
-  if (cachedCards && cachedVectors) {
+  if (!cachedCards || cachedCards.length === 0) {
+    cachedCards = Array.isArray(staticCards) ? staticCards : [];
+  }
+  if (cachedVectors) {
     return { cards: cachedCards, vectors: cachedVectors };
   }
   if (isInitializing) {
@@ -46,48 +50,29 @@ export async function initOfflineBrain() {
   isInitializing = true;
   initPromise = (async () => {
     try {
-      const fetchShard = async (file) => {
-        try {
-          const res = await fetch(`./data/${file}`);
-          if (res.ok) return res;
-        } catch {}
-        try {
-          const res = await fetch(`/data/${file}`);
-          if (res.ok) return res;
-        } catch {}
-        return fetch(`data/${file}`);
-      };
-
-      const [cardsRes, vectorsRes] = await Promise.all([
-        fetchShard('knowledge_cards.json'),
-        fetchShard('knowledge_vectors.json'),
-      ]);
-
-      if (!cardsRes.ok || !vectorsRes.ok) {
-        throw new Error('Failed to load local knowledge shard files');
-      }
-
-      cachedCards = await cardsRes.json();
-      cachedVectors = await vectorsRes.json();
-      console.log(`[OfflineBrain] Initialized with ${cachedCards.length} cards and ${Object.keys(cachedVectors).length} vectors.`);
+      // 1. Dynamic import vectors for vector cosine similarity
+      const vecMod = await import('../../public/data/knowledge_vectors.json');
+      cachedVectors = vecMod.default || vecMod;
       return { cards: cachedCards, vectors: cachedVectors };
     } catch (err) {
-      console.warn('[OfflineBrain] Shard fetch failed, attempting cache match:', err);
+      console.warn('[OfflineBrain] Dynamic import of vectors failed, attempting fetch:', err);
       try {
-        const cache = await caches.open('rescue-memory-pwa-v2');
-        const [cMatch, vMatch] = await Promise.all([
-          cache.match('/data/knowledge_cards.json'),
-          cache.match('/data/knowledge_vectors.json'),
-        ]);
-        if (cMatch && vMatch) {
-          cachedCards = await cMatch.json();
-          cachedVectors = await vMatch.json();
+        const fetchFile = async (f) => {
+          const res = await fetch(`./data/${f}`).catch(() => null) ||
+                      await fetch(`/data/${f}`).catch(() => null) ||
+                      await fetch(`data/${f}`).catch(() => null);
+          return res;
+        };
+        const vRes = await fetchFile('knowledge_vectors.json');
+        if (vRes && vRes.ok) {
+          cachedVectors = await vRes.json();
           return { cards: cachedCards, vectors: cachedVectors };
         }
-      } catch (cacheErr) {
-        console.error('[OfflineBrain] Cache fallback error:', cacheErr);
+      } catch (fetchErr) {
+        console.warn('[OfflineBrain] Vectors fetch fallback error:', fetchErr);
       }
-      throw err;
+      cachedVectors = {};
+      return { cards: cachedCards, vectors: cachedVectors };
     } finally {
       isInitializing = false;
     }
@@ -219,29 +204,31 @@ export async function recommendAlternativeLocal(compromisedId, avoidHazardText =
 }
 
 const EMERGENCY_SYNONYMS = {
-  walk: ['walk', 'leg', 'extremity', 'weight', 'mobility', 'fracture', 'trauma'],
-  cant: ['cannot', 'unable', 'inability'],
-  hurt: ['injury', 'trauma', 'wound', 'pain'],
-  broken: ['fracture', 'bone', 'splint', 'trauma'],
-  water: ['water', 'drinking', 'purify', 'disinfection', 'filtration', 'hydration'],
-  burn: ['burn', 'burns', 'thermal', 'scald', 'fire'],
-  bleed: ['bleeding', 'blood', 'hemorrhage', 'tourniquet', 'wound'],
-  breath: ['breathing', 'respiratory', 'airway', 'cpr', 'choking'],
-  breathe: ['breathing', 'respiratory', 'airway', 'cpr', 'choking'],
-  stuck: ['trapped', 'rubble', 'collapse', 'extrication'],
-  trapped: ['trapped', 'rubble', 'collapse', 'debris', 'extrication'],
-  snake: ['snakebite', 'venom', 'envenomation'],
-  bite: ['bite', 'snakebite', 'puncture'],
+  walk: ['walk', 'leg', 'extremity', 'weight', 'mobility', 'fracture', 'trauma', 'foot', 'ankle', 'broken', 'bone'],
+  cant: ['cannot', 'unable', 'inability', 'cant', 'hard', 'fail'],
+  hurt: ['injury', 'trauma', 'wound', 'pain', 'sore', 'ache'],
+  broken: ['fracture', 'bone', 'splint', 'trauma', 'broken', 'dislocated'],
+  water: ['water', 'drinking', 'purify', 'disinfection', 'filtration', 'hydration', 'clean', 'potable', 'boil'],
+  burn: ['burn', 'burns', 'thermal', 'scald', 'fire', 'chemical'],
+  bleed: ['bleeding', 'blood', 'hemorrhage', 'tourniquet', 'wound', 'cut', 'laceration', 'arterial'],
+  breath: ['breathing', 'respiratory', 'airway', 'cpr', 'choking', 'gasping'],
+  breathe: ['breathing', 'respiratory', 'airway', 'cpr', 'choking', 'gasping'],
+  stuck: ['trapped', 'rubble', 'collapse', 'debris', 'extrication'],
+  trapped: ['trapped', 'rubble', 'collapse', 'debris', 'extrication', 'buried'],
+  snake: ['snakebite', 'venom', 'envenomation', 'serpent'],
+  bite: ['bite', 'snakebite', 'puncture', 'animal', 'rabies'],
   chok: ['choking', 'airway', 'cpr', 'heimlich'],
-  cpr: ['cpr', 'resuscitation', 'cardiac', 'unresponsive'],
-  shock: ['shock', 'hypovolemic', 'perfusion', 'blanket'],
-  cold: ['hypothermia', 'frostbite', 'exposure'],
-  heat: ['heatstroke', 'exhaustion', 'hyperthermia'],
+  cpr: ['cpr', 'resuscitation', 'cardiac', 'unresponsive', 'chest compression', 'heart'],
+  shock: ['shock', 'hypovolemic', 'perfusion', 'blanket', 'pale'],
+  cold: ['hypothermia', 'frostbite', 'exposure', 'freezing'],
+  heat: ['heatstroke', 'exhaustion', 'hyperthermia', 'dehydration'],
+  first: ['first aid', 'wound', 'care', 'emergency', 'help'],
+  aid: ['first aid', 'wound', 'care', 'treatment'],
 };
 
 const STOP_WORDS = new Set([
-  'got', 'have', 'had', 'the', 'this', 'that', 'with', 'from', 'help', 'and', 'for', 
-  'are', 'was', 'were', 'what', 'how', 'can', 'you', 'please', 'need', 'make', 'give', 'does'
+  'got', 'have', 'had', 'the', 'this', 'that', 'with', 'from', 'and', 'for', 
+  'are', 'was', 'were', 'what', 'how', 'can', 'you', 'please', 'make', 'give', 'does'
 ]);
 
 function extractStepsFromCard(card) {
@@ -259,15 +246,15 @@ function extractStepsFromCard(card) {
  * Client-Side Semantic & Keyword Search over 419 Emergency Cards
  */
 export async function searchKnowledgeLocal(queryText, limit = 5) {
-  await initOfflineBrain();
-  if (!cachedCards || cachedCards.length === 0) {
-    return {
-      source_cards: [],
-      text: 'Offline emergency knowledge base is loading or unavailable.',
-      warnings: [],
-      on_device: true
-    };
+  try {
+    await initOfflineBrain();
+  } catch (e) {
+    console.warn('[OfflineBrain] init check:', e);
   }
+
+  const cards = (cachedCards && cachedCards.length > 0)
+    ? cachedCards
+    : (Array.isArray(staticCards) ? staticCards : []);
 
   const rawWords = (queryText || '')
     .toLowerCase()
@@ -278,7 +265,7 @@ export async function searchKnowledgeLocal(queryText, limit = 5) {
   const expandedTermsSet = new Set(rawWords);
   for (const w of rawWords) {
     for (const [key, syns] of Object.entries(EMERGENCY_SYNONYMS)) {
-      if (w.includes(key)) {
+      if (w.includes(key) || key.includes(w)) {
         syns.forEach((s) => expandedTermsSet.add(s));
       }
     }
@@ -287,7 +274,7 @@ export async function searchKnowledgeLocal(queryText, limit = 5) {
 
   const scoredCards = [];
   if (queryTerms.length > 0) {
-    for (const card of cachedCards) {
+    for (const card of cards) {
       let score = 0;
       const id = (card.id || '').toLowerCase().replace(/[-_]/g, ' ');
       const title = (card.title || '').toLowerCase();
@@ -313,7 +300,7 @@ export async function searchKnowledgeLocal(queryText, limit = 5) {
   const matchesFound = scoredCards.length > 0;
   const topCards = matchesFound
     ? scoredCards.slice(0, limit).map((sc) => sc.card)
-    : cachedCards.slice(0, limit);
+    : cards.slice(0, limit);
 
   const mappedCards = topCards.map((c) => ({
     id: c.id,
@@ -329,7 +316,7 @@ export async function searchKnowledgeLocal(queryText, limit = 5) {
   const allWarnings = mappedCards.flatMap((c) => c.warnings || []).filter(Boolean);
 
   let formattedText = '';
-  if (primaryCard) {
+  if (matchesFound && primaryCard) {
     formattedText = `### 🚨 Verified Protocol: ${primaryCard.title}\n\n`;
     if (primaryCard.summary) {
       formattedText += `**Protocol Summary:**\n${primaryCard.summary}\n\n`;
@@ -344,7 +331,10 @@ export async function searchKnowledgeLocal(queryText, limit = 5) {
       formattedText += `**Related Reference Protocols:**\n` + mappedCards.slice(1).map((c) => `• **${c.title}**${c.summary ? `: ${c.summary}` : ''}`).join('\n');
     }
   } else {
-    formattedText = 'No verified emergency protocol matched your query. Please stay calm and check the emergency directory.';
+    formattedText = `### 🛡️ Stay Calm & Safe\n\n` +
+      `• **Move away from hazards:** If you are near falling debris, floodwaters, collapsed walls, or downed power lines, move immediately to open ground.\n` +
+      `• **Contact emergency services:** Call **112 / 911** or broadcast an immediate responder alert using the **Emergency SOS** tab.\n` +
+      `• **Offline Emergency Brain:** I have **419 verified clinical guidelines** stored locally on your device. Ask me about **inability to walk**, **severe bleeding**, **CPR**, **burns**, or **clean water**.`;
   }
 
   return {
