@@ -1,0 +1,22 @@
+{
+  "short_name": "RescueMemory",
+  "name": "RescueMemory: Disaster Relay",
+  "description": "Offline-first AI disaster memory and intelligence platform",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#08111d",
+  "background_color": "#08111d"
+}
