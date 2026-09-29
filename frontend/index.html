@@ -14,6 +14,16 @@
     <meta name="apple-mobile-web-app-title" content="RescueMemory" />
     <meta name="description" content="RescueMemory offline-first AI disaster memory and relay platform" />
     <title>RescueMemory</title>
+    <script>
+      (function() {
+        try {
+          var t = localStorage.getItem('rescue.theme') || 'dark';
+          document.documentElement.dataset.theme = t;
+          if (t === 'dark') document.documentElement.classList.add('dark');
+          else document.documentElement.classList.remove('dark');
+        } catch(e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

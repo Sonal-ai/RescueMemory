@@ -215,6 +215,11 @@ export function Shell({ title, subtitle, children }) {
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
     localStorage.setItem('rescue.theme', theme);
   }, [theme]);
 

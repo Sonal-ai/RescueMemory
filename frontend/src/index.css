@@ -472,3 +472,39 @@ body {
 :root[data-theme="light"] [class*="from-blue-600"] {
   background-image: initial !important;
 }
+
+/* Ensure strong, bold, and heading elements are always clearly visible in light & dark modes */
+:root[data-theme="light"] strong,
+:root[data-theme="light"] b {
+  color: #0f172a !important;
+  font-weight: 700 !important;
+}
+
+:root[data-theme="dark"] strong,
+:root[data-theme="dark"] b {
+  color: #f8fafc !important;
+  font-weight: 700 !important;
+}
+
+:root[data-theme="light"] .chat-assistant-bubble,
+:root[data-theme="light"] .chat-assistant-bubble p,
+:root[data-theme="light"] .chat-assistant-bubble span,
+:root[data-theme="light"] .chat-assistant-bubble li {
+  color: #1e293b !important;
+}
+
+:root[data-theme="light"] .chat-assistant-bubble strong,
+:root[data-theme="light"] .chat-assistant-bubble b,
+:root[data-theme="light"] .chat-assistant-bubble h3,
+:root[data-theme="light"] .chat-assistant-bubble h4 {
+  color: #0f172a !important;
+  font-weight: 700 !important;
+}
+
+:root[data-theme="dark"] .chat-assistant-bubble strong,
+:root[data-theme="dark"] .chat-assistant-bubble b,
+:root[data-theme="dark"] .chat-assistant-bubble h3,
+:root[data-theme="dark"] .chat-assistant-bubble h4 {
+  color: #ffffff !important;
+  font-weight: 700 !important;
+}
