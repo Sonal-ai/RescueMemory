@@ -1,0 +1,16 @@
+{
+  "appId": "com.rescuememory.app",
+  "appName": "RescueMemory",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "android": {
+    "backgroundColor": "#08111d",
+    "allowMixedContent": true
+  },
+  "plugins": {
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#08111d"
+    }
+  }
+}
