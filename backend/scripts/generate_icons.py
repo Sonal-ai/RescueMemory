@@ -30,12 +30,12 @@ def load_master_logo() -> tuple[Image.Image, Image.Image, Image.Image]:
 
     im = Image.open(LOGO_PATH).convert("RGBA")
 
-    # Emblem crop: wifi waves + slash, mountains, pin, open book, connected nodes
-    # Coordinates in 370x364 source:
-    emblem = im.crop((38, 46, 332, 234))
+    # Tight emblem crop: wifi waves + slash, mountains, pin, open book, connected nodes
+    # Content boundaries: x: 98..314, y: 50..228
+    emblem = im.crop((98, 50, 314, 228))
 
-    # Full logo crop: emblem + 'RescueMemory' wordmark
-    full_logo = im.crop((38, 46, 326, 276))
+    # Full logo crop: emblem + 'RescueMemory' wordmark (x: 44..324, y: 48..276)
+    full_logo = im.crop((44, 48, 324, 276))
 
     return im, emblem, full_logo
 
@@ -74,17 +74,17 @@ def create_centered_badge(
 
 
 def generate_svg(emblem: Image.Image) -> str:
-    """Creates a clean SVG favicon with embedded high-res emblem."""
-    # Scale emblem to 64x64 canvas
-    badge_64 = create_centered_badge(emblem, 128, padding_ratio=0.08, rounded_radius=24)
+    """Creates a clean SVG favicon with tightly zoomed high-res emblem."""
+    # Scale emblem to 128x128 canvas with minimal margin
+    badge_128 = create_centered_badge(emblem, 128, padding_ratio=0.02, rounded_radius=20)
     buffer = io.BytesIO()
-    badge_64.save(buffer, format="PNG")
+    badge_128.save(buffer, format="PNG")
     b64_png = base64.b64encode(buffer.getvalue()).decode("ascii")
 
     return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
   <defs>
     <clipPath id="squircle">
-      <rect width="128" height="128" rx="28" ry="28" />
+      <rect width="128" height="128" rx="20" ry="20" />
     </clipPath>
   </defs>
   <g clip-path="url(#squircle)">
@@ -163,15 +163,15 @@ def main():
     PUBLIC_DIR.mkdir(parents=True, exist_ok=True)
     _, emblem, full_logo = load_master_logo()
 
-    # 1. Favicon (64x64 PNG): Emblem centered with subtle rounded squircle
-    fav_64 = create_centered_badge(emblem, 64, padding_ratio=0.08, rounded_radius=14)
+    # 1. Favicon (64x64 PNG): Emblem tightly zoomed with minimal edge padding
+    fav_64 = create_centered_badge(emblem, 64, padding_ratio=0.02, rounded_radius=10)
     fav_64.save(PUBLIC_DIR / "favicon.png", "PNG")
     print(f"Generated: {PUBLIC_DIR / 'favicon.png'}")
 
     # 2. Favicon (Multi-res ICO): 16x16, 32x32, 48x48
-    fav_16 = create_centered_badge(emblem, 16, padding_ratio=0.04, rounded_radius=3)
-    fav_32 = create_centered_badge(emblem, 32, padding_ratio=0.06, rounded_radius=6)
-    fav_48 = create_centered_badge(emblem, 48, padding_ratio=0.08, rounded_radius=10)
+    fav_16 = create_centered_badge(emblem, 16, padding_ratio=0.0, rounded_radius=2)
+    fav_32 = create_centered_badge(emblem, 32, padding_ratio=0.01, rounded_radius=4)
+    fav_48 = create_centered_badge(emblem, 48, padding_ratio=0.02, rounded_radius=6)
     fav_32.save(
         PUBLIC_DIR / "favicon.ico",
         format="ICO",
