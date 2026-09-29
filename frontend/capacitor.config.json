@@ -7,6 +7,10 @@
     "backgroundColor": "#08111d",
     "allowMixedContent": true
   },
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true
+  },
   "plugins": {
     "StatusBar": {
       "style": "DARK",

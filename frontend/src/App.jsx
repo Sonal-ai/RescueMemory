@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import SurvivorHUD from './views/SurvivorHUD';
 import VolunteerBoard from './views/VolunteerBoard';
 import CommandInspector from './views/CommandInspector';
@@ -8,10 +8,11 @@ import SafePlace from './views/SafePlace';
 
 function App() {
   return (
-    <BrowserRouter>
+    <HashRouter>
       <Routes>
         {/* Main Home Page: Emergency Chatbot & Triage */}
         <Route path="/" element={<SurvivorHUD initialTab="ask" />} />
+        <Route path="/index.html" element={<SurvivorHUD initialTab="ask" />} />
         <Route path="/chat" element={<SurvivorHUD initialTab="ask" />} />
         <Route path="/compass" element={<SurvivorHUD initialTab="compass" />} />
         <Route path="/find" element={<SurvivorHUD initialTab="compass" />} />
@@ -30,8 +31,11 @@ function App() {
         
         {/* Project Architecture & Mesh Info */}
         <Route path="/about" element={<ActivationScreen />} />
+
+        {/* Universal Fallback: Unmatched paths always resolve to Home */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-    </BrowserRouter>
+    </HashRouter>
   );
 }
 

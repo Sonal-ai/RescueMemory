@@ -46,9 +46,21 @@ export async function initOfflineBrain() {
   isInitializing = true;
   initPromise = (async () => {
     try {
+      const fetchShard = async (file) => {
+        try {
+          const res = await fetch(`./data/${file}`);
+          if (res.ok) return res;
+        } catch {}
+        try {
+          const res = await fetch(`/data/${file}`);
+          if (res.ok) return res;
+        } catch {}
+        return fetch(`data/${file}`);
+      };
+
       const [cardsRes, vectorsRes] = await Promise.all([
-        fetch('/data/knowledge_cards.json'),
-        fetch('/data/knowledge_vectors.json'),
+        fetchShard('knowledge_cards.json'),
+        fetchShard('knowledge_vectors.json'),
       ]);
 
       if (!cardsRes.ok || !vectorsRes.ok) {
