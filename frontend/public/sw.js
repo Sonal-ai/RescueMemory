@@ -1,13 +1,15 @@
-const CACHE_NAME = 'rescue-memory-pwa-v3';
+const CACHE_NAME = 'rescue-memory-pwa-v4';
 const PRECACHE_ASSETS = [
   '/',
   '/index.html',
   '/manifest.json',
+  '/favicon.ico',
   '/favicon.png',
   '/favicon.svg',
   '/icon-192.png',
   '/icon-512.png',
   '/icon-maskable-512.png',
+  '/logo.png',
 ];
 
 // Install: Cache essential app shell

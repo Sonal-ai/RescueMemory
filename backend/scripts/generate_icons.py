@@ -1,137 +1,214 @@
-"""Generate crisp RescueMemory brand icons (SVG and PNGs) with Android maskable safe-zone padding."""
+"""Generate crisp RescueMemory brand icons (SVG, ICO, and PNGs) using the official brand logo.
+
+Handles:
+1. Favicon (64x64 PNG, multi-res ICO, SVG)
+2. PWA icons (icon-192.png, icon-512.png)
+3. Android adaptive maskable icon (icon-maskable-512.png with safe-zone margin)
+4. Android native mipmap launcher icons in frontend/android/app/src/main/res/
+5. Clean-up of any duplicate PNGs in the Android assets folder
+"""
+import base64
+import io
 from pathlib import Path
 from PIL import Image, ImageDraw
 
-PUBLIC_DIR = Path(__file__).resolve().parents[2] / "frontend" / "public"
+ROOT_DIR = Path(__file__).resolve().parents[2]
+FRONTEND_DIR = ROOT_DIR / "frontend"
+PUBLIC_DIR = FRONTEND_DIR / "public"
+LOGO_PATH = PUBLIC_DIR / "logo.png"
+ANDROID_RES_DIR = FRONTEND_DIR / "android" / "app" / "src" / "main" / "res"
+ANDROID_ASSETS_DIR = FRONTEND_DIR / "android" / "app" / "src" / "main" / "assets" / "public"
 
-# SVG with crisp gradient squircle and heartbeat pulse waveform
-FAVICON_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+# Master logo background color
+BG_COLOR = (243, 242, 242, 255)  # #f3f2f2
+
+
+def load_master_logo() -> tuple[Image.Image, Image.Image, Image.Image]:
+    """Loads master logo and extracts emblem and full logo."""
+    if not LOGO_PATH.exists():
+        raise FileNotFoundError(f"Master logo not found at {LOGO_PATH}")
+
+    im = Image.open(LOGO_PATH).convert("RGBA")
+
+    # Emblem crop: wifi waves + slash, mountains, pin, open book, connected nodes
+    # Coordinates in 370x364 source:
+    emblem = im.crop((38, 46, 332, 234))
+
+    # Full logo crop: emblem + 'RescueMemory' wordmark
+    full_logo = im.crop((38, 46, 326, 276))
+
+    return im, emblem, full_logo
+
+
+def create_centered_badge(
+    artwork: Image.Image,
+    target_size: int,
+    padding_ratio: float = 0.12,
+    bg_color: tuple[int, int, int, int] = BG_COLOR,
+    rounded_radius: int = 0
+) -> Image.Image:
+    """Centers artwork within a square canvas of target_size x target_size."""
+    canvas = Image.new("RGBA", (target_size, target_size), (0, 0, 0, 0))
+
+    # Draw rounded background if radius > 0, else full fill
+    draw = ImageDraw.Draw(canvas)
+    if rounded_radius > 0:
+        draw.rounded_rectangle([(0, 0), (target_size - 1, target_size - 1)], radius=rounded_radius, fill=bg_color)
+    else:
+        draw.rectangle([(0, 0), (target_size, target_size)], fill=bg_color)
+
+    # Scale artwork preserving aspect ratio to fit inside (target_size * (1 - 2*padding_ratio))
+    available_w = target_size * (1.0 - 2 * padding_ratio)
+    available_h = target_size * (1.0 - 2 * padding_ratio)
+    scale = min(available_w / artwork.width, available_h / artwork.height)
+
+    new_w = max(1, int(round(artwork.width * scale)))
+    new_h = max(1, int(round(artwork.height * scale)))
+    resized_art = artwork.resize((new_w, new_h), Image.Resampling.LANCZOS)
+
+    offset_x = (target_size - new_w) // 2
+    offset_y = (target_size - new_h) // 2
+    canvas.paste(resized_art, (offset_x, offset_y), resized_art)
+
+    return canvas
+
+
+def generate_svg(emblem: Image.Image) -> str:
+    """Creates a clean SVG favicon with embedded high-res emblem."""
+    # Scale emblem to 64x64 canvas
+    badge_64 = create_centered_badge(emblem, 128, padding_ratio=0.08, rounded_radius=24)
+    buffer = io.BytesIO()
+    badge_64.save(buffer, format="PNG")
+    b64_png = base64.b64encode(buffer.getvalue()).decode("ascii")
+
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
   <defs>
-    <linearGradient id="rescueGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#fb7185" />
-      <stop offset="50%" stop-color="#ef4444" />
-      <stop offset="100%" stop-color="#b91c1c" />
-    </linearGradient>
-    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
-      <feGaussianBlur stdDeviation="1.5" result="blur" />
-      <feComposite in="SourceGraphic" in2="blur" operator="over" />
-    </filter>
+    <clipPath id="squircle">
+      <rect width="128" height="128" rx="28" ry="28" />
+    </clipPath>
   </defs>
-  <!-- Background Squircle -->
-  <rect x="2" y="2" width="60" height="60" rx="16" fill="url(#rescueGrad)" stroke="#fda4af" stroke-width="1.5" />
-  <!-- ECG Heartbeat Pulse Line -->
-  <path d="M 10 33 L 20 33 L 26 17 L 34 47 L 41 24 L 46 33 L 54 33"
-        fill="none"
-        stroke="#ffffff"
-        stroke-width="5"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        filter="url(#glow)" />
-  <circle cx="54" cy="33" r="2.5" fill="#ffffff" />
+  <g clip-path="url(#squircle)">
+    <image href="data:image/png;base64,{b64_png}" width="128" height="128" />
+  </g>
 </svg>
 """
 
 
-def draw_icon(size: int, is_maskable: bool = False) -> Image.Image:
-    """Draws high-resolution RescueMemory brand icon.
-    
-    If is_maskable is True, background extends to the edges and the emblem
-    is drawn strictly inside the central 70% safe zone to prevent Android clipping.
-    """
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
+def update_android_native_icons(full_logo: Image.Image, emblem: Image.Image):
+    """Generates standard Android mipmap launcher icons if directory exists."""
+    if not ANDROID_RES_DIR.exists():
+        print(f"Android res dir not found at {ANDROID_RES_DIR}, skipping native icons.")
+        return
 
-    scale = size / 512.0
+    densities = {
+        "mipmap-mdpi": (48, 108),
+        "mipmap-hdpi": (72, 162),
+        "mipmap-xhdpi": (96, 216),
+        "mipmap-xxhdpi": (144, 324),
+        "mipmap-xxxhdpi": (192, 432),
+    }
 
-    if is_maskable:
-        # Full-bleed dark background with red brand card centered in safe zone
-        draw.rectangle([(0, 0), (size, size)], fill=(11, 22, 37, 255))  # #0b1625
+    for folder, (size, fg_size) in densities.items():
+        dir_path = ANDROID_RES_DIR / folder
+        if not dir_path.exists():
+            continue
 
-        # Safe zone bounds: 512 * 0.15 = ~77px padding on all sides
-        pad = int(80 * scale)
-        r = int(72 * scale)
-        card_box = [(pad, pad), (size - pad, size - pad)]
-        draw.rounded_rectangle(card_box, radius=r, fill=(239, 68, 68, 255), outline=(253, 164, 175, 255), width=int(4 * scale))
-        
-        # Center coordinates for pulse inside safe zone
-        mid_y = size / 2.0
-        pts = [
-            (pad + 30 * scale, mid_y),
-            (pad + 75 * scale, mid_y),
-            (pad + 115 * scale, mid_y - 80 * scale),
-            (pad + 175 * scale, mid_y + 90 * scale),
-            (pad + 225 * scale, mid_y - 45 * scale),
-            (pad + 265 * scale, mid_y),
-            (size - pad - 30 * scale, mid_y),
-        ]
-        stroke_w = max(2, int(22 * scale))
+        # Standard squircle launcher icon
+        r = max(4, int(size * 0.22))
+        launcher = create_centered_badge(full_logo, size, padding_ratio=0.10, rounded_radius=r)
+        launcher.save(dir_path / "ic_launcher.png", "PNG")
+
+        # Round launcher icon
+        r_round = size // 2
+        launcher_round = create_centered_badge(full_logo, size, padding_ratio=0.14, rounded_radius=r_round)
+        launcher_round.save(dir_path / "ic_launcher_round.png", "PNG")
+
+        # Foreground adaptive icon (transparent background, art inside center 66%)
+        fg_canvas = Image.new("RGBA", (fg_size, fg_size), (0, 0, 0, 0))
+        avail = fg_size * 0.60
+        scale = min(avail / full_logo.width, avail / full_logo.height)
+        nw, nh = int(round(full_logo.width * scale)), int(round(full_logo.height * scale))
+        fg_art = full_logo.resize((nw, nh), Image.Resampling.LANCZOS)
+        fg_canvas.paste(fg_art, ((fg_size - nw) // 2, (fg_size - nh) // 2), fg_art)
+        fg_canvas.save(dir_path / "ic_launcher_foreground.png", "PNG")
+
+        print(f"Updated Android native icons in {folder} ({size}x{size})")
+
+
+def clean_duplicate_android_pngs():
+    """Removes duplicate web PNGs copied into the Android assets folder."""
+    if not ANDROID_ASSETS_DIR.exists():
+        return
+
+    duplicates = [
+        ANDROID_ASSETS_DIR / "favicon.png",
+        ANDROID_ASSETS_DIR / "icon-192.png",
+        ANDROID_ASSETS_DIR / "icon-512.png",
+        ANDROID_ASSETS_DIR / "icon-maskable-512.png",
+    ]
+    deleted_count = 0
+    for f in duplicates:
+        if f.exists():
+            f.unlink()
+            deleted_count += 1
+            print(f"Deleted duplicate: {f}")
+
+    if deleted_count > 0:
+        print(f"Cleaned up {deleted_count} duplicate PNG(s) from {ANDROID_ASSETS_DIR}")
     else:
-        # Standard rounded icon
-        r = int(110 * scale)
-        pad = int(12 * scale)
-        card_box = [(pad, pad), (size - pad, size - pad)]
-        draw.rounded_rectangle(card_box, radius=r, fill=(239, 68, 68, 255), outline=(253, 164, 175, 255), width=max(1, int(5 * scale)))
-
-        mid_y = size / 2.0
-        pts = [
-            (60 * scale, mid_y),
-            (145 * scale, mid_y),
-            (210 * scale, mid_y - 140 * scale),
-            (305 * scale, mid_y + 150 * scale),
-            (380 * scale, mid_y - 70 * scale),
-            (430 * scale, mid_y),
-            (470 * scale, mid_y),
-        ]
-        stroke_w = max(2, int(26 * scale))
-
-    # Draw continuous anti-aliased line
-    for i in range(len(pts) - 1):
-        p1 = pts[i]
-        p2 = pts[i + 1]
-        draw.line([p1, p2], fill=(255, 255, 255, 255), width=stroke_w)
-        # Round joint
-        draw.ellipse([
-            (p1[0] - stroke_w / 2, p1[1] - stroke_w / 2),
-            (p1[0] + stroke_w / 2, p1[1] + stroke_w / 2)
-        ], fill=(255, 255, 255, 255))
-
-    # Final point cap
-    last = pts[-1]
-    draw.ellipse([
-        (last[0] - stroke_w / 2, last[1] - stroke_w / 2),
-        (last[0] + stroke_w / 2, last[1] + stroke_w / 2)
-    ], fill=(255, 255, 255, 255))
-
-    return img
+        print("No duplicate PNGs found in Android assets folder.")
 
 
 def main():
     PUBLIC_DIR.mkdir(parents=True, exist_ok=True)
+    _, emblem, full_logo = load_master_logo()
 
-    # 1. Save favicon.svg
-    svg_path = PUBLIC_DIR / "favicon.svg"
-    svg_path.write_text(FAVICON_SVG.strip(), encoding="utf-8")
-    print(f"Written: {svg_path}")
+    # 1. Favicon (64x64 PNG): Emblem centered with subtle rounded squircle
+    fav_64 = create_centered_badge(emblem, 64, padding_ratio=0.08, rounded_radius=14)
+    fav_64.save(PUBLIC_DIR / "favicon.png", "PNG")
+    print(f"Generated: {PUBLIC_DIR / 'favicon.png'}")
 
-    # 2. Save favicon.png (64x64)
-    fav_png = draw_icon(64, is_maskable=False)
-    fav_png.save(PUBLIC_DIR / "favicon.png", "PNG")
-    print(f"Written: {PUBLIC_DIR / 'favicon.png'}")
+    # 2. Favicon (Multi-res ICO): 16x16, 32x32, 48x48
+    fav_16 = create_centered_badge(emblem, 16, padding_ratio=0.04, rounded_radius=3)
+    fav_32 = create_centered_badge(emblem, 32, padding_ratio=0.06, rounded_radius=6)
+    fav_48 = create_centered_badge(emblem, 48, padding_ratio=0.08, rounded_radius=10)
+    fav_32.save(
+        PUBLIC_DIR / "favicon.ico",
+        format="ICO",
+        sizes=[(16, 16), (32, 32), (48, 48)],
+        append_images=[fav_16, fav_48]
+    )
+    print(f"Generated: {PUBLIC_DIR / 'favicon.ico'}")
 
-    # 3. Save icon-192.png (192x192)
-    icon_192 = draw_icon(192, is_maskable=False)
+    # 3. Favicon (SVG)
+    svg_content = generate_svg(emblem)
+    (PUBLIC_DIR / "favicon.svg").write_text(svg_content.strip(), encoding="utf-8")
+    print(f"Generated: {PUBLIC_DIR / 'favicon.svg'}")
+
+    # 4. Standard PWA Icon 192x192 (Full Logo with wordmark)
+    icon_192 = create_centered_badge(full_logo, 192, padding_ratio=0.08, rounded_radius=36)
     icon_192.save(PUBLIC_DIR / "icon-192.png", "PNG")
-    print(f"Written: {PUBLIC_DIR / 'icon-192.png'}")
+    print(f"Generated: {PUBLIC_DIR / 'icon-192.png'}")
 
-    # 4. Save icon-512.png (512x512)
-    icon_512 = draw_icon(512, is_maskable=False)
+    # 5. Standard PWA Icon 512x512 (Full Logo with wordmark)
+    icon_512 = create_centered_badge(full_logo, 512, padding_ratio=0.08, rounded_radius=96)
     icon_512.save(PUBLIC_DIR / "icon-512.png", "PNG")
-    print(f"Written: {PUBLIC_DIR / 'icon-512.png'}")
+    print(f"Generated: {PUBLIC_DIR / 'icon-512.png'}")
 
-    # 5. Save icon-maskable-512.png (512x512 with safe-zone for Android adaptive icon)
-    maskable_512 = draw_icon(512, is_maskable=True)
+    # 6. Android Maskable PWA Icon 512x512
+    # Full bleed background with artwork strictly inside the inner 66% circle (padding = 18%)
+    # This prevents any part of the emblem or text from being cropped by Android circular/squircle masks.
+    maskable_512 = create_centered_badge(full_logo, 512, padding_ratio=0.18, rounded_radius=0)
     maskable_512.save(PUBLIC_DIR / "icon-maskable-512.png", "PNG")
-    print(f"Written: {PUBLIC_DIR / 'icon-maskable-512.png'}")
+    print(f"Generated: {PUBLIC_DIR / 'icon-maskable-512.png'}")
+
+    # 7. Update Android native mipmap icons
+    update_android_native_icons(full_logo, emblem)
+
+    # 8. Clean up duplicates in Android assets
+    clean_duplicate_android_pngs()
+
+    print("All RescueMemory brand icons successfully generated!")
 
 
 if __name__ == "__main__":
