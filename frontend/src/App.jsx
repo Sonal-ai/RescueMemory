@@ -3,6 +3,8 @@ import SurvivorHUD from './views/SurvivorHUD';
 import VolunteerBoard from './views/VolunteerBoard';
 import CommandInspector from './views/CommandInspector';
 import ActivationScreen from './views/ActivationScreen';
+import CentralHQ from './views/CentralHQ';
+import SafePlace from './views/SafePlace';
 
 function App() {
   return (
@@ -23,6 +25,8 @@ function App() {
         {/* Responder & Command HQ */}
         <Route path="/volunteer" element={<VolunteerBoard />} />
         <Route path="/command" element={<CommandInspector />} />
+        <Route path="/hq" element={<CentralHQ />} />
+        <Route path="/safeplace" element={<SafePlace />} />
         
         {/* Project Architecture & Mesh Info */}
         <Route path="/about" element={<ActivationScreen />} />
