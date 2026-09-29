@@ -209,6 +209,7 @@ export function QuietTelemetryPill({ health, sync, error }) {
 
 export function Shell({ title, subtitle, children }) {
   const { health, sync, error } = useNodeStatus();
+  const last = sync?.last_sync || sync?.last_uplink;
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem('rescue.theme') === 'light' ? 'light' : 'dark');
 
