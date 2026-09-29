@@ -39,7 +39,8 @@ import {
   getDiscoveredPeers,
   updateDeviceLocation,
   syncDiscoveredPeer,
-  getSurvivalRadar
+  getSurvivalRadar,
+  triggerAutoSync
 } from '../api';
 import { Card, Empty, Shell } from '../components';
 import MapPanel from '../MapPanel';
@@ -49,10 +50,10 @@ const DEFAULT_CENTER = { lat: 28.7041, lon: 77.1025 };
 
 const TABS = [
   ['ask', 'Assistant', HeartPulse],
-  ['compass', 'Compass', Compass],
+  ['compass', 'Find Survivors', Crosshair],
   ['map', 'Tactical Map', MapPin],
   ['report', 'Emergency SOS', AlertOctagon],
-  ['group', 'Mesh Squad', Users]
+  ['beacon', 'Nearest Beacon', Radio]
 ];
 
 const QUICK_PROMPTS = [
@@ -133,9 +134,8 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
   const [error, setError] = useState('');
   const [savingSos, setSavingSos] = useState(false);
   const [sosSuccess, setSosSuccess] = useState(false);
-  const [groupName, setGroupName] = useState('');
-  const [joinId, setJoinId] = useState('');
-  const [joinToken, setJoinToken] = useState('');
+  const [syncingBeacon, setSyncingBeacon] = useState(false);
+  const [directBeaconUrl, setDirectBeaconUrl] = useState('');
   const [mapFilter, setMapFilter] = useState('all');
   const [isOfflineBrain, setIsOfflineBrain] = useState(false);
   const [syncInfo, setSyncInfo] = useState({ state: 'idle', pendingCount: 0 });
@@ -446,29 +446,60 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
     }
   };
 
-  const createGroup = async () => {
+  // 1-Tap Sync with Nearest Beacon
+  const handleSyncNearestBeacon = async () => {
+    setSyncingBeacon(true);
+    setMessage('');
+    setError('');
     try {
-      const result = await api('/api/groups', { method: 'POST', body: { name: groupName } });
-      saveSetting('groupId', result.group_id);
-      saveSetting('groupToken', result.token);
-      setMessage(`Group created. Share ID ${result.group_id} privately with your team.`);
+      const validPeers = peers.filter((p) => p.url || p.ip);
+      const sortedPeers = [...validPeers].sort((a, b) => (a.distance_m ?? 99999) - (b.distance_m ?? 99999));
+      const nearest = sortedPeers[0];
+
+      if (nearest) {
+        const peerUrl = nearest.url || `http://${nearest.ip}:${nearest.port}`;
+        await syncDiscoveredPeer({
+          peer_url: peerUrl,
+          scope: 'public'
+        });
+        setMessage(`Successfully synced with nearest beacon ${nearest.node_id} (~${nearest.distance_m ?? 0}m away). Knowledge and reports exchanged.`);
+        refreshMap();
+        refreshPeers();
+      } else {
+        await triggerAutoSync();
+        refreshPeers();
+        setMessage('Beacon heartbeat broadcasted over UDP (port 8888). Local memory outbox synced. Scanning Wi-Fi subnet for nearby beacons.');
+      }
     } catch (err) {
-      setError(err.message);
+      setError(`Beacon sync failed: ${err.message}`);
+    } finally {
+      setSyncingBeacon(false);
     }
   };
 
-  const joinGroup = async () => {
+  const handleDirectBeaconSync = async (e) => {
+    if (e) e.preventDefault();
+    if (!directBeaconUrl.trim()) return;
+    setSyncingBeacon(true);
+    setMessage('');
+    setError('');
     try {
-      await api('/api/groups/join', {
-        method: 'POST',
-        body: { group_id: joinId, name: groupName || joinId, token: joinToken }
+      let url = directBeaconUrl.trim();
+      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        url = `http://${url}`;
+      }
+      await syncDiscoveredPeer({
+        peer_url: url,
+        scope: 'public'
       });
-      saveSetting('groupId', joinId);
-      saveSetting('groupToken', joinToken);
-      setMessage(`Joined team group ${joinId}.`);
+      setMessage(`Successfully synced with beacon at ${url}. Local memory updated.`);
+      setDirectBeaconUrl('');
       refreshMap();
+      refreshPeers();
     } catch (err) {
-      setError(err.message);
+      setError(`Direct beacon sync failed: ${err.message}`);
+    } finally {
+      setSyncingBeacon(false);
     }
   };
 
@@ -504,6 +535,84 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
           <button onClick={() => setMessage('')} className="text-xs text-emerald-300 hover:underline font-semibold ml-2">Dismiss</button>
         </div>
       )}
+
+      {/* Prominent Emergency Action Bar: Find Survivors & Sync Nearest Beacon */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+        {/* Button 1: Find Survivors */}
+        <button
+          type="button"
+          onClick={() => { setTab('compass'); setError(''); setMessage(''); }}
+          className={`p-3.5 sm:p-4 rounded-2xl border text-left transition-all active:scale-98 flex items-center justify-between gap-3 shadow-md ${
+            tab === 'compass'
+              ? 'bg-gradient-to-r from-red-600 to-rose-600 text-white border-red-500 shadow-red-500/25 ring-2 ring-red-400'
+              : 'bg-gradient-to-r from-red-950/40 to-[#0b1626] border-red-800/60 hover:border-red-500 text-slate-100 hover:text-white'
+          }`}
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="p-2.5 rounded-xl bg-red-600 text-white shrink-0 shadow-md shadow-red-600/40">
+              <Crosshair size={22} className={nearestCasualty ? 'animate-pulse' : ''} />
+            </div>
+            <div className="truncate">
+              <div className="text-sm font-extrabold flex items-center gap-2">
+                <span>Find Survivors</span>
+                {nearestCasualty ? (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500 text-white uppercase tracking-wider font-bold animate-pulse">
+                    Target Locked
+                  </span>
+                ) : (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">
+                    360° Compass
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-red-300/80 truncate mt-0.5">
+                {nearestCasualty
+                  ? `${nearestCasualty.name || 'Casualty'} · ${nearestCasualty.distance_m}m ${nearestCasualty.cardinal} (${nearestCasualty.bearing_deg}°)`
+                  : 'Point 360° survival compass & radar to locate injured'}
+              </p>
+            </div>
+          </div>
+          <ArrowRight size={18} className="shrink-0 text-red-400" />
+        </button>
+
+        {/* Button 2: Sync with Nearest Beacon */}
+        <button
+          type="button"
+          disabled={syncingBeacon}
+          onClick={handleSyncNearestBeacon}
+          className="p-3.5 sm:p-4 rounded-2xl border border-cyan-800/60 bg-gradient-to-r from-cyan-950/40 to-[#0b1626] hover:border-cyan-500 text-slate-100 hover:text-white text-left transition-all active:scale-98 flex items-center justify-between gap-3 shadow-md"
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="p-2.5 rounded-xl bg-cyan-600 text-white shrink-0 shadow-md shadow-cyan-600/40">
+              {syncingBeacon ? (
+                <RefreshCw size={22} className="animate-spin" />
+              ) : (
+                <Radio size={22} />
+              )}
+            </div>
+            <div className="truncate">
+              <div className="text-sm font-extrabold flex items-center gap-2">
+                <span>Sync with Nearest Beacon</span>
+                {peers.length > 0 ? (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500 text-white uppercase tracking-wider font-bold">
+                    {peers.length} Online
+                  </span>
+                ) : (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">
+                    Auto-Mesh
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-cyan-300/80 truncate mt-0.5">
+                {peers.length > 0
+                  ? `Nearest: ${peers[0].node_id} (~${peers[0].distance_m ?? 0}m away)`
+                  : '1-tap peer exchange over Wi-Fi / hotspot (UDP 8888)'}
+              </p>
+            </div>
+          </div>
+          <Zap size={18} className="shrink-0 text-cyan-400" />
+        </button>
+      </div>
 
       {/* Desktop HUD Segmented Navigation Pills */}
       <div className="hidden sm:grid sm:grid-cols-5 gap-2 mb-5">
@@ -1333,7 +1442,6 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                   >
                     <option value="public">Public (All nearby peers)</option>
                     <option value="responders">Responders Only</option>
-                    <option value="group">My Private Group Only</option>
                   </select>
                 </label>
               </div>
@@ -1376,86 +1484,217 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
       )}
 
       {/* ========================================================================= */}
-      {/* TAB 4: MESH TEAM RELAY */}
+      {/* TAB 5: NEAREST BEACON DISCOVERY & DIRECT SYNC */}
       {/* ========================================================================= */}
-      {tab === 'group' && (
-        <div className="grid md:grid-cols-2 gap-6">
+      {tab === 'beacon' && (
+        <div className="space-y-5">
+          {/* Hero: Nearest Beacon Direct Sync */}
           <Card
-            title="Create Private Mesh Group"
-            subtitle="Allows your field squad or family to share encrypted peer observations."
+            title="Nearest Emergency Beacon (Zero-Conf Mesh)"
+            subtitle="Automatic peer-to-peer discovery using background UDP beacons on local Wi-Fi and mobile hotspots. No accounts, setup, or squad groups required."
           >
-            <div className="space-y-3">
-              <input
-                className="field"
-                placeholder="Team Name (e.g. Camp Alpha, Medical Squad 1)"
-                value={groupName}
-                onChange={(event) => setGroupName(event.target.value)}
-              />
-              <button
-                onClick={createGroup}
-                disabled={!groupName.trim()}
-                className="btn-primary w-full py-3.5"
-              >
-                Create Team Mesh Group
-              </button>
-            </div>
+            {(() => {
+              const onlinePeers = peers.filter((p) => p.is_online !== false);
+              const sortedPeers = [...onlinePeers].sort((a, b) => (a.distance_m ?? 99999) - (b.distance_m ?? 99999));
+              const nearestBeacon = sortedPeers[0] || null;
+
+              return (
+                <div className="space-y-4">
+                  {nearestBeacon ? (
+                    <div className="p-5 rounded-2xl border-2 border-emerald-500/80 bg-gradient-to-r from-emerald-950/50 to-[#07111e] shadow-xl shadow-emerald-950/30">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div className="flex items-start sm:items-center gap-3.5">
+                          <div className="p-3.5 rounded-2xl bg-emerald-600 text-white shrink-0 shadow-lg shadow-emerald-600/40 animate-pulse">
+                            <Radio size={26} />
+                          </div>
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-emerald-600 text-white">
+                                Nearest Beacon Locked
+                              </span>
+                              <span className="text-xs font-mono font-bold text-emerald-300">
+                                ~{nearestBeacon.distance_m != null ? `${nearestBeacon.distance_m} m away` : 'Direct LAN'}
+                              </span>
+                              <span className="text-[10px] uppercase px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">
+                                Role: {nearestBeacon.role}
+                              </span>
+                            </div>
+                            <h3 className="text-base sm:text-lg font-black text-white mt-1">
+                              {nearestBeacon.node_id} ({nearestBeacon.ip}:{nearestBeacon.port})
+                            </h3>
+                            <p className="text-xs text-slate-300 mt-0.5">
+                              Beacon broadcast received {nearestBeacon.seconds_ago}s ago. Tap below to exchange memories and incident reports.
+                            </p>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleSyncPeer(nearestBeacon)}
+                          disabled={syncingBeacon || syncingPeer}
+                          className="btn-primary text-sm px-6 py-3.5 shrink-0 bg-emerald-600 hover:bg-emerald-500 text-white shadow-xl shadow-emerald-600/40 font-black flex items-center justify-center gap-2 transition-all active:scale-98"
+                        >
+                          {syncingBeacon || syncingPeer ? (
+                            <>
+                              <RefreshCw size={16} className="animate-spin" />
+                              <span>Exchanging Memory…</span>
+                            </>
+                          ) : (
+                            <>
+                              <Zap size={16} />
+                              <span>Sync with Nearest Beacon</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-6 rounded-2xl border border-slate-800 bg-[#07111e] text-center">
+                      <div className="p-3.5 rounded-2xl bg-cyan-950/60 border border-cyan-800/60 text-cyan-400 w-fit mx-auto mb-3.5">
+                        <Radio size={32} className="animate-pulse" />
+                      </div>
+                      <h3 className="text-base font-bold text-slate-100">
+                        Scanning Local Wi-Fi Subnet for Beacons…
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto leading-relaxed">
+                        Broadcasting UDP discovery beacons on port 8888. When another phone or responder hotspot joins this Wi-Fi, it will automatically appear here.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleSyncNearestBeacon}
+                        disabled={syncingBeacon}
+                        className="btn-primary mt-4 text-xs px-6 py-2.5 mx-auto flex items-center gap-2"
+                      >
+                        {syncingBeacon ? (
+                          <>
+                            <RefreshCw size={14} className="animate-spin" />
+                            <span>Broadcasting & Syncing…</span>
+                          </>
+                        ) : (
+                          <>
+                            <RefreshCw size={14} />
+                            <span>Broadcast Beacon Pulse & Sync Outbox</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Discovered Subnet Beacons Grid */}
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-xs uppercase tracking-wider font-bold text-slate-300 flex items-center gap-1.5">
+                        <Wifi size={14} className="text-emerald-400" />
+                        <span>All Discovered Beacons ({peers.length})</span>
+                      </h4>
+                      <button
+                        type="button"
+                        onClick={refreshPeers}
+                        className="text-xs text-cyan-300 hover:underline flex items-center gap-1 font-semibold"
+                      >
+                        <RefreshCw size={12} /> Scan Wi-Fi Subnet
+                      </button>
+                    </div>
+
+                    {peers.length > 0 ? (
+                      <div className="grid sm:grid-cols-2 gap-3">
+                        {peers.map((peer) => {
+                          const isVol = peer.role === 'volunteer' || peer.role === 'central';
+                          return (
+                            <div
+                              key={peer.node_id}
+                              className="p-4 rounded-2xl border border-slate-800 bg-[#07111e] hover:border-slate-700 transition-all flex flex-col justify-between"
+                            >
+                              <div>
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2 font-bold text-slate-100 text-sm">
+                                    <span className={`w-2.5 h-2.5 rounded-full ${peer.is_online ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
+                                    <span>{peer.node_id}</span>
+                                  </div>
+                                  <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${
+                                    isVol ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-amber-950 text-amber-300 border border-amber-800'
+                                  }`}>
+                                    {peer.role}
+                                  </span>
+                                </div>
+                                <div className="text-xs text-slate-400 mt-1 font-mono flex items-center justify-between">
+                                  <span className="text-cyan-400 font-semibold">
+                                    {peer.distance_m != null ? `~${peer.distance_m}m away` : 'Hotspot connected'}
+                                  </span>
+                                  <span>{peer.seconds_ago}s ago</span>
+                                </div>
+                                <div className="text-[11px] text-slate-500 font-mono mt-1">
+                                  {peer.ip}:{peer.port}
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleSyncPeer(peer)}
+                                disabled={syncingPeer}
+                                className="mt-3.5 w-full py-2.5 rounded-xl bg-slate-800 hover:bg-emerald-600 hover:text-white text-slate-200 font-bold text-xs flex items-center justify-center gap-1.5 transition-all active:scale-98"
+                              >
+                                <Zap size={13} />
+                                <span>Sync with {peer.node_id}</span>
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <Empty icon={Radio}>
+                        No peer beacons found on this subnet yet. Connect to a mobile hotspot or Wi-Fi where other rescue nodes are running.
+                      </Empty>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
           </Card>
 
-          <Card
-            title="Join Existing Team Mesh"
-            subtitle="Connect to your unit using their private group ID and shared token."
-          >
-            <div className="space-y-3">
-              <input
-                className="field"
-                placeholder="Group ID"
-                value={joinId}
-                onChange={(event) => setJoinId(event.target.value)}
-              />
-              <input
-                className="field"
-                type="password"
-                placeholder="Private Group Token"
-                value={joinToken}
-                onChange={(event) => setJoinToken(event.target.value)}
-              />
-              <button
-                onClick={joinGroup}
-                disabled={!joinId || !joinToken}
-                className="btn-secondary w-full py-3.5"
-              >
-                Join Team Group
-              </button>
-            </div>
-          </Card>
+          {/* Direct Custom Beacon Sync (Cross-subnet / Testing) */}
+          <div className="grid sm:grid-cols-2 gap-4">
+            <Card
+              title="Direct Beacon Endpoint"
+              subtitle="Connect to a specific IP address or remote node."
+            >
+              <form onSubmit={handleDirectBeaconSync} className="space-y-3">
+                <input
+                  className="field text-xs font-mono"
+                  placeholder="http://192.168.1.50:8000 or http://127.0.0.1:8001"
+                  value={directBeaconUrl}
+                  onChange={(e) => setDirectBeaconUrl(e.target.value)}
+                />
+                <button
+                  type="submit"
+                  disabled={!directBeaconUrl.trim() || syncingBeacon}
+                  className="btn-secondary w-full py-2.5 text-xs flex items-center justify-center gap-1.5"
+                >
+                  <Send size={14} />
+                  <span>Direct Sync with IP</span>
+                </button>
+              </form>
+            </Card>
 
-          <Card title="Active Team Membership" className="md:col-span-2">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div>
-                <p className="text-sm font-bold text-slate-100">
-                  {setting('groupId') ? `Connected to Group ID: ${setting('groupId')}` : 'No private group active (Public Mesh)'}
+            <Card
+              title="Zero-Configuration Beacon Protocol"
+              subtitle="How offline mesh synchronization works."
+            >
+              <div className="space-y-2.5 text-xs text-slate-300 leading-relaxed">
+                <p className="flex items-center gap-2">
+                  <CheckCircle2 size={15} className="text-emerald-400 shrink-0" />
+                  <span><strong>UDP Beacon Broadcasts:</strong> Packets broadcasted every 3s on port 8888.</span>
                 </p>
-                <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                  {setting('groupId')
-                    ? 'Group-scoped reports and pins are encrypted and restricted to authorized team members.'
-                    : 'Configure a team above to isolate private squad communications from general public relay.'}
+                <p className="flex items-center gap-2">
+                  <CheckCircle2 size={15} className="text-emerald-400 shrink-0" />
+                  <span><strong>No Accounts or Groups:</strong> Automatic peer discovery without team codes or passwords.</span>
+                </p>
+                <p className="flex items-center gap-2">
+                  <CheckCircle2 size={15} className="text-emerald-400 shrink-0" />
+                  <span><strong>Offline P2P Transfer:</strong> High-speed HTTP payloads exchanged locally over Wi-Fi.</span>
                 </p>
               </div>
-              {setting('groupId') && (
-                <button
-                  onClick={() => {
-                    saveSetting('groupId', '');
-                    saveSetting('groupToken', '');
-                    setMessage('Disconnected from group.');
-                    refreshMap();
-                  }}
-                  className="btn-secondary text-xs px-4 py-2"
-                >
-                  Leave Group
-                </button>
-              )}
-            </div>
-          </Card>
+            </Card>
+          </div>
         </div>
       )}
 
@@ -1484,6 +1723,9 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                   <Icon size={18} className={isActive ? 'stroke-[2.5]' : 'stroke-[1.75]'} />
                   {id === 'compass' && nearestCasualty && (
                     <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-red-500 animate-ping" />
+                  )}
+                  {id === 'beacon' && peers.length > 0 && (
+                    <span className="absolute -top-1 -right-1.5 w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
                   )}
                   {id === 'map' && peers.length > 0 && (
                     <span className="absolute -top-1 -right-1.5 w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
