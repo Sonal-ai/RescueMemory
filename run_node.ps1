@@ -18,7 +18,11 @@ if (-not (Test-Path $python)) {
     $python = '..\.venv\Scripts\python.exe'
 }
 if (-not (Test-Path $python)) {
-    throw 'Python environment not found. Follow the install steps in README.md.'
+    $cmd = Get-Command python -ErrorAction SilentlyContinue
+    if ($cmd) { $python = $cmd.Source }
+}
+if (-not (Test-Path $python)) {
+    throw 'Python environment not found. Please create a virtual environment (.venv) or ensure Python 3.11+ is in your PATH.'
 }
 
 & $python -m uvicorn backend.app.main:app --host $hostAddress --port $Port --no-access-log

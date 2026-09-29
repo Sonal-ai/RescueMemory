@@ -17,7 +17,11 @@ Write-Host "Starting RescueMemory Multi-Node Rehearsal Cluster..." -ForegroundCo
 
 $python = '.\.venv\Scripts\python.exe'
 if (-not (Test-Path $python)) { $python = '..\.venv\Scripts\python.exe' }
-if (-not (Test-Path $python)) { throw "Python not found in .venv" }
+if (-not (Test-Path $python)) {
+    $cmd = Get-Command python -ErrorAction SilentlyContinue
+    if ($cmd) { $python = $cmd.Source }
+}
+if (-not (Test-Path $python)) { throw "Python not found in .venv or PATH." }
 
 # Node A: Survivor on http://localhost:8000
 Start-Process -FilePath $python -ArgumentList "-m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --no-access-log" -Environment @{
