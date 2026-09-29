@@ -13125,5 +13125,89 @@
     "keywords": "smell rotten eggs gas in rubble - stairwell void gas pipe hissing broken building - stairwell void gas leak after earthquake - stairwell void fresh_air structural_rubble",
     "source": "Disaster Survival Encyclopedia (IFRC/FEMA CERT/WMS)",
     "review_status": "team_reviewed"
+  },
+  {
+    "id": "cp_17",
+    "kind": "checkpoint",
+    "title": "Checkpoint CP-17 (North Sector Bridge Entrance)",
+    "keywords": "checkpoint shelter entrance bridge first aid solar drinking water",
+    "summary": "Emergency staging checkpoint with drinking water, first aid triage, and solar charging.",
+    "location": {
+      "lat": 28.7495,
+      "lon": 77.1182
+    },
+    "base_capacity": 250,
+    "facilities": [
+      "drinking_water",
+      "first_aid_station",
+      "solar_charging"
+    ],
+    "status": "operational",
+    "steps": [
+      "Proceed to North Sector Bridge entrance",
+      "Check in at triage post",
+      "Access drinking water and power stations"
+    ],
+    "warnings": [
+      "Bridge approach may become submerged under torrential rain or flash flooding"
+    ],
+    "source": "https://fema.gov/cert",
+    "reviewer": "Disaster Response Command"
+  },
+  {
+    "id": "shelter_alpha",
+    "kind": "checkpoint",
+    "title": "Shelter Alpha (Central Community High School)",
+    "keywords": "shelter high school refuge food cache medical tent emergency generator clean water",
+    "summary": "Central high-ground refuge facility with large capacity, emergency power generator, and medical tent.",
+    "location": {
+      "lat": 28.742,
+      "lon": 77.125
+    },
+    "base_capacity": 500,
+    "facilities": [
+      "drinking_water",
+      "food_cache",
+      "medical_tent",
+      "emergency_generator"
+    ],
+    "status": "operational",
+    "steps": [
+      "Enter through south school gate",
+      "Register at central admission desk",
+      "Proceed to designated family dormitories or medical tent"
+    ],
+    "warnings": [
+      "High occupancy during major evacuation; listen to wardens"
+    ],
+    "source": "https://fema.gov/cert",
+    "reviewer": "Disaster Response Command"
+  },
+  {
+    "id": "clinic_beta",
+    "kind": "checkpoint",
+    "title": "Clinic Beta (West District Health Center)",
+    "keywords": "clinic health center trauma care antivenom medical doctor clean water hospital",
+    "summary": "West district emergency healthcare facility equipped for trauma resuscitation, minor surgery, clean water, and antivenom supply.",
+    "location": {
+      "lat": 28.755,
+      "lon": 77.11
+    },
+    "base_capacity": 120,
+    "facilities": [
+      "trauma_care",
+      "antivenom_supply",
+      "clean_water"
+    ],
+    "status": "operational",
+    "steps": [
+      "Direct acute hemorrhage and trauma casualties to west bay",
+      "Present toxic/snakebite emergencies immediately to antivenom unit"
+    ],
+    "warnings": [
+      "Priority access given strictly to immediate red-tag casualties"
+    ],
+    "source": "https://who.int/emergencies",
+    "reviewer": "Disaster Response Command"
   }
 ]
