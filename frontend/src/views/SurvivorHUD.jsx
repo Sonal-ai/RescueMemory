@@ -51,17 +51,17 @@ import {
 } from '../api';
 import { Card, Empty, Shell } from '../components';
 import MapPanel from '../MapPanel';
-import SurvivalRadar from '../SurvivalRadar';
+import UnifiedRadarMap from '../components/UnifiedRadarMap';
+import MeshSyncScanner from '../components/MeshSyncScanner';
 import MarkdownContent from '../components/MarkdownContent';
 
 const DEFAULT_CENTER = { lat: 28.7041, lon: 77.1025 };
 
 const TABS = [
   ['ask', 'Assistant', HeartPulse],
-  ['compass', 'Find Survivors', Crosshair],
-  ['map', 'Tactical Map', MapPin],
+  ['map', 'Radar Map', Navigation],
   ['report', 'Emergency SOS', AlertOctagon],
-  ['beacon', 'Nearest Beacon', Radio]
+  ['beacon', 'Mesh Sync', Radio]
 ];
 
 const QUICK_PROMPTS = [
@@ -69,6 +69,57 @@ const QUICK_PROMPTS = [
   { label: "Severe bleeding first aid", text: "How do I stop severe bleeding from a deep wound?", icon: HeartPulse, urgent: true, category: 'hemorrhage' },
   { label: "Safe drinking water", text: "How do I purify and make safe drinking water?", icon: Droplets, urgent: false, category: 'water' },
   { label: "Nearest safe shelter", text: "Where is the nearest safe shelter and evacuation checkpoint?", icon: Navigation, urgent: false, category: 'shelter' }
+];
+
+const EMERGENCY_TYPES = [
+  {
+    id: 'medical',
+    title: 'Medical SOS',
+    subtitle: 'Severe injury, bleeding, cardiac, unconscious',
+    defaultText: 'Urgent medical SOS: severe physical trauma or uncontrolled bleeding, clinical assistance needed immediately.',
+    kind: 'incident',
+    severity: 'red',
+    visibility: 'responders',
+    icon: HeartPulse,
+    badgeBg: 'bg-rose-500/10 text-rose-300 border-rose-500/30',
+    selectedStyle: 'border-red-500 bg-gradient-to-br from-red-950/80 to-[#0e172a] shadow-lg shadow-red-950/40 ring-2 ring-red-500/70'
+  },
+  {
+    id: 'trapped',
+    title: 'Trapped / Rubble',
+    subtitle: 'Structural collapse, rising water, cannot move',
+    defaultText: 'Trapped survivor: structural collapse or rising floodwater, unable to move unassisted, need rescue extraction.',
+    kind: 'incident',
+    severity: 'red',
+    visibility: 'responders',
+    icon: AlertOctagon,
+    badgeBg: 'bg-red-500/10 text-red-300 border-red-500/30',
+    selectedStyle: 'border-rose-500 bg-gradient-to-br from-rose-950/80 to-[#0e172a] shadow-lg shadow-rose-950/40 ring-2 ring-rose-500/70'
+  },
+  {
+    id: 'hazard',
+    title: 'Route Hazard',
+    subtitle: 'Downed powerlines, fire, collapsed path',
+    defaultText: 'Dangerous obstacle: road completely blocked by live power lines or flood debris, alternate route needed.',
+    kind: 'hazard',
+    severity: 'yellow',
+    visibility: 'public',
+    icon: TriangleAlert,
+    badgeBg: 'bg-amber-500/10 text-amber-300 border-amber-500/30',
+    selectedStyle: 'border-amber-500 bg-gradient-to-br from-amber-950/80 to-[#0e172a] shadow-lg shadow-amber-950/40 ring-2 ring-amber-500/70'
+  },
+  {
+    id: 'supplies',
+    title: 'Water & Supplies',
+    subtitle: 'Dehydration, infant formula, supplies out',
+    defaultText: 'Emergency resource shortage: drinking water depleted, urgent replenishment requested.',
+    kind: 'resource',
+    severity: 'yellow',
+    visibility: 'public',
+    icon: Droplets,
+    badgeBg: 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30',
+    selectedStyle: 'border-cyan-500 bg-gradient-to-br from-cyan-950/80 to-[#0e172a] shadow-lg shadow-cyan-950/40 ring-2 ring-cyan-500/70'
+  }
 ];
 
 export default function SurvivorHUD({ initialTab = 'ask' }) {
@@ -153,12 +204,14 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
 
   const [report, setReport] = useState({
     kind: 'incident',
-    text: '',
+    text: 'Urgent medical SOS: severe physical trauma or uncontrolled bleeding, clinical assistance needed immediately.',
     entity_id: '',
     status: 'needs_help',
     severity: 'red',
     visibility: 'responders'
   });
+  const [selectedEmergencyType, setSelectedEmergencyType] = useState('medical');
+  const [showSosDetails, setShowSosDetails] = useState(false);
 
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -492,33 +545,42 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
   };
 
   const submitReport = async (event) => {
-    event.preventDefault();
+    if (event) event.preventDefault();
     setError('');
     setMessage('');
+    setSavingSos(true);
     try {
       const groupId = setting('groupId');
       const visibility = report.kind === 'incident' ? 'responders' : report.visibility;
+      const reportText = (report.text || '').trim() ||
+        (report.kind === 'incident'
+          ? 'Urgent Medical / Rescue Assistance Required'
+          : report.kind === 'hazard'
+          ? 'Critical Hazard Alert / Road Blocked'
+          : 'Emergency Resource / Water Shortage');
       const result = await api('/api/reports', {
         method: 'POST',
         group: visibility === 'group',
         body: {
           ...report,
           visibility,
-          text: report.text.trim(),
+          text: reportText,
           reporter_id: setting('reporterId') || 'survivor-1',
           location: pin,
-          entity_id: report.entity_id.trim() || null,
+          entity_id: report.entity_id?.trim() || null,
           group_id: visibility === 'group' ? groupId : null
         }
       });
       const evtId = (result.event?.id || result.event_id || 'saved').slice(0, 10);
+      setSosSuccess(true);
       setMessage(result.duplicate
         ? 'Observation is already recorded in local memory.'
-        : `Recorded in local memory (#${evtId}). Available to nearby peers.`);
-      setReport({ ...report, text: '' });
+        : `Emergency SOS broadcasted & saved to local Qdrant memory (#${evtId}). Relayed to nearby peers.`);
       refreshMap();
     } catch (err) {
       setError(err.message);
+    } finally {
+      setSavingSos(false);
     }
   };
 
@@ -613,21 +675,31 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
       )}
 
       {/* Desktop HUD Segmented Navigation Pills */}
-      <div className="hidden sm:grid sm:grid-cols-5 gap-2 mb-5">
+      <div className="hidden sm:grid sm:grid-cols-4 gap-2.5 mb-5">
         {TABS.map(([id, label, Icon]) => {
           const isActive = tab === id;
+          const activeStyles = {
+            ask: 'bg-gradient-to-r from-cyan-600 via-sky-600 to-blue-600 text-white border-cyan-400 shadow-md shadow-cyan-600/30 ring-1 ring-cyan-400/50',
+            map: 'bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white border-emerald-400 shadow-md shadow-emerald-600/30 ring-1 ring-emerald-400/50',
+            report: 'bg-gradient-to-r from-red-600 via-rose-600 to-red-700 text-white border-rose-400 shadow-md shadow-red-600/35 ring-1 ring-rose-400/50',
+            beacon: 'bg-gradient-to-r from-sky-600 via-indigo-600 to-sky-700 text-white border-sky-400 shadow-md shadow-sky-600/30 ring-1 ring-sky-400/50'
+          };
+          const hasPing = (id === 'map' && (nearestCasualty || peers.length > 0)) || (id === 'beacon' && peers.length > 0);
           return (
             <button
               key={id}
               onClick={() => { setTab(id); setError(''); setMessage(''); }}
-              className={`rounded-2xl border px-3 py-3 text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+              className={`relative rounded-2xl border px-4 py-3.5 text-xs font-black flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${
                 isActive
-                  ? 'bg-red-600 text-white border-red-600 shadow-md shadow-red-500/25 scale-[1.01]'
-                  : 'bg-white dark:bg-[#091424] border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700 hover:text-slate-900 dark:hover:text-white'
+                  ? `${activeStyles[id] || 'bg-red-600 text-white'} scale-[1.01]`
+                  : 'bg-white dark:bg-[#0c1628]/90 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-cyan-500/40 hover:bg-slate-50 dark:hover:bg-[#111f38] hover:text-slate-900 dark:hover:text-white shadow-sm'
               }`}
             >
-              <Icon size={16} />
-              <span className="truncate">{label}</span>
+              <Icon size={17} className={isActive ? 'stroke-[2.5]' : 'stroke-[1.8] text-slate-400'} />
+              <span className="truncate tracking-wide">{label}</span>
+              {hasPing && (
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping absolute top-2.5 right-2.5" />
+              )}
             </button>
           );
         })}
@@ -641,7 +713,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
           {/* Prominent Live Nearest Survivor Compass Banner */}
           {nearestCasualty && (
             <div
-              onClick={() => setTab('compass')}
+              onClick={() => setTab('map')}
               className="p-3.5 sm:p-4 rounded-2xl border-2 border-red-500 bg-red-50/80 dark:bg-red-950/40 cursor-pointer hover:border-red-400 transition-all shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3 group"
             >
               <div className="flex items-start sm:items-center gap-3.5">
@@ -667,7 +739,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
               </div>
               <button
                 type="button"
-                onClick={(e) => { e.stopPropagation(); setTab('compass'); }}
+                onClick={(e) => { e.stopPropagation(); setTab('map'); }}
                 className="btn-primary text-xs px-3.5 py-2 shrink-0 self-start sm:self-auto"
               >
                 <span>360° Compass</span>
@@ -772,8 +844,8 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                     <div
                       className={`chat-assistant-bubble transition-all ${
                         isUser
-                          ? 'max-w-[85%] sm:max-w-[70%] rounded-2xl p-3 sm:p-3.5 shadow-sm bg-red-600 text-white rounded-tr-xs ml-auto'
-                          : 'max-w-[92%] sm:max-w-[80%] rounded-2xl p-3.5 sm:p-4 shadow-sm bg-white dark:bg-[#0b1626] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-tl-xs'
+                          ? 'max-w-[85%] sm:max-w-[70%] rounded-2xl p-3 sm:p-3.5 shadow-md bg-gradient-to-r from-cyan-600 via-sky-600 to-blue-600 text-white rounded-tr-xs ml-auto'
+                          : 'max-w-[92%] sm:max-w-[80%] rounded-2xl p-3.5 sm:p-4 shadow-md bg-white dark:bg-gradient-to-b dark:from-[#0d172b] dark:to-[#081120] border border-slate-200 dark:border-cyan-500/15 text-slate-900 dark:text-slate-100 rounded-tl-xs'
                       }`}
                     >
                       {/* Header meta */}
@@ -1032,615 +1104,269 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
       )}
 
       {/* ========================================================================= */}
-      {/* TAB: SURVIVOR 360° COMPASS (Nearest Survivor & Shelter Direct Navigation) */}
-      {/* ========================================================================= */}
-      {tab === 'compass' && (
-        <SurvivalRadar
-          userLocation={pin}
-          initialMode="compass"
-          onNavigateTarget={(target) => {
-            setCenter({ lat: target.location.lat, lon: target.location.lon });
-            setSelected(target);
-            setTab('map');
-          }}
-          role="survivor"
-        />
-      )}
-
-      {/* ========================================================================= */}
-      {/* TAB 2: SURVIVAL POLAR RADAR (Qdrant + Wi-Fi Direct + BLE Proximity) */}
-      {/* ========================================================================= */}
-      {tab === 'radar' && (
-        <SurvivalRadar
-          userLocation={pin}
-          onNavigateTarget={(target) => {
-            setCenter({ lat: target.location.lat, lon: target.location.lon });
-            setSelected(target);
-            setTab('map');
-          }}
-          role="survivor"
-        />
-      )}
-
-      {/* ========================================================================= */}
-      {/* TAB 3: TACTICAL MAP & SHELTERS (With Qdrant Negative Vector Rerouting) */}
+      {/* TAB 2: UNIFIED RADAR MAP & 360° SURVIVAL COMPASS */}
       {/* ========================================================================= */}
       {tab === 'map' && (
-        <div className="grid lg:grid-cols-[1.25fr_.75fr] gap-6">
-          <Card title="Tactical Coordinate Grid & Mesh Radar">
-            {/* Filter Chips & Controls */}
-            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-              <div className="flex flex-wrap gap-1.5">
-                {[
-                  ['all', 'All Points'],
-                  ['sos', 'SOS / Incidents'],
-                  ['hazard', 'Hazards'],
-                  ['resource', 'Resources']
-                ].map(([f, label]) => (
-                  <button
-                    key={f}
-                    onClick={() => setMapFilter(f)}
-                    className={`text-xs px-3 py-1.5 rounded-xl border font-bold transition-all ${
-                      mapFilter === f
-                        ? 'border-cyan-500 bg-cyan-950/60 text-cyan-300'
-                        : 'border-slate-800 bg-[#07111e] text-slate-400 hover:border-slate-700'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={useGps}
-                  className="text-xs text-cyan-300 hover:underline flex items-center gap-1 font-semibold"
-                >
-                  <Cross size={13} /> GPS
-                </button>
-                <button
-                  onClick={refreshMap}
-                  className="text-xs text-cyan-300 hover:underline flex items-center gap-1 font-semibold"
-                >
-                  <RefreshCw size={13} /> Refresh
-                </button>
+        <UnifiedRadarMap
+          userLocation={pin}
+          items={items}
+          peers={peers}
+          onSelectLocation={(loc) => {
+            setPin(loc);
+            setCenter(loc);
+          }}
+          onNavigateTarget={(target) => {
+            if (target?.location) {
+              setCenter(target.location);
+              setSelected(target);
+            }
+          }}
+          role="survivor"
+        />
+      )}
+
+      {/* ========================================================================= */}
+      {/* ========================================================================= */}
+      {/* TAB 3: EMERGENCY SOS ACTION CENTER (Ultra-Clean & Panic-Proof) */}
+      {/* ========================================================================= */}
+      {tab === 'report' && (
+        <div className="max-w-2xl mx-auto space-y-4">
+          <Card
+            title="Immediate Emergency SOS Broadcast"
+            subtitle="1-tap select situation. Broadcasts instantly to local Qdrant memory and nearby Wi-Fi mesh."
+          >
+            {/* 4 Clear High-Contrast Emergency Situation Tiles */}
+            <div className="mb-4">
+              <label className="block text-xs text-slate-300 font-bold uppercase tracking-wider mb-2.5">
+                1. What is your immediate emergency?
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {EMERGENCY_TYPES.map((type) => {
+                  const isSelected = selectedEmergencyType === type.id;
+                  const TypeIcon = type.icon;
+                  return (
+                    <button
+                      key={type.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedEmergencyType(type.id);
+                        setReport({
+                          ...report,
+                          kind: type.kind,
+                          text: type.defaultText,
+                          severity: type.severity,
+                          visibility: type.visibility
+                        });
+                      }}
+                      className={`p-3.5 rounded-2xl border text-left transition-all active:scale-[0.98] cursor-pointer ${
+                        isSelected
+                          ? type.selectedStyle
+                          : 'border-slate-800 bg-[#0b1322]/80 hover:border-slate-700 text-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 mb-1">
+                        <div className={`p-2 rounded-xl border ${type.badgeBg}`}>
+                          <TypeIcon size={18} />
+                        </div>
+                        <span className="font-extrabold text-sm text-white tracking-tight">{type.title}</span>
+                      </div>
+                      <p className="text-xs text-slate-400 line-clamp-1 leading-tight ml-0.5">
+                        {type.subtitle}
+                      </p>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
-            <p className="text-xs text-slate-400 mb-2 font-mono">
-              Displaying {filteredItems.length} reports within 5 km • {peers.length} active Wi-Fi node{peers.length === 1 ? '' : 's'}
-              {mapUpdatedAt ? ` • Updated ${mapUpdatedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
-            </p>
-
-            <MapPanel
-              center={center}
-              items={filteredItems}
-              peers={peers}
-              selectedPeer={selectedPeer}
-              onMarker={handleSelectObservation}
-              onSelectPeer={setSelectedPeer}
-            />
-
-            {/* Qdrant Negative Vector Recommended Facility Drawer */}
-            {alternativeRec && (
-              <div className="mt-4 p-4 rounded-2xl border-2 border-emerald-500/80 bg-gradient-to-r from-emerald-950/60 to-[#07111e] text-emerald-200 shadow-xl shadow-emerald-950/30 animate-in fade-in slide-in-from-bottom-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-black uppercase tracking-wider text-emerald-300 flex items-center gap-1.5">
-                    <CheckCircle2 size={16} /> Qdrant Safe Alternative Route Recommended
-                  </span>
-                  {alternativeRec.score && (
-                    <span className="text-[10px] font-mono bg-emerald-900/80 border border-emerald-700/60 px-2 py-0.5 rounded text-emerald-300">
-                      Match: {(alternativeRec.score * 100).toFixed(0)}%
-                    </span>
-                  )}
-                </div>
-                <div className="text-base font-extrabold text-white mt-1.5">
-                  {alternativeRec.name}
-                </div>
-                <p className="text-xs text-slate-300 mt-1 leading-relaxed">
-                  {alternativeRec.rationale}
-                </p>
-                {alternativeRec.facilities?.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mt-3">
-                    {alternativeRec.facilities.map((fac) => (
-                      <span key={fac} className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-900/60 border border-emerald-700/60 text-emerald-200 font-mono font-bold">
-                        ✓ {fac.replace(/_/g, ' ')}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </Card>
-
-          {/* Shelters & Observation Sidebar */}
-          <div className="space-y-4">
-            {/* Nearby Verified Checkpoints Card */}
-            <Card title="Nearby Shelters & Checkpoints">
-              {(() => {
-                const dynamicCheckpoints = items.filter(
-                  (i) => i.kind === 'checkpoint' || i.kind === 'resource' || i.category === 'shelter'
-                );
-                const displayList = dynamicCheckpoints.length > 0 ? dynamicCheckpoints : [
-                  { id: 'shelter_alpha', name: 'Shelter Alpha (Central High)', dist: '1,065 m', time: '~14 min walk', status: 'operational', facilities: ['Shelter', 'Medical', 'Food', 'Power'] },
-                  { id: 'clinic_beta', name: 'Clinic Beta (West District)', dist: '1,007 m', time: '~13 min walk', status: 'operational', facilities: ['Emergency Surgery', 'Clean Water'] },
-                  { id: 'water_tanker_4', name: 'Water Tanker 4 (North Gate)', dist: '560 m', time: '~7 min walk', status: 'operational', facilities: ['Clean Water', 'Purification'] },
-                  { id: 'cp_17', name: 'Checkpoint CP-17 (North Bridge)', dist: '0 m', time: 'Immediate', status: 'danger_warning', hazard: 'Flooded entrance, live wires' }
-                ];
-                return (
-                  <div className="space-y-2.5 max-h-[300px] overflow-auto pr-1">
-                    {displayList.map((cp) => {
-                      const isDanger = cp.status === 'danger' || cp.status === 'danger_warning' || cp.status === 'flooded';
-                      const cpName = cp.name || cp.title || cp.text?.slice(0, 35) || cp.id;
-                      const distText = cp.dist || (cp.distance_m ? `${cp.distance_m} m` : 'Nearby');
-                      const timeText = cp.time || (cp.distance_m ? `~${Math.max(1, Math.round(cp.distance_m / 75))} min walk` : 'Walking range');
-                      return (
-                        <div
-                          key={cp.id || cp.entity_id}
-                          onClick={() => handleSelectObservation(cp)}
-                          className={`p-3 rounded-2xl border text-xs cursor-pointer transition-all ${
-                            isDanger
-                              ? 'border-red-800/80 bg-red-950/25 text-red-200'
-                              : 'border-slate-800 bg-[#07111e] text-slate-200 hover:border-slate-700'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="font-bold text-sm text-slate-100">{cpName}</span>
-                            <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${
-                              isDanger ? 'bg-red-900 text-red-200 border border-red-700' : 'bg-emerald-950 text-emerald-300 border border-emerald-800'
-                            }`}>
-                              {isDanger ? 'Flooded Hazard' : (cp.status || 'Operational')}
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-slate-400 font-mono mt-1">
-                            {distText} · {timeText}
-                          </p>
-                          {cp.hazard && (
-                            <div className="mt-2 text-xs text-red-400 font-semibold flex items-center gap-1">
-                              <TriangleAlert size={13} />
-                              <span>{cp.hazard} · Avoided via negative vector</span>
-                            </div>
-                          )}
-                          {cp.facilities?.length > 0 && (
-                            <div className="flex flex-wrap gap-1 mt-2">
-                              {cp.facilities.map((f) => (
-                                <span key={f} className="text-[9px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 font-mono">
-                                  {typeof f === 'string' ? f.replace(/_/g, ' ') : f}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })()}
-            </Card>
-
-            {/* Offline Wi-Fi Mesh Peers Card */}
-            <Card title="Wi-Fi Mesh Radar">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-xs text-slate-400 font-semibold">Discovered survivor & volunteer nodes:</span>
-                <span className="text-xs text-emerald-400 font-bold font-mono">{peers.length} active</span>
-              </div>
-
-              {peers.length ? (
-                <div className="space-y-2 max-h-[220px] overflow-auto pr-1">
-                  {peers.map((peer) => {
-                    const isVol = peer.role === 'volunteer' || peer.role === 'central';
-                    const isSel = selectedPeer?.node_id === peer.node_id;
-                    return (
-                      <div
-                        key={peer.node_id}
-                        onClick={() => setSelectedPeer(peer)}
-                        className={`p-3 rounded-2xl border text-xs cursor-pointer transition-all ${
-                          isSel ? 'border-cyan-500 bg-cyan-950/40' : 'border-slate-800 bg-[#07111e] hover:border-slate-700'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2 font-bold text-slate-100">
-                            <span className={`w-2.5 h-2.5 rounded-full ${peer.is_online ? 'bg-emerald-400' : 'bg-slate-500'}`} />
-                            <span>{peer.node_id}</span>
-                          </div>
-                          <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${
-                            isVol ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-amber-950 text-amber-300 border border-amber-800'
-                          }`}>
-                            {peer.role}
-                          </span>
-                        </div>
-                        <div className="text-[11px] text-slate-400 mt-1 flex items-center justify-between font-mono">
-                          <span className="text-cyan-400 font-semibold">
-                            {peer.distance_m != null ? `~${peer.distance_m} m away` : 'Hotspot connected'}
-                          </span>
-                          <span>{peer.seconds_ago}s ago</span>
-                        </div>
-                        <div className="mt-2.5 flex items-center justify-between pt-2 border-t border-slate-800/80">
-                          <span className="text-[10px] text-slate-500 font-mono">{peer.ip}:{peer.port}</span>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleSyncPeer(peer);
-                            }}
-                            disabled={syncingPeer}
-                            className="px-3 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] flex items-center gap-1 transition-all disabled:opacity-50 active:scale-95"
-                          >
-                            <Wifi size={12} />
-                            <span>Exchange</span>
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <Empty icon={Radio}>
-                  Broadcasting offline beacon on local Wi-Fi. Other phones on this hotspot will automatically populate here.
-                </Empty>
-              )}
-            </Card>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* TAB 3: REPORT SOS OR LOCAL HAZARD */}
-      {/* ========================================================================= */}
-      {tab === 'report' && (
-        <div className="grid lg:grid-cols-[.9fr_1.1fr] gap-6">
-          <Card
-            title="Log Incident or Field Observation"
-            subtitle="Saves directly to local Qdrant memory. Relayed peer-to-peer across offline nodes."
-          >
+            {/* Editable Description & Broadcast Form */}
             <form onSubmit={submitReport} className="space-y-4">
               <div>
-                <label className="block text-xs text-slate-300 font-bold uppercase tracking-wider mb-2">Observation Category</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    ['incident', 'Medical SOS', AlertOctagon, 'red'],
-                    ['hazard', 'Hazard Alert', TriangleAlert, 'yellow'],
-                    ['resource', 'Safe Resource', Droplets, 'green'],
-                    ['checkpoint', 'Facility Check', Navigation, 'blue']
-                  ].map(([k, label, Icon, color]) => {
-                    const isSelected = report.kind === k;
-                    return (
-                      <button
-                        type="button"
-                        key={k}
-                        onClick={() => {
-                          setReport({
-                            ...report,
-                            kind: k,
-                            visibility: k === 'incident' ? 'responders' : 'public',
-                            severity: k === 'incident' ? 'red' : 'yellow'
-                          });
-                        }}
-                        className={`p-3.5 rounded-2xl border flex items-center gap-2.5 text-xs sm:text-sm font-bold transition-all active:scale-98 ${
-                          isSelected
-                            ? 'border-red-500 bg-red-600 text-white shadow-md shadow-red-600/30'
-                            : 'border-slate-800 bg-[#07111e] text-slate-300 hover:border-slate-700 hover:text-white'
-                        }`}
-                      >
-                        <Icon size={17} />
-                        <span>{label}</span>
-                      </button>
-                    );
-                  })}
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs text-slate-300 font-bold uppercase tracking-wider">
+                    2. Situation Details (Pre-filled, edit if needed)
+                  </label>
+                  <span className="text-[10px] text-slate-400 font-mono">
+                    {(report.text || '').length} chars
+                  </span>
                 </div>
-              </div>
-
-              {report.kind === 'incident' && (
-                <div className="p-3.5 rounded-2xl bg-red-950/40 border border-red-800 text-xs text-red-200 flex items-center gap-2.5 shadow-sm">
-                  <ShieldAlert size={18} className="shrink-0 text-red-400" />
-                  <span>Medical SOS is private by default and relayed exclusively to authorized responder nodes.</span>
-                </div>
-              )}
-
-              <div>
-                <label className="block text-xs text-slate-300 font-bold uppercase tracking-wider mb-1.5">
-                  Field Description
-                </label>
                 <textarea
-                  className="field min-h-28"
+                  className="field min-h-20 w-full text-sm font-sans"
                   value={report.text}
-                  onChange={(event) => setReport({ ...report, text: event.target.value })}
+                  onChange={(e) => setReport({ ...report, text: e.target.value })}
                   required
                   minLength={3}
-                  placeholder={
-                    report.kind === 'incident'
-                      ? "Describe situation or injury (e.g. 'Cannot walk, leg fracture near Gate 2, need stretcher')"
-                      : "Describe observation (e.g. 'Road submerged under 3ft water at North Bridge')"
-                  }
+                  placeholder="Describe emergency situation or specific injuries..."
                 />
               </div>
 
-              <div className="grid sm:grid-cols-2 gap-3">
-                <label className="text-xs text-slate-300 font-bold uppercase tracking-wider">
-                  Severity Level
-                  <select
-                    className="field mt-1.5 font-sans"
-                    value={report.severity}
-                    onChange={(event) => setReport({ ...report, severity: event.target.value })}
-                  >
-                    <option value="red">Urgent / Life Threat</option>
-                    <option value="yellow">Attention Required</option>
-                    <option value="green">Informational</option>
-                  </select>
-                </label>
-
-                <label className="text-xs text-slate-300 font-bold uppercase tracking-wider">
-                  Visibility Scope
-                  <select
-                    disabled={report.kind === 'incident'}
-                    className="field mt-1.5 font-sans"
-                    value={report.kind === 'incident' ? 'responders' : report.visibility}
-                    onChange={(event) => setReport({ ...report, visibility: event.target.value })}
-                  >
-                    <option value="public">Public (All nearby peers)</option>
-                    <option value="responders">Responders Only</option>
-                  </select>
-                </label>
-              </div>
-
-              <div className="rounded-2xl bg-[#07111e] border border-slate-800 p-3.5 text-xs text-slate-300 flex items-center justify-between">
-                <span className="font-mono">Coordinates: {pin.lat.toFixed(5)}, {pin.lon.toFixed(5)}</span>
+              {/* Real-time GPS Location Status Badge */}
+              <div className="rounded-xl bg-[#07111e] border border-cyan-500/20 p-3 text-xs text-slate-300 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
+                  </span>
+                  <span className="font-mono text-cyan-300">
+                    GPS: {pin.lat.toFixed(5)}, {pin.lon.toFixed(5)} · Offline Lock
+                  </span>
+                </div>
                 <button
                   type="button"
                   onClick={useGps}
-                  className="text-cyan-300 hover:underline flex items-center gap-1 font-bold"
+                  className="text-cyan-400 hover:text-cyan-300 text-xs font-bold flex items-center gap-1 transition-colors"
                 >
                   <Cross size={13} /> Update GPS
                 </button>
               </div>
 
-              <button className="btn-primary w-full py-4 text-base font-black">
-                <span>Save to Local Qdrant Memory</span>
-                <ArrowRight size={18} />
+              {/* Big Panic-Proof 1-Tap SOS Broadcast Button */}
+              <button
+                type="submit"
+                disabled={savingSos}
+                className="w-full py-4 rounded-2xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-rose-600 text-white font-black text-base sm:text-lg shadow-xl shadow-red-700/40 flex items-center justify-center gap-3 transition-all active:scale-[0.98] disabled:opacity-50"
+              >
+                <AlertOctagon size={22} className="animate-pulse" />
+                <span>{savingSos ? 'Broadcasting to Mesh…' : 'BROADCAST EMERGENCY SOS NOW'}</span>
+                <ArrowRight size={20} />
               </button>
-            </form>
-          </Card>
 
-          {/* Coordinate Crosshair Placement */}
-          <Card
-            title="Position Report Coordinates"
-            subtitle="Tap anywhere on the coordinate grid to adjust where the observation is anchored."
-          >
-            <MapPanel
-              center={center}
-              items={items}
-              peers={peers}
-              selected={pin}
-              selectedPeer={selectedPeer}
-              onSelect={setPin}
-              onMarker={handleSelectObservation}
-              onSelectPeer={setSelectedPeer}
-            />
+              {/* Optional Collapsed Accordion for Severity, Scope & Map Crosshair */}
+              <div className="pt-2 border-t border-slate-800/80">
+                <button
+                  type="button"
+                  onClick={() => setShowSosDetails(!showSosDetails)}
+                  className="w-full py-2.5 px-3.5 rounded-xl bg-slate-900/60 hover:bg-slate-800/70 border border-slate-800 text-slate-400 hover:text-slate-200 text-xs font-bold flex items-center justify-between transition-colors"
+                >
+                  <span className="flex items-center gap-2">
+                    <MapPin size={15} className="text-cyan-400" />
+                    <span>Optional: Customize Severity, Visibility & Map Pin</span>
+                  </span>
+                  <ChevronDown size={15} className={`transition-transform duration-200 ${showSosDetails ? 'rotate-180' : ''}`} />
+                </button>
+
+                {showSosDetails && (
+                  <div className="mt-3 space-y-3.5 p-4 rounded-2xl bg-[#07111e]/90 border border-slate-800 animate-in fade-in">
+                    {/* Severity Level Buttons */}
+                    <div>
+                      <label className="block text-[11px] text-slate-400 font-bold uppercase tracking-wider mb-1.5">
+                        Severity Level
+                      </label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {[
+                          { id: 'red', label: 'Urgent / Threat', icon: AlertOctagon, activeClass: 'border-red-500 bg-red-600 text-white' },
+                          { id: 'yellow', label: 'Attention Needed', icon: TriangleAlert, activeClass: 'border-amber-500 bg-amber-600 text-white' },
+                          { id: 'green', label: 'Informational', icon: ShieldCheck, activeClass: 'border-emerald-500 bg-emerald-600 text-white' }
+                        ].map((s) => {
+                          const SIcon = s.icon;
+                          const isSel = report.severity === s.id;
+                          return (
+                            <button
+                              key={s.id}
+                              type="button"
+                              onClick={() => setReport({ ...report, severity: s.id })}
+                              className={`p-2 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all ${
+                                isSel ? s.activeClass : 'border-slate-800 bg-slate-900/60 text-slate-400'
+                              }`}
+                            >
+                              <SIcon size={13} />
+                              <span>{s.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Visibility Scope */}
+                    <div>
+                      <label className="block text-[11px] text-slate-400 font-bold uppercase tracking-wider mb-1.5">
+                        Visibility Scope
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setReport({ ...report, visibility: 'responders' })}
+                          className={`p-2 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all ${
+                            report.visibility === 'responders'
+                              ? 'border-cyan-500 bg-cyan-950 text-cyan-200'
+                              : 'border-slate-800 bg-slate-900/60 text-slate-400'
+                          }`}
+                        >
+                          <ShieldAlert size={13} />
+                          <span>Responders Only</span>
+                        </button>
+                        <button
+                          type="button"
+                          disabled={report.kind === 'incident'}
+                          onClick={() => setReport({ ...report, visibility: 'public' })}
+                          className={`p-2 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all ${
+                            report.kind === 'incident'
+                              ? 'opacity-40 cursor-not-allowed border-slate-900 bg-slate-950 text-slate-600'
+                              : report.visibility === 'public'
+                              ? 'border-emerald-500 bg-emerald-950 text-emerald-200'
+                              : 'border-slate-800 bg-slate-900/60 text-slate-400'
+                          }`}
+                        >
+                          <Wifi size={13} />
+                          <span>Public Mesh</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Interactive Map Crosshair */}
+                    <div className="pt-1">
+                      <label className="block text-[11px] text-slate-400 font-bold uppercase tracking-wider mb-1.5">
+                        Tap Map to Place Location Pin
+                      </label>
+                      <div className="rounded-xl overflow-hidden border border-slate-800">
+                        <MapPanel
+                          center={center}
+                          items={items}
+                          peers={peers}
+                          selected={pin}
+                          selectedPeer={selectedPeer}
+                          onSelect={setPin}
+                          onMarker={handleSelectObservation}
+                          onSelectPeer={setSelectedPeer}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </form>
           </Card>
         </div>
       )}
 
       {/* ========================================================================= */}
-      {/* TAB 5: NEAREST BEACON DISCOVERY & DIRECT SYNC */}
+      {/* ========================================================================= */}
+      {/* TAB 4: MESH SYNC SCANNER (P2P Radar Grid & 1-Tap Transfer) */}
       {/* ========================================================================= */}
       {tab === 'beacon' && (
-        <div className="space-y-5">
-          {/* Hero: Nearest Beacon Direct Sync */}
-          <Card
-            title="Nearest Emergency Beacon (Zero-Conf Mesh)"
-            subtitle="Automatic peer-to-peer discovery using background UDP beacons on local Wi-Fi and mobile hotspots. No accounts, setup, or squad groups required."
-          >
-            {(() => {
-              const onlinePeers = peers.filter((p) => p.is_online !== false);
-              const sortedPeers = [...onlinePeers].sort((a, b) => (a.distance_m ?? 99999) - (b.distance_m ?? 99999));
-              const nearestBeacon = sortedPeers[0] || null;
-
-              return (
-                <div className="space-y-4">
-                  {nearestBeacon ? (
-                    <div className="p-5 rounded-2xl border-2 border-emerald-500/80 bg-gradient-to-r from-emerald-950/50 to-[#07111e] shadow-xl shadow-emerald-950/30">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                        <div className="flex items-start sm:items-center gap-3.5">
-                          <div className="p-3.5 rounded-2xl bg-emerald-600 text-white shrink-0 shadow-lg shadow-emerald-600/40 animate-pulse">
-                            <Radio size={26} />
-                          </div>
-                          <div>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-emerald-600 text-white">
-                                Nearest Beacon Locked
-                              </span>
-                              <span className="text-xs font-mono font-bold text-emerald-300">
-                                ~{nearestBeacon.distance_m != null ? `${nearestBeacon.distance_m} m away` : 'Direct LAN'}
-                              </span>
-                              <span className="text-[10px] uppercase px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">
-                                Role: {nearestBeacon.role}
-                              </span>
-                            </div>
-                            <h3 className="text-base sm:text-lg font-black text-white mt-1">
-                              {nearestBeacon.node_id} ({nearestBeacon.ip}:{nearestBeacon.port})
-                            </h3>
-                            <p className="text-xs text-slate-300 mt-0.5">
-                              Beacon broadcast received {nearestBeacon.seconds_ago}s ago. Tap below to exchange memories and incident reports.
-                            </p>
-                          </div>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => handleSyncPeer(nearestBeacon)}
-                          disabled={syncingBeacon || syncingPeer}
-                          className="btn-primary text-sm px-6 py-3.5 shrink-0 bg-emerald-600 hover:bg-emerald-500 text-white shadow-xl shadow-emerald-600/40 font-black flex items-center justify-center gap-2 transition-all active:scale-98"
-                        >
-                          {syncingBeacon || syncingPeer ? (
-                            <>
-                              <RefreshCw size={16} className="animate-spin" />
-                              <span>Exchanging Memory…</span>
-                            </>
-                          ) : (
-                            <>
-                              <Zap size={16} />
-                              <span>Sync with Nearest Beacon</span>
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="p-6 rounded-2xl border border-slate-800 bg-[#07111e] text-center">
-                      <div className="p-3.5 rounded-2xl bg-cyan-950/60 border border-cyan-800/60 text-cyan-400 w-fit mx-auto mb-3.5">
-                        <Radio size={32} className="animate-pulse" />
-                      </div>
-                      <h3 className="text-base font-bold text-slate-100">
-                        Scanning Local Wi-Fi Subnet for Beacons…
-                      </h3>
-                      <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto leading-relaxed">
-                        Broadcasting UDP discovery beacons on port 8888. When another phone or responder hotspot joins this Wi-Fi, it will automatically appear here.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={handleSyncNearestBeacon}
-                        disabled={syncingBeacon}
-                        className="btn-primary mt-4 text-xs px-6 py-2.5 mx-auto flex items-center gap-2"
-                      >
-                        {syncingBeacon ? (
-                          <>
-                            <RefreshCw size={14} className="animate-spin" />
-                            <span>Broadcasting & Syncing…</span>
-                          </>
-                        ) : (
-                          <>
-                            <RefreshCw size={14} />
-                            <span>Broadcast Beacon Pulse & Sync Outbox</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Discovered Subnet Beacons Grid */}
-                  <div>
-                    <div className="flex items-center justify-between mb-3">
-                      <h4 className="text-xs uppercase tracking-wider font-bold text-slate-300 flex items-center gap-1.5">
-                        <Wifi size={14} className="text-emerald-400" />
-                        <span>All Discovered Beacons ({peers.length})</span>
-                      </h4>
-                      <button
-                        type="button"
-                        onClick={refreshPeers}
-                        className="text-xs text-cyan-300 hover:underline flex items-center gap-1 font-semibold"
-                      >
-                        <RefreshCw size={12} /> Scan Wi-Fi Subnet
-                      </button>
-                    </div>
-
-                    {peers.length > 0 ? (
-                      <div className="grid sm:grid-cols-2 gap-3">
-                        {peers.map((peer) => {
-                          const isVol = peer.role === 'volunteer' || peer.role === 'central';
-                          return (
-                            <div
-                              key={peer.node_id}
-                              className="p-4 rounded-2xl border border-slate-800 bg-[#07111e] hover:border-slate-700 transition-all flex flex-col justify-between"
-                            >
-                              <div>
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-2 font-bold text-slate-100 text-sm">
-                                    <span className={`w-2.5 h-2.5 rounded-full ${peer.is_online ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
-                                    <span>{peer.node_id}</span>
-                                  </div>
-                                  <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${
-                                    isVol ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-amber-950 text-amber-300 border border-amber-800'
-                                  }`}>
-                                    {peer.role}
-                                  </span>
-                                </div>
-                                <div className="text-xs text-slate-400 mt-1 font-mono flex items-center justify-between">
-                                  <span className="text-cyan-400 font-semibold">
-                                    {peer.distance_m != null ? `~${peer.distance_m}m away` : 'Hotspot connected'}
-                                  </span>
-                                  <span>{peer.seconds_ago}s ago</span>
-                                </div>
-                                <div className="text-[11px] text-slate-500 font-mono mt-1">
-                                  {peer.ip}:{peer.port}
-                                </div>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => handleSyncPeer(peer)}
-                                disabled={syncingPeer}
-                                className="mt-3.5 w-full py-2.5 rounded-xl bg-slate-800 hover:bg-emerald-600 hover:text-white text-slate-200 font-bold text-xs flex items-center justify-center gap-1.5 transition-all active:scale-98"
-                              >
-                                <Zap size={13} />
-                                <span>Sync with {peer.node_id}</span>
-                              </button>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <Empty icon={Radio}>
-                        No peer beacons found on this subnet yet. Connect to a mobile hotspot or Wi-Fi where other rescue nodes are running.
-                      </Empty>
-                    )}
-                  </div>
-                </div>
-              );
-            })()}
-          </Card>
-
-          {/* Direct Custom Beacon Sync (Cross-subnet / Testing) */}
-          <div className="grid sm:grid-cols-2 gap-4">
-            <Card
-              title="Direct Beacon Endpoint"
-              subtitle="Connect to a specific IP address or remote node."
-            >
-              <form onSubmit={handleDirectBeaconSync} className="space-y-3">
-                <input
-                  className="field text-xs font-mono"
-                  placeholder="http://192.168.1.50:8000 or http://127.0.0.1:8001"
-                  value={directBeaconUrl}
-                  onChange={(e) => setDirectBeaconUrl(e.target.value)}
-                />
-                <button
-                  type="submit"
-                  disabled={!directBeaconUrl.trim() || syncingBeacon}
-                  className="btn-secondary w-full py-2.5 text-xs flex items-center justify-center gap-1.5"
-                >
-                  <Send size={14} />
-                  <span>Direct Sync with IP</span>
-                </button>
-              </form>
-            </Card>
-
-            <Card
-              title="Zero-Configuration Beacon Protocol"
-              subtitle="How offline mesh synchronization works."
-            >
-              <div className="space-y-2.5 text-xs text-slate-300 leading-relaxed">
-                <p className="flex items-center gap-2">
-                  <CheckCircle2 size={15} className="text-emerald-400 shrink-0" />
-                  <span><strong>UDP Beacon Broadcasts:</strong> Packets broadcasted every 3s on port 8888.</span>
-                </p>
-                <p className="flex items-center gap-2">
-                  <CheckCircle2 size={15} className="text-emerald-400 shrink-0" />
-                  <span><strong>No Accounts or Groups:</strong> Automatic peer discovery without team codes or passwords.</span>
-                </p>
-                <p className="flex items-center gap-2">
-                  <CheckCircle2 size={15} className="text-emerald-400 shrink-0" />
-                  <span><strong>Offline P2P Transfer:</strong> High-speed HTTP payloads exchanged locally over Wi-Fi.</span>
-                </p>
-              </div>
-            </Card>
-          </div>
-        </div>
+        <MeshSyncScanner
+          initialPeers={peers}
+          onSyncComplete={() => {
+            refreshMap();
+            refreshPeers();
+          }}
+        />
       )}
 
       {/* ========================================================================= */}
       {/* ANDROID / MOBILE FIXED BOTTOM NAVIGATION BAR */}
       {/* Thumb-friendly, accessible, ergonomic navigation for smartphones */}
       {/* ========================================================================= */}
-      <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-slate-900/95 dark:bg-[#091322]/98 border-t border-slate-200 dark:border-slate-800/90 backdrop-blur-lg pb-safe">
-        <div className="grid grid-cols-5 h-16">
+      <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#0a1324]/95 border-t border-slate-700/80 backdrop-blur-xl pb-safe shadow-2xl">
+        <div className="grid grid-cols-4 h-16">
           {TABS.map(([id, label, Icon]) => {
             const isActive = tab === id;
+            const activeColors = {
+              ask: 'text-cyan-400',
+              map: 'text-emerald-400',
+              report: 'text-rose-500',
+              beacon: 'text-sky-400'
+            };
             return (
               <button
                 key={id}
@@ -1651,22 +1377,19 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                   window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
                 className={`flex flex-col items-center justify-center gap-1 transition-all active:scale-95 ${
-                  isActive ? 'text-red-500 font-bold' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                  isActive ? `${activeColors[id]} font-black` : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
                 <div className="relative">
-                  <Icon size={18} className={isActive ? 'stroke-[2.5]' : 'stroke-[1.75]'} />
-                  {id === 'compass' && nearestCasualty && (
-                    <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-red-500 animate-ping" />
+                  <Icon size={20} className={isActive ? 'stroke-[2.5]' : 'stroke-[1.8]'} />
+                  {id === 'map' && (nearestCasualty || peers.length > 0) && (
+                    <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
                   )}
                   {id === 'beacon' && peers.length > 0 && (
-                    <span className="absolute -top-1 -right-1.5 w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                  )}
-                  {id === 'map' && peers.length > 0 && (
-                    <span className="absolute -top-1 -right-1.5 w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                    <span className="absolute -top-1 -right-1.5 w-1.5 h-1.5 rounded-full bg-sky-400 animate-ping" />
                   )}
                 </div>
-                <span className="text-[10px] tracking-tight font-medium">{label.split(' ')[0]}</span>
+                <span className="text-[10px] tracking-tight font-bold">{label.split(' ')[0]}</span>
               </button>
             );
           })}

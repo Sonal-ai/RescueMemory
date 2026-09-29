@@ -230,24 +230,25 @@ export function Shell({ title, subtitle, children }) {
   }, [theme]);
 
   return (
-    <div className="app-shell min-h-screen bg-[#060b13] text-slate-100 flex flex-col pb-16 sm:pb-0">
+    <div className="app-shell min-h-screen bg-[#080d19] dark:bg-[#080d19] text-slate-100 flex flex-col pb-16 sm:pb-0">
       {/* Top Tactical Navigation Header */}
-      <header className="app-header border-b border-slate-800/80 bg-[#091322]/95 sticky top-0 z-40 backdrop-blur-md shadow-sm">
+      <header className="app-header border-b border-slate-200 dark:border-cyan-500/15 bg-white/95 dark:bg-[#0b1528]/95 sticky top-0 z-40 backdrop-blur-xl shadow-md shadow-black/15">
+        <div className="h-0.5 w-full bg-gradient-to-r from-red-500 via-cyan-400 to-emerald-400 opacity-90" />
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2.5 flex items-center justify-between gap-3">
           
           {/* Logo & Tactical Identity */}
           <Link to="/" className="flex items-center gap-2.5 font-black tracking-tight text-lg group">
-            <span className="h-9 w-9 rounded-xl bg-gradient-to-br from-red-500 to-rose-600 flex items-center justify-center text-white shadow-md shadow-red-500/20 group-hover:scale-105 transition-transform">
+            <span className="h-9 w-9 rounded-xl bg-gradient-to-br from-red-500 via-rose-500 to-red-600 flex items-center justify-center text-white shadow-md shadow-red-500/30 group-hover:scale-105 transition-transform">
               <Activity size={20} />
             </span>
             <div className="flex flex-col">
               <div className="flex items-center gap-1.5 leading-none">
-                <span className="font-extrabold text-base sm:text-lg tracking-tight">RescueMemory</span>
-                <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-cyan-950/80 text-cyan-300 border border-cyan-800/50">
+                <span className="font-extrabold text-base sm:text-lg tracking-tight bg-gradient-to-r from-white via-slate-100 to-cyan-200 bg-clip-text text-transparent">RescueMemory</span>
+                <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-cyan-950/80 text-cyan-300 border border-cyan-500/30">
                   EDGE
                 </span>
               </div>
-              <span className="text-[10px] text-slate-400 font-mono tracking-wider">OFFLINE SURVIVAL MESH</span>
+              <span className="text-[10px] text-cyan-400/80 font-mono tracking-wider">OFFLINE SURVIVAL MESH</span>
             </div>
           </Link>
 
@@ -372,12 +373,17 @@ export function Shell({ title, subtitle, children }) {
 
 export function Card({ title, subtitle, action, children, className = '' }) {
   return (
-    <section className={`app-card bg-[#0b1626] border border-slate-800/80 rounded-2xl p-5 sm:p-6 shadow-xl shadow-black/20 ${className}`}>
+    <section className={`app-card bg-white dark:bg-gradient-to-b dark:from-[#0d172b]/95 dark:to-[#091222]/95 border border-slate-200 dark:border-cyan-500/15 rounded-2xl p-5 sm:p-6 shadow-xl shadow-black/20 backdrop-blur-sm transition-all ${className}`}>
       {(title || action) && (
-        <div className="flex items-center justify-between mb-4 border-b border-slate-800/60 pb-3">
+        <div className="flex items-center justify-between mb-4 border-b border-slate-200 dark:border-cyan-500/10 pb-3">
           <div>
-            {title && <h2 className="text-base sm:text-lg font-bold text-slate-100 tracking-tight">{title}</h2>}
-            {subtitle && <p className="text-xs text-slate-400 mt-0.5">{subtitle}</p>}
+            {title && (
+              <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100 tracking-tight flex items-center gap-2">
+                <span className="w-1.5 h-4 rounded-full bg-gradient-to-b from-cyan-400 to-blue-500 inline-block"></span>
+                <span>{title}</span>
+              </h2>
+            )}
+            {subtitle && <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 ml-3.5 leading-relaxed">{subtitle}</p>}
           </div>
           {action && <div>{action}</div>}
         </div>
