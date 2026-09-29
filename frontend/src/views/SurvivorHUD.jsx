@@ -81,8 +81,8 @@ const EMERGENCY_TYPES = [
     severity: 'red',
     visibility: 'responders',
     icon: HeartPulse,
-    badgeBg: 'bg-rose-500/10 text-rose-300 border-rose-500/30',
-    selectedStyle: 'border-red-500 bg-gradient-to-br from-red-950/80 to-[#0e172a] shadow-lg shadow-red-950/40 ring-2 ring-red-500/70'
+    badgeBg: 'bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-500/30',
+    selectedStyle: 'border-red-500 bg-red-50 dark:bg-gradient-to-br dark:from-red-950/80 dark:to-[#0e172a] shadow-lg shadow-red-500/10 dark:shadow-red-950/40 ring-2 ring-red-500'
   },
   {
     id: 'trapped',
@@ -93,8 +93,8 @@ const EMERGENCY_TYPES = [
     severity: 'red',
     visibility: 'responders',
     icon: AlertOctagon,
-    badgeBg: 'bg-red-500/10 text-red-300 border-red-500/30',
-    selectedStyle: 'border-rose-500 bg-gradient-to-br from-rose-950/80 to-[#0e172a] shadow-lg shadow-rose-950/40 ring-2 ring-rose-500/70'
+    badgeBg: 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-300 border-red-200 dark:border-red-500/30',
+    selectedStyle: 'border-rose-500 bg-rose-50 dark:bg-gradient-to-br dark:from-rose-950/80 dark:to-[#0e172a] shadow-lg shadow-rose-500/10 dark:shadow-rose-950/40 ring-2 ring-rose-500'
   },
   {
     id: 'hazard',
@@ -105,8 +105,8 @@ const EMERGENCY_TYPES = [
     severity: 'yellow',
     visibility: 'public',
     icon: TriangleAlert,
-    badgeBg: 'bg-amber-500/10 text-amber-300 border-amber-500/30',
-    selectedStyle: 'border-amber-500 bg-gradient-to-br from-amber-950/80 to-[#0e172a] shadow-lg shadow-amber-950/40 ring-2 ring-amber-500/70'
+    badgeBg: 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-500/30',
+    selectedStyle: 'border-amber-500 bg-amber-50 dark:bg-gradient-to-br dark:from-amber-950/80 dark:to-[#0e172a] shadow-lg shadow-amber-500/10 dark:shadow-amber-950/40 ring-2 ring-amber-500'
   },
   {
     id: 'supplies',
@@ -117,8 +117,8 @@ const EMERGENCY_TYPES = [
     severity: 'yellow',
     visibility: 'public',
     icon: Droplets,
-    badgeBg: 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30',
-    selectedStyle: 'border-cyan-500 bg-gradient-to-br from-cyan-950/80 to-[#0e172a] shadow-lg shadow-cyan-950/40 ring-2 ring-cyan-500/70'
+    badgeBg: 'bg-cyan-100 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 border-cyan-200 dark:border-cyan-500/30',
+    selectedStyle: 'border-cyan-500 bg-cyan-50 dark:bg-gradient-to-br dark:from-cyan-950/80 dark:to-[#0e172a] shadow-lg shadow-cyan-500/10 dark:shadow-cyan-950/40 ring-2 ring-cyan-500'
   }
 ];
 
@@ -1137,7 +1137,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
           >
             {/* 4 Clear High-Contrast Emergency Situation Tiles */}
             <div className="mb-4">
-              <label className="block text-xs text-slate-300 font-bold uppercase tracking-wider mb-2.5">
+              <label className="block text-xs text-slate-700 dark:text-slate-300 font-bold uppercase tracking-wider mb-2.5">
                 1. What is your immediate emergency?
               </label>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -1161,16 +1161,16 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                       className={`p-3.5 rounded-2xl border text-left transition-all active:scale-[0.98] cursor-pointer ${
                         isSelected
                           ? type.selectedStyle
-                          : 'border-slate-800 bg-[#0b1322]/80 hover:border-slate-700 text-slate-300'
+                          : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#0b1322]/80 hover:bg-slate-100 dark:hover:bg-[#0f1b2d] hover:border-slate-300 dark:hover:border-slate-700 text-slate-800 dark:text-slate-300 shadow-sm'
                       }`}
                     >
                       <div className="flex items-center gap-2.5 mb-1">
                         <div className={`p-2 rounded-xl border ${type.badgeBg}`}>
                           <TypeIcon size={18} />
                         </div>
-                        <span className="font-extrabold text-sm text-white tracking-tight">{type.title}</span>
+                        <span className="font-extrabold text-sm text-slate-900 dark:text-white tracking-tight">{type.title}</span>
                       </div>
-                      <p className="text-xs text-slate-400 line-clamp-1 leading-tight ml-0.5">
+                      <p className="text-xs text-slate-600 dark:text-slate-400 line-clamp-1 leading-tight ml-0.5">
                         {type.subtitle}
                       </p>
                     </button>
@@ -1183,10 +1183,10 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
             <form onSubmit={submitReport} className="space-y-4">
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs text-slate-300 font-bold uppercase tracking-wider">
+                  <label className="text-xs text-slate-700 dark:text-slate-300 font-bold uppercase tracking-wider">
                     2. Situation Details (Pre-filled, edit if needed)
                   </label>
-                  <span className="text-[10px] text-slate-400 font-mono">
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">
                     {(report.text || '').length} chars
                   </span>
                 </div>
@@ -1201,20 +1201,20 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
               </div>
 
               {/* Real-time GPS Location Status Badge */}
-              <div className="rounded-xl bg-[#07111e] border border-cyan-500/20 p-3 text-xs text-slate-300 flex items-center justify-between">
+              <div className="rounded-xl bg-slate-100 dark:bg-[#07111e] border border-cyan-500/30 p-3 text-xs text-slate-700 dark:text-slate-300 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-500 opacity-75"></span>
                     <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
                   </span>
-                  <span className="font-mono text-cyan-300">
+                  <span className="font-mono text-cyan-800 dark:text-cyan-300 font-bold">
                     GPS: {pin.lat.toFixed(5)}, {pin.lon.toFixed(5)} · Offline Lock
                   </span>
                 </div>
                 <button
                   type="button"
                   onClick={useGps}
-                  className="text-cyan-400 hover:text-cyan-300 text-xs font-bold flex items-center gap-1 transition-colors"
+                  className="text-cyan-700 dark:text-cyan-400 hover:text-cyan-800 dark:hover:text-cyan-300 text-xs font-bold flex items-center gap-1 transition-colors"
                 >
                   <Cross size={13} /> Update GPS
                 </button>
@@ -1224,32 +1224,32 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
               <button
                 type="submit"
                 disabled={savingSos}
-                className="w-full py-4 rounded-2xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-rose-600 text-white font-black text-base sm:text-lg shadow-xl shadow-red-700/40 flex items-center justify-center gap-3 transition-all active:scale-[0.98] disabled:opacity-50"
+                className="btn-sos-broadcast w-full py-4 rounded-2xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-rose-600 text-white font-black text-base sm:text-lg shadow-xl shadow-red-700/40 flex items-center justify-center gap-3 transition-all active:scale-[0.98] disabled:opacity-50 cursor-pointer"
               >
-                <AlertOctagon size={22} className="animate-pulse" />
-                <span>{savingSos ? 'Broadcasting to Mesh…' : 'BROADCAST EMERGENCY SOS NOW'}</span>
-                <ArrowRight size={20} />
+                <AlertOctagon size={22} className="animate-pulse text-white" />
+                <span className="text-white">{savingSos ? 'Broadcasting to Mesh…' : 'BROADCAST EMERGENCY SOS NOW'}</span>
+                <ArrowRight size={20} className="text-white" />
               </button>
 
               {/* Optional Collapsed Accordion for Severity, Scope & Map Crosshair */}
-              <div className="pt-2 border-t border-slate-800/80">
+              <div className="pt-2 border-t border-slate-200 dark:border-slate-800/80">
                 <button
                   type="button"
                   onClick={() => setShowSosDetails(!showSosDetails)}
-                  className="w-full py-2.5 px-3.5 rounded-xl bg-slate-900/60 hover:bg-slate-800/70 border border-slate-800 text-slate-400 hover:text-slate-200 text-xs font-bold flex items-center justify-between transition-colors"
+                  className="w-full py-2.5 px-3.5 rounded-xl bg-slate-100 dark:bg-slate-900/60 hover:bg-slate-200 dark:hover:bg-slate-800/70 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 text-xs font-bold flex items-center justify-between transition-colors"
                 >
                   <span className="flex items-center gap-2">
-                    <MapPin size={15} className="text-cyan-400" />
+                    <MapPin size={15} className="text-cyan-600 dark:text-cyan-400" />
                     <span>Optional: Customize Severity, Visibility & Map Pin</span>
                   </span>
                   <ChevronDown size={15} className={`transition-transform duration-200 ${showSosDetails ? 'rotate-180' : ''}`} />
                 </button>
 
                 {showSosDetails && (
-                  <div className="mt-3 space-y-3.5 p-4 rounded-2xl bg-[#07111e]/90 border border-slate-800 animate-in fade-in">
+                  <div className="mt-3 space-y-3.5 p-4 rounded-2xl bg-slate-50 dark:bg-[#07111e]/90 border border-slate-200 dark:border-slate-800 animate-in fade-in">
                     {/* Severity Level Buttons */}
                     <div>
-                      <label className="block text-[11px] text-slate-400 font-bold uppercase tracking-wider mb-1.5">
+                      <label className="block text-[11px] text-slate-600 dark:text-slate-400 font-bold uppercase tracking-wider mb-1.5">
                         Severity Level
                       </label>
                       <div className="grid grid-cols-3 gap-2">
@@ -1266,7 +1266,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                               type="button"
                               onClick={() => setReport({ ...report, severity: s.id })}
                               className={`p-2 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all ${
-                                isSel ? s.activeClass : 'border-slate-800 bg-slate-900/60 text-slate-400'
+                                isSel ? s.activeClass : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 text-slate-700 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
                               }`}
                             >
                               <SIcon size={13} />
@@ -1279,7 +1279,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
 
                     {/* Visibility Scope */}
                     <div>
-                      <label className="block text-[11px] text-slate-400 font-bold uppercase tracking-wider mb-1.5">
+                      <label className="block text-[11px] text-slate-600 dark:text-slate-400 font-bold uppercase tracking-wider mb-1.5">
                         Visibility Scope
                       </label>
                       <div className="grid grid-cols-2 gap-2">
@@ -1288,8 +1288,8 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                           onClick={() => setReport({ ...report, visibility: 'responders' })}
                           className={`p-2 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all ${
                             report.visibility === 'responders'
-                              ? 'border-cyan-500 bg-cyan-950 text-cyan-200'
-                              : 'border-slate-800 bg-slate-900/60 text-slate-400'
+                              ? 'border-cyan-500 bg-cyan-600 text-white shadow-sm'
+                              : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 text-slate-700 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
                           }`}
                         >
                           <ShieldAlert size={13} />
@@ -1301,10 +1301,10 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                           onClick={() => setReport({ ...report, visibility: 'public' })}
                           className={`p-2 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all ${
                             report.kind === 'incident'
-                              ? 'opacity-40 cursor-not-allowed border-slate-900 bg-slate-950 text-slate-600'
+                              ? 'opacity-40 cursor-not-allowed border-slate-200 dark:border-slate-900 bg-slate-100 dark:bg-slate-950 text-slate-400 dark:text-slate-600'
                               : report.visibility === 'public'
-                              ? 'border-emerald-500 bg-emerald-950 text-emerald-200'
-                              : 'border-slate-800 bg-slate-900/60 text-slate-400'
+                              ? 'border-emerald-500 bg-emerald-600 text-white shadow-sm'
+                              : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 text-slate-700 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
                           }`}
                         >
                           <Wifi size={13} />
@@ -1315,10 +1315,10 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
 
                     {/* Interactive Map Crosshair */}
                     <div className="pt-1">
-                      <label className="block text-[11px] text-slate-400 font-bold uppercase tracking-wider mb-1.5">
+                      <label className="block text-[11px] text-slate-600 dark:text-slate-400 font-bold uppercase tracking-wider mb-1.5">
                         Tap Map to Place Location Pin
                       </label>
-                      <div className="rounded-xl overflow-hidden border border-slate-800">
+                      <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800">
                         <MapPanel
                           center={center}
                           items={items}
@@ -1357,15 +1357,15 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
       {/* ANDROID / MOBILE FIXED BOTTOM NAVIGATION BAR */}
       {/* Thumb-friendly, accessible, ergonomic navigation for smartphones */}
       {/* ========================================================================= */}
-      <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#0a1324]/95 border-t border-slate-700/80 backdrop-blur-xl pb-safe shadow-2xl">
+      <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-[#0a1324]/95 border-t border-slate-200 dark:border-slate-700/80 backdrop-blur-xl pb-safe shadow-2xl">
         <div className="grid grid-cols-4 h-16">
           {TABS.map(([id, label, Icon]) => {
             const isActive = tab === id;
             const activeColors = {
-              ask: 'text-cyan-400',
-              map: 'text-emerald-400',
-              report: 'text-rose-500',
-              beacon: 'text-sky-400'
+              ask: 'text-cyan-600 dark:text-cyan-400',
+              map: 'text-emerald-600 dark:text-emerald-400',
+              report: 'text-rose-600 dark:text-rose-500',
+              beacon: 'text-sky-600 dark:text-sky-400'
             };
             return (
               <button
@@ -1377,16 +1377,16 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                   window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
                 className={`flex flex-col items-center justify-center gap-1 transition-all active:scale-95 ${
-                  isActive ? `${activeColors[id]} font-black` : 'text-slate-400 hover:text-slate-200'
+                  isActive ? `${activeColors[id]} font-black` : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                 }`}
               >
                 <div className="relative">
                   <Icon size={20} className={isActive ? 'stroke-[2.5]' : 'stroke-[1.8]'} />
                   {id === 'map' && (nearestCasualty || peers.length > 0) && (
-                    <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                    <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
                   )}
                   {id === 'beacon' && peers.length > 0 && (
-                    <span className="absolute -top-1 -right-1.5 w-1.5 h-1.5 rounded-full bg-sky-400 animate-ping" />
+                    <span className="absolute -top-1 -right-1.5 w-1.5 h-1.5 rounded-full bg-sky-500 animate-ping" />
                   )}
                 </div>
                 <span className="text-[10px] tracking-tight font-bold">{label.split(' ')[0]}</span>

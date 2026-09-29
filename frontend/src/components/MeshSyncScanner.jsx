@@ -438,7 +438,7 @@ export default function MeshSyncScanner({
           <button
             type="submit"
             disabled={!directIp.trim() || syncingAll}
-            className="py-2.5 px-4 rounded-xl bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 dark:hover:bg-slate-700 text-white font-bold text-xs flex items-center gap-1.5 shrink-0 transition-all"
+            className="py-2.5 px-4 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center gap-1.5 shrink-0 transition-all shadow-sm"
           >
             <Send size={14} />
             <span>Connect & Sync</span>
