@@ -29,6 +29,54 @@ const COMPASS_SIZE = 300;
 const COMPASS_CENTER = COMPASS_SIZE / 2;
 const COMPASS_RADIUS = 120;
 
+/**
+ * Computes a 3D tilt-compensated compass heading (0-360 degrees, clockwise from North)
+ * from device orientation Euler angles (alpha, beta, gamma).
+ * Based on W3C DeviceOrientation Event Specification.
+ * Completely eliminates erratic deflection caused by natural 30°-60° hand tilt and wrist roll.
+ */
+function computeTiltCompensatedHeading(e) {
+  // iOS Safari CoreMotion already provides tilt-compensated hardware fused heading
+  if (e.webkitCompassHeading !== undefined && e.webkitCompassHeading !== null) {
+    return e.webkitCompassHeading;
+  }
+
+  const alpha = e.alpha;
+  const beta = e.beta;
+  const gamma = e.gamma;
+
+  if (alpha === null || alpha === undefined || Number.isNaN(alpha)) return null;
+
+  // If tilt parameters are missing or phone is flat on a table (< 8° tilt)
+  if (beta === null || gamma === null || (Math.abs(beta) < 8 && Math.abs(gamma) < 8)) {
+    return (360 - alpha) % 360;
+  }
+
+  // W3C Specification 3D Tilt Compensation:
+  // Converts Euler angles into the horizontal projection vector of the device's forward direction
+  const degToRad = Math.PI / 180;
+  const a = alpha * degToRad;
+  const b = beta * degToRad;
+  const g = gamma * degToRad;
+
+  const cA = Math.cos(a);
+  const sA = Math.sin(a);
+  const cB = Math.cos(b);
+  const sB = Math.sin(b);
+  const cG = Math.cos(g);
+  const sG = Math.sin(g);
+
+  // Rotation matrix components for device Y-axis (top of phone) projected onto horizontal plane:
+  const rA = -cA * sG - sA * sB * cG;
+  const rB = -sA * sG + cA * sB * cG;
+
+  let heading = Math.atan2(rA, rB);
+  if (heading < 0) {
+    heading += 2 * Math.PI;
+  }
+  return (heading * 180) / Math.PI;
+}
+
 export default function UnifiedRadarMap({
   userLocation = { lat: 28.7041, lon: 77.1025 },
   items = [],
@@ -78,29 +126,49 @@ export default function UnifiedRadarMap({
     }
   }, [audioEnabled]);
 
-  // Listen to Smartphone Compass / Magnetometer with Low-Pass EMA Filter
+  // Listen to Smartphone Compass / Magnetometer with 3D Tilt-Compensation & Adaptive Unit-Vector Filter
   useEffect(() => {
-    let smoothedHeading = null;
+    let smoothX = null;
+    let smoothY = null;
     let animFrameId = null;
     let targetRawHeading = null;
+    let hasAbsolute = false;
 
     const updateFilter = () => {
       if (targetRawHeading !== null) {
-        if (smoothedHeading === null) {
-          smoothedHeading = targetRawHeading;
-        } else {
-          // Calculate shortest angular distance
-          let diff = (targetRawHeading - smoothedHeading) % 360;
-          if (diff < -180) diff += 360;
-          if (diff > 180) diff -= 360;
+        const targetRad = (targetRawHeading * Math.PI) / 180;
+        const targetX = Math.cos(targetRad);
+        const targetY = Math.sin(targetRad);
 
-          // Low-pass exponential smoothing factor (0.16 gives silky damping without sluggishness)
-          smoothedHeading = (smoothedHeading + diff * 0.16 + 360) % 360;
+        if (smoothX === null || smoothY === null) {
+          smoothX = targetX;
+          smoothY = targetY;
+        } else {
+          // Angular difference between current smoothed orientation and new target
+          const currentRad = Math.atan2(smoothY, smoothX);
+          let angleDiff = Math.abs(targetRad - currentRad);
+          if (angleDiff > Math.PI) angleDiff = 2 * Math.PI - angleDiff;
+          const angleDiffDeg = (angleDiff * 180) / Math.PI;
+
+          // Adaptive dynamic damping (mimics Google Maps / Apple Compass):
+          // - Minor hand tremors (< 3°): strong damping (0.06) to eliminate twitching
+          // - Walking / subtle movement (3°-12°): balanced damping (0.15)
+          // - Deliberate turn (> 12°): fast snappy response (0.38)
+          let alphaFactor = 0.06;
+          if (angleDiffDeg > 12) {
+            alphaFactor = 0.38;
+          } else if (angleDiffDeg > 3.5) {
+            alphaFactor = 0.15;
+          }
+
+          smoothX = smoothX + (targetX - smoothX) * alphaFactor;
+          smoothY = smoothY + (targetY - smoothY) * alphaFactor;
         }
 
-        const rounded = Math.round(smoothedHeading);
+        const smoothedDeg = ((Math.atan2(smoothY, smoothX) * 180) / Math.PI + 360) % 360;
+        const rounded = Math.round(smoothedDeg);
+
         setDeviceHeading((prev) => {
-          // Deadband: Only re-render when change is at least 1 degree
           if (Math.abs(rounded - prev) >= 1) {
             return rounded;
           }
@@ -111,27 +179,43 @@ export default function UnifiedRadarMap({
       animFrameId = requestAnimationFrame(updateFilter);
     };
 
-    const handleOrientation = (e) => {
-      let heading = null;
-      if (e.webkitCompassHeading !== undefined && e.webkitCompassHeading !== null) {
-        heading = e.webkitCompassHeading;
-      } else if (e.alpha !== null && e.alpha !== undefined) {
-        heading = (360 - e.alpha) % 360;
+    const handleAbsoluteOrientation = (e) => {
+      if (e.alpha !== null && e.alpha !== undefined) {
+        hasAbsolute = true;
+        const h = computeTiltCompensatedHeading(e);
+        if (h !== null && !Number.isNaN(h)) {
+          targetRawHeading = h;
+        }
       }
-      if (heading !== null && !Number.isNaN(heading)) {
-        targetRawHeading = heading;
+    };
+
+    const handleStandardOrientation = (e) => {
+      // If absolute orientation is available, ignore non-absolute events to avoid sensor oscillation
+      if (hasAbsolute) return;
+
+      if (e.webkitCompassHeading !== undefined && e.webkitCompassHeading !== null) {
+        targetRawHeading = e.webkitCompassHeading;
+        return;
+      }
+
+      if (e.alpha !== null && e.alpha !== undefined) {
+        const h = computeTiltCompensatedHeading(e);
+        if (h !== null && !Number.isNaN(h)) {
+          targetRawHeading = h;
+        }
       }
     };
 
     if (typeof window !== 'undefined' && window.DeviceOrientationEvent) {
-      window.addEventListener('deviceorientationabsolute', handleOrientation, true);
-      window.addEventListener('deviceorientation', handleOrientation, true);
+      window.addEventListener('deviceorientationabsolute', handleAbsoluteOrientation, true);
+      window.addEventListener('deviceorientation', handleStandardOrientation, true);
       animFrameId = requestAnimationFrame(updateFilter);
     }
+
     return () => {
       if (typeof window !== 'undefined') {
-        window.removeEventListener('deviceorientationabsolute', handleOrientation, true);
-        window.removeEventListener('deviceorientation', handleOrientation, true);
+        window.removeEventListener('deviceorientationabsolute', handleAbsoluteOrientation, true);
+        window.removeEventListener('deviceorientation', handleStandardOrientation, true);
       }
       if (animFrameId) cancelAnimationFrame(animFrameId);
     };
@@ -551,7 +635,7 @@ export default function UnifiedRadarMap({
                   <g
                     transform={`rotate(${needleAngle} ${COMPASS_CENTER} ${COMPASS_CENTER})`}
                     filter="url(#needleGlow)"
-                    className="transition-transform duration-200 ease-out"
+                    className={isCompassActive ? 'transition-none' : 'transition-transform duration-300 ease-out'}
                   >
                     {/* Needle Arrowhead */}
                     <polygon
