@@ -19,7 +19,7 @@ import {
   TriangleAlert,
   Users
 } from 'lucide-react';
-import { api, formatTime, saveSetting, setting } from '../api';
+import { api, formatTime, saveSetting, setting, onBrainStatusChange, onSyncStateChange } from '../api';
 import { Card, Empty, Shell } from '../components';
 import MapPanel from '../MapPanel';
 
@@ -68,6 +68,17 @@ export default function SurvivorHUD() {
   const [joinId, setJoinId] = useState('');
   const [joinToken, setJoinToken] = useState('');
   const [mapFilter, setMapFilter] = useState('all');
+  const [isOfflineBrain, setIsOfflineBrain] = useState(false);
+  const [syncInfo, setSyncInfo] = useState({ state: 'idle', pendingCount: 0 });
+
+  useEffect(() => {
+    const unsubBrain = onBrainStatusChange(setIsOfflineBrain);
+    const unsubSync = onSyncStateChange(setSyncInfo);
+    return () => {
+      unsubBrain();
+      unsubSync();
+    };
+  }, []);
 
   const refreshMap = useCallback(async () => {
     try {
@@ -214,7 +225,8 @@ export default function SurvivorHUD() {
         }
       });
       setSosSuccess(true);
-      setMessage(`Emergency SOS successfully saved to local database (ID: ${result.event.id.slice(0, 12)}…). Nearby responder nodes will receive this during local peer exchange.`);
+      const evtId = (result.event?.id || result.event_id || 'saved').slice(0, 12);
+      setMessage(`Emergency SOS successfully saved to local database (ID: ${evtId}…). Nearby responder nodes will receive this during local peer exchange.`);
       refreshMap();
     } catch (err) {
       setError(err.message);
@@ -272,9 +284,10 @@ export default function SurvivorHUD() {
           group_id: visibility === 'group' ? groupId : null
         }
       });
+      const evtId = (result.event?.id || result.event_id || 'saved').slice(0, 12);
       setMessage(result.duplicate
         ? 'This observation is already stored in local memory.'
-        : `Saved to local memory (ID: ${result.event.id.slice(0, 12)}…).`);
+        : `Saved to local memory (ID: ${evtId}…).`);
       setReport({ ...report, text: '' });
       refreshMap();
     } catch (err) {
@@ -340,6 +353,45 @@ export default function SurvivorHUD() {
             </button>
           );
         })}
+      </div>
+
+      {/* Brain Connectivity & Outbox Status Indicator */}
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl border border-slate-800 bg-slate-900/60 backdrop-blur-sm">
+        <div className="flex items-center gap-2">
+          {isOfflineBrain ? (
+            <>
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
+              </span>
+              <span className="text-xs font-semibold text-amber-300">
+                Standalone Phone Brain Active
+              </span>
+              <span className="text-xs text-slate-400 hidden sm:inline">
+                • 100% On-Device Vector Engine (Zero Net / No Server Needed)
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="h-2.5 w-2.5 rounded-full bg-emerald-500"></span>
+              <span className="text-xs font-semibold text-emerald-400">
+                Connected to Field Hub
+              </span>
+              <span className="text-xs text-slate-400 hidden sm:inline">
+                • Qdrant Edge Node & Peer Relay Active
+              </span>
+            </>
+          )}
+        </div>
+
+        {syncInfo.pendingCount > 0 && (
+          <div className="flex items-center gap-1.5 text-xs text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-full">
+            <RefreshCw size={12} className={syncInfo.state === 'syncing' ? 'animate-spin' : ''} />
+            <span>
+              {syncInfo.state === 'syncing' ? 'Auto-syncing to Hub...' : `${syncInfo.pendingCount} report(s) in offline outbox`}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Global Status & Alerts */}
