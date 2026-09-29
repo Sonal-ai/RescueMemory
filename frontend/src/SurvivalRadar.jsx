@@ -64,7 +64,8 @@ const RANGES = [
 export default function SurvivalRadar({
   userLocation = { lat: 28.7041, lon: 77.1025 },
   onNavigateTarget = null,
-  role = 'survivor'
+  role = 'survivor',
+  initialMode = 'radar'
 }) {
   const [rangeMeters, setRangeMeters] = useState(3500);
   const [category, setCategory] = useState('all');
@@ -74,8 +75,12 @@ export default function SurvivalRadar({
   const [error, setError] = useState('');
   const [audioEnabled, setAudioEnabled] = useState(false);
   const [sweepAngle, setSweepAngle] = useState(0);
-  const [viewMode, setViewMode] = useState('radar'); // 'radar', 'compass', 'list'
+  const [viewMode, setViewMode] = useState(initialMode);
   const [lastRefreshed, setLastRefreshed] = useState(null);
+
+  useEffect(() => {
+    if (initialMode) setViewMode(initialMode);
+  }, [initialMode]);
 
   // Device orientation / heading state (0 = North, 90 = East, 180 = South, 270 = West)
   const [deviceHeading, setDeviceHeading] = useState(0);

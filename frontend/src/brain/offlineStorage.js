@@ -45,9 +45,11 @@ export async function getUnsyncedReports() {
   return new Promise((resolve, reject) => {
     const tx = db.transaction('reports', 'readonly');
     const store = tx.objectStore('reports');
-    const index = store.index('synced');
-    const req = index.getAll(IDBKeyRange.only(false));
-    req.onsuccess = () => resolve(req.result || []);
+    const req = store.getAll();
+    req.onsuccess = () => {
+      const all = req.result || [];
+      resolve(all.filter((r) => !r.synced));
+    };
     req.onerror = () => reject(req.error);
   });
 }

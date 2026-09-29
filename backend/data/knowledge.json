@@ -13133,8 +13133,8 @@
     "keywords": "checkpoint shelter entrance bridge first aid solar drinking water",
     "summary": "Emergency staging checkpoint with drinking water, first aid triage, and solar charging.",
     "location": {
-      "lat": 28.7495,
-      "lon": 77.1182
+      "lat": 28.7041,
+      "lon": 77.1025
     },
     "base_capacity": 250,
     "facilities": [
@@ -13161,8 +13161,8 @@
     "keywords": "shelter high school refuge food cache medical tent emergency generator clean water",
     "summary": "Central high-ground refuge facility with large capacity, emergency power generator, and medical tent.",
     "location": {
-      "lat": 28.742,
-      "lon": 77.125
+      "lat": 28.712,
+      "lon": 77.098
     },
     "base_capacity": 500,
     "facilities": [
@@ -13190,8 +13190,8 @@
     "keywords": "clinic health center trauma care antivenom medical doctor clean water hospital",
     "summary": "West district emergency healthcare facility equipped for trauma resuscitation, minor surgery, clean water, and antivenom supply.",
     "location": {
-      "lat": 28.755,
-      "lon": 77.11
+      "lat": 28.709,
+      "lon": 77.094
     },
     "base_capacity": 120,
     "facilities": [
@@ -13208,6 +13208,33 @@
       "Priority access given strictly to immediate red-tag casualties"
     ],
     "source": "https://who.int/emergencies",
+    "reviewer": "Disaster Response Command"
+  },
+  {
+    "id": "water_tanker_4",
+    "kind": "checkpoint",
+    "title": "Water Tanker 4 (North Gate Purification Station)",
+    "keywords": "water tanker clean water purification hydration potable supply",
+    "summary": "Emergency clean drinking water distribution and hydration station.",
+    "location": {
+      "lat": 28.706,
+      "lon": 77.108
+    },
+    "base_capacity": 5000,
+    "facilities": [
+      "clean_water",
+      "purification",
+      "solar_charging"
+    ],
+    "status": "operational",
+    "steps": [
+      "Approach North Gate water tanker line",
+      "Receive verified potable water containers"
+    ],
+    "warnings": [
+      "Rationed to 4 liters per person per day during crisis peak"
+    ],
+    "source": "https://who.int/water_sanitation_health",
     "reviewer": "Disaster Response Command"
   }
 ]

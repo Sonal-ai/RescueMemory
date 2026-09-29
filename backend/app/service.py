@@ -447,21 +447,45 @@ class RescueService:
                 "verified": event.get("verified", False),
             })
 
-        # 2. Baseline Checkpoints from Reference Collection
-        baseline_checkpoints = [
-            {"id": "shelter_alpha", "name": "Shelter Alpha (Central High)", "lat": 28.7120, "lon": 77.0980, "facilities": ["Shelter", "Medical", "Food", "Power"], "capacity": 250, "status": "operational"},
-            {"id": "clinic_beta", "name": "Clinic Beta (West District)", "lat": 28.7090, "lon": 77.0940, "facilities": ["Emergency Surgery", "Clean Water"], "capacity": 80, "status": "operational"},
-            {"id": "water_tanker_4", "name": "Water Tanker 4 (North Gate)", "lat": 28.7060, "lon": 77.1080, "facilities": ["Clean Water", "Purification"], "capacity": 5000, "status": "operational"},
-            {"id": "cp_17", "name": "Checkpoint CP-17 (North Bridge)", "lat": 28.7041, "lon": 77.1025, "facilities": ["Checkpoint"], "capacity": 0, "status": "danger_warning", "hazard": "Flooded entrance live wires"},
+        # 2. Dynamic Checkpoints from Reference Memory
+        ref_checkpoints = [
+            card for card in self.memory.all("reference")
+            if card.get("kind") == "checkpoint" or "checkpoint" in card.get("id", "").lower() or "shelter" in card.get("id", "").lower()
         ]
-        for cp in baseline_checkpoints:
-            cp_loc = {"lat": cp["lat"], "lon": cp["lon"]}
+
+        # If unseeded test environment, fall back to safe minimal defaults
+        if not ref_checkpoints:
+            ref_checkpoints = [
+                {"id": "shelter_alpha", "name": "Shelter Alpha (Central High)", "title": "Shelter Alpha (Central High)", "lat": 28.7120, "lon": 77.0980, "facilities": ["Shelter", "Medical", "Food", "Power"], "capacity": 250, "status": "operational"},
+                {"id": "clinic_beta", "name": "Clinic Beta (West District)", "title": "Clinic Beta (West District)", "lat": 28.7090, "lon": 77.0940, "facilities": ["Emergency Surgery", "Clean Water"], "capacity": 80, "status": "operational"},
+                {"id": "water_tanker_4", "name": "Water Tanker 4 (North Gate)", "title": "Water Tanker 4 (North Gate)", "lat": 28.7060, "lon": 77.1080, "facilities": ["Clean Water", "Purification"], "capacity": 5000, "status": "operational"},
+                {"id": "cp_17", "name": "Checkpoint CP-17 (North Bridge)", "title": "Checkpoint CP-17 (North Bridge)", "lat": 28.7041, "lon": 77.1025, "facilities": ["Checkpoint"], "capacity": 0, "status": "danger_warning", "hazard": "Flooded entrance live wires"},
+            ]
+
+        # Check recent event status overrides for checkpoints
+        recent_statuses = {}
+        for ev in self.memory.all("events"):
+            ent_id = ev.get("entity_id")
+            if ent_id and ev.get("status"):
+                recent_statuses[ent_id] = ev
+
+        for cp in ref_checkpoints:
+            cp_loc = cp.get("location")
+            if not cp_loc and cp.get("lat") is not None and cp.get("lon") is not None:
+                cp_loc = {"lat": cp["lat"], "lon": cp["lon"]}
+            if not cp_loc:
+                continue
+
             dist = distance_m(user_loc, cp_loc)
             if dist <= request.radius_m:
-                bearing = calculate_bearing(request.lat, request.lon, cp["lat"], cp["lon"])
+                bearing = calculate_bearing(request.lat, request.lon, cp_loc["lat"], cp_loc["lon"])
                 cardinal = calculate_cardinal(bearing)
                 walk_min = max(1, round(dist / 75.0))
-                is_danger = cp["status"] == "danger_warning"
+
+                override_ev = recent_statuses.get(cp.get("id"))
+                status = override_ev.get("status") if override_ev else cp.get("status", "operational")
+                is_danger = status in {"danger", "flooded", "blocked", "danger_warning"}
+                hazard_desc = override_ev.get("text") if (override_ev and is_danger) else cp.get("hazard")
                 cat = "hazard" if is_danger else "shelter"
 
                 if request.filter_category == "all" or (request.filter_category == "shelters" and not is_danger) or (request.filter_category == "hazards" and is_danger):
@@ -470,11 +494,11 @@ class RescueService:
                         seen_keys.add(key)
                         radar_items.append({
                             "id": cp["id"],
-                            "name": cp["name"],
+                            "name": cp.get("title") or cp.get("name") or cp["id"],
                             "category": cat,
                             "triage_level": "hazard_warning" if is_danger else "safe_green",
-                            "text": cp.get("hazard", f"Verified disaster shelter with facilities: {', '.join(cp['facilities'])}"),
-                            "status": cp["status"],
+                            "text": hazard_desc or cp.get("summary") or f"Verified disaster shelter with facilities: {', '.join(cp.get('facilities', []))}",
+                            "status": status,
                             "severity": "red" if is_danger else "green",
                             "distance_m": round(dist),
                             "bearing_deg": bearing,
@@ -482,8 +506,8 @@ class RescueService:
                             "walk_time_min": walk_min,
                             "location": cp_loc,
                             "facilities": cp.get("facilities", []),
-                            "capacity": cp.get("capacity"),
-                            "signal_source": "reference_baseline",
+                            "capacity": cp.get("base_capacity") or cp.get("capacity"),
+                            "signal_source": "reference_memory",
                             "verified": True,
                         })
 

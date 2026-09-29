@@ -38,7 +38,8 @@ import {
   onSyncStateChange,
   getDiscoveredPeers,
   updateDeviceLocation,
-  syncDiscoveredPeer
+  syncDiscoveredPeer,
+  getSurvivalRadar
 } from '../api';
 import { Card, Empty, Shell } from '../components';
 import MapPanel from '../MapPanel';
@@ -47,10 +48,11 @@ import SurvivalRadar from '../SurvivalRadar';
 const DEFAULT_CENTER = { lat: 28.7041, lon: 77.1025 };
 
 const TABS = [
-  ['ask', 'Ask & Triage', HeartPulse],
+  ['ask', 'Chat & Triage', HeartPulse],
+  ['compass', 'Survivor Compass', Compass],
+  ['map', 'Tactical Map', MapPin],
   ['radar', 'Survival Radar', Radio],
-  ['map', 'Tactical Map', Compass],
-  ['report', 'Report SOS', ShieldAlert],
+  ['report', 'SOS / Report', ShieldAlert],
   ['group', 'Mesh Relay', Users]
 ];
 
@@ -61,8 +63,16 @@ const QUICK_PROMPTS = [
   { label: "Nearest safe shelter", text: "Where is the nearest safe shelter and evacuation checkpoint?", icon: Navigation, urgent: false, category: 'shelter' }
 ];
 
-export default function SurvivorHUD() {
-  const [tab, setTab] = useState('ask');
+export default function SurvivorHUD({ initialTab = 'ask' }) {
+  const [tab, setTab] = useState(initialTab);
+  const [nearestCasualty, setNearestCasualty] = useState(null);
+
+  useEffect(() => {
+    if (initialTab) {
+      setTab(initialTab);
+    }
+  }, [initialTab]);
+
   const [text, setText] = useState('');
   const [answer, setAnswer] = useState(null);
   const [chatBusy, setChatBusy] = useState(false);
@@ -81,6 +91,32 @@ export default function SurvivorHUD() {
   const [checkedSteps, setCheckedSteps] = useState({});
   const [isListening, setIsListening] = useState(false);
   const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
+
+  // Poll survival radar to detect nearest survivor in real-time
+  const refreshRadarSummary = useCallback(async () => {
+    try {
+      const data = await getSurvivalRadar({
+        lat: pin.lat,
+        lon: pin.lon,
+        radius_m: 5000,
+        filter_category: 'all',
+        include_responders: true,
+      });
+      if (data?.summary?.nearest_casualty) {
+        setNearestCasualty(data.summary.nearest_casualty);
+      } else {
+        setNearestCasualty(null);
+      }
+    } catch {
+      // offline silent
+    }
+  }, [pin]);
+
+  useEffect(() => {
+    refreshRadarSummary();
+    const radarTimer = setInterval(refreshRadarSummary, 10000);
+    return () => clearInterval(radarTimer);
+  }, [refreshRadarSummary]);
 
   const [report, setReport] = useState({
     kind: 'incident',
@@ -543,21 +579,21 @@ export default function SurvivorHUD() {
       )}
 
       {/* Desktop HUD Segmented Navigation Pills */}
-      <div className="hidden sm:grid sm:grid-cols-5 gap-2 mb-6">
+      <div className="hidden sm:grid sm:grid-cols-6 gap-2 mb-6">
         {TABS.map(([id, label, Icon]) => {
           const isActive = tab === id;
           return (
             <button
               key={id}
               onClick={() => { setTab(id); setError(''); setMessage(''); }}
-              className={`rounded-2xl border px-4 py-3.5 text-xs font-bold flex items-center justify-center gap-2 transition-all ${
+              className={`rounded-2xl border px-3 py-3.5 text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
                 isActive
                   ? 'bg-red-500 text-white border-red-600 shadow-md shadow-red-500/25 scale-[1.01]'
                   : 'bg-[#091424] border-slate-800 text-slate-300 hover:border-slate-700 hover:text-white'
               }`}
             >
-              <Icon size={16} />
-              <span>{label}</span>
+              <Icon size={15} />
+              <span className="truncate">{label}</span>
             </button>
           );
         })}
@@ -567,11 +603,109 @@ export default function SurvivorHUD() {
       {/* TAB 1: ASK & EMERGENCY CLINICAL TRIAGE */}
       {/* ========================================================================= */}
       {tab === 'ask' && (
-        <div className="grid lg:grid-cols-[1.1fr_.9fr] gap-6">
-          <Card
-            title="Ask Offline Memory or Trigger SOS"
-            subtitle="Enter your symptoms, disaster situation, or needed emergency guidance."
-          >
+        <div className="space-y-4">
+          {/* Prominent Live Nearest Survivor Compass Banner */}
+          {nearestCasualty && (
+            <div
+              onClick={() => setTab('compass')}
+              className="p-4 sm:p-5 rounded-3xl border-2 border-red-500 bg-gradient-to-r from-red-950/60 to-[#0b1626] cursor-pointer hover:border-red-400 transition-all shadow-xl shadow-red-950/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 group"
+            >
+              <div className="flex items-start sm:items-center gap-3.5">
+                <div className="p-3 rounded-2xl bg-red-600 text-white shrink-0 shadow-lg shadow-red-600/40 animate-pulse">
+                  <Compass size={24} />
+                </div>
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-red-600 text-white">
+                      Nearest Survivor Detected
+                    </span>
+                    <span className="text-xs font-mono font-bold text-red-300">
+                      {nearestCasualty.distance_m}m · {nearestCasualty.cardinal} ({String(nearestCasualty.bearing_deg || 0).padStart(3, '0')}°)
+                    </span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">
+                      Qdrant Synced
+                    </span>
+                  </div>
+                  <p className="text-sm sm:text-base font-black text-slate-100 mt-1 line-clamp-1 group-hover:text-red-200 transition-colors">
+                    {nearestCasualty.name || 'Casualty in distress'} — {nearestCasualty.text}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setTab('compass'); }}
+                className="btn-primary text-xs px-4 py-2.5 shrink-0 self-start sm:self-auto"
+              >
+                <span>360° Compass</span>
+                <ArrowRight size={14} />
+              </button>
+            </div>
+          )}
+
+          {/* Quick 1-Tap Tactical Navigation Row */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            <button
+              type="button"
+              onClick={() => setTab('compass')}
+              className="p-3 rounded-2xl border border-slate-800 bg-[#091424] hover:border-red-500/60 text-slate-200 hover:text-white flex items-center gap-2.5 text-xs font-bold transition-all active:scale-98"
+            >
+              <div className="p-1.5 rounded-xl bg-red-500/10 text-red-400 shrink-0">
+                <Compass size={17} />
+              </div>
+              <div className="text-left min-w-0">
+                <div className="truncate font-extrabold">Survivor Compass</div>
+                <div className="text-[10px] text-slate-400 font-normal truncate">360° Direct Guidance</div>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setTab('map')}
+              className="p-3 rounded-2xl border border-slate-800 bg-[#091424] hover:border-cyan-500/60 text-slate-200 hover:text-white flex items-center gap-2.5 text-xs font-bold transition-all active:scale-98"
+            >
+              <div className="p-1.5 rounded-xl bg-cyan-500/10 text-cyan-400 shrink-0">
+                <MapPin size={17} />
+              </div>
+              <div className="text-left min-w-0">
+                <div className="truncate font-extrabold">Tactical Map</div>
+                <div className="text-[10px] text-slate-400 font-normal truncate">Shelters & Grid</div>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setTab('radar')}
+              className="p-3 rounded-2xl border border-slate-800 bg-[#091424] hover:border-emerald-500/60 text-slate-200 hover:text-white flex items-center gap-2.5 text-xs font-bold transition-all active:scale-98"
+            >
+              <div className="p-1.5 rounded-xl bg-emerald-500/10 text-emerald-400 shrink-0">
+                <Radio size={17} />
+              </div>
+              <div className="text-left min-w-0">
+                <div className="truncate font-extrabold">Survival Radar</div>
+                <div className="text-[10px] text-slate-400 font-normal truncate">Polar & BLE Range</div>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setTab('report')}
+              className="p-3 rounded-2xl border border-slate-800 bg-[#091424] hover:border-amber-500/60 text-slate-200 hover:text-white flex items-center gap-2.5 text-xs font-bold transition-all active:scale-98"
+            >
+              <div className="p-1.5 rounded-xl bg-amber-500/10 text-amber-400 shrink-0">
+                <ShieldAlert size={17} />
+              </div>
+              <div className="text-left min-w-0">
+                <div className="truncate font-extrabold">Log SOS / Report</div>
+                <div className="text-[10px] text-slate-400 font-normal truncate">Record to Memory</div>
+              </div>
+            </button>
+          </div>
+
+          <div className="grid lg:grid-cols-[1.1fr_.9fr] gap-6">
+            <Card
+              title="Ask Offline Memory or Trigger SOS"
+              subtitle="Enter your symptoms, disaster situation, or needed emergency guidance."
+            >
             <form onSubmit={onFormSubmit} className="space-y-4">
               <div className="relative">
                 <textarea
@@ -921,6 +1055,23 @@ export default function SurvivorHUD() {
             )}
           </div>
         </div>
+      </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB: SURVIVOR 360° COMPASS (Nearest Survivor & Shelter Direct Navigation) */}
+      {/* ========================================================================= */}
+      {tab === 'compass' && (
+        <SurvivalRadar
+          userLocation={pin}
+          initialMode="compass"
+          onNavigateTarget={(target) => {
+            setCenter({ lat: target.location.lat, lon: target.location.lon });
+            setSelected(target);
+            setTab('map');
+          }}
+          role="survivor"
+        />
       )}
 
       {/* ========================================================================= */}
@@ -1032,53 +1183,65 @@ export default function SurvivorHUD() {
           <div className="space-y-4">
             {/* Nearby Verified Checkpoints Card */}
             <Card title="Nearby Shelters & Checkpoints">
-              <div className="space-y-2.5 max-h-[300px] overflow-auto pr-1">
-                {[
+              {(() => {
+                const dynamicCheckpoints = items.filter(
+                  (i) => i.kind === 'checkpoint' || i.kind === 'resource' || i.category === 'shelter'
+                );
+                const displayList = dynamicCheckpoints.length > 0 ? dynamicCheckpoints : [
                   { id: 'shelter_alpha', name: 'Shelter Alpha (Central High)', dist: '1,065 m', time: '~14 min walk', status: 'operational', facilities: ['Shelter', 'Medical', 'Food', 'Power'] },
-                  { id: 'clinic_beta', name: 'Clinic Beta (West District)', dist: '1,007 m', time: '~13 min walk', status: 'operational', facilities: ['Medical', 'Emergency Surgery', 'Clean Water'] },
+                  { id: 'clinic_beta', name: 'Clinic Beta (West District)', dist: '1,007 m', time: '~13 min walk', status: 'operational', facilities: ['Emergency Surgery', 'Clean Water'] },
                   { id: 'water_tanker_4', name: 'Water Tanker 4 (North Gate)', dist: '560 m', time: '~7 min walk', status: 'operational', facilities: ['Clean Water', 'Purification'] },
                   { id: 'cp_17', name: 'Checkpoint CP-17 (North Bridge)', dist: '0 m', time: 'Immediate', status: 'danger_warning', hazard: 'Flooded entrance, live wires' }
-                ].map((cp) => {
-                  const isDanger = cp.status === 'danger_warning';
-                  return (
-                    <div
-                      key={cp.id}
-                      className={`p-3 rounded-2xl border text-xs transition-all ${
-                        isDanger
-                          ? 'border-red-800/80 bg-red-950/25 text-red-200'
-                          : 'border-slate-800 bg-[#07111e] text-slate-200 hover:border-slate-700'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-sm text-slate-100">{cp.name}</span>
-                        <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${
-                          isDanger ? 'bg-red-900 text-red-200 border border-red-700' : 'bg-emerald-950 text-emerald-300 border border-emerald-800'
-                        }`}>
-                          {isDanger ? 'Flooded Hazard' : 'Operational'}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-slate-400 font-mono mt-1">
-                        {cp.dist} · {cp.time}
-                      </p>
-                      {cp.hazard && (
-                        <div className="mt-2 text-xs text-red-400 font-semibold flex items-center gap-1">
-                          <TriangleAlert size={13} />
-                          <span>{cp.hazard} · Avoided via negative vector</span>
-                        </div>
-                      )}
-                      {cp.facilities && (
-                        <div className="flex flex-wrap gap-1 mt-2">
-                          {cp.facilities.map((f) => (
-                            <span key={f} className="text-[9px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 font-mono">
-                              {f}
+                ];
+                return (
+                  <div className="space-y-2.5 max-h-[300px] overflow-auto pr-1">
+                    {displayList.map((cp) => {
+                      const isDanger = cp.status === 'danger' || cp.status === 'danger_warning' || cp.status === 'flooded';
+                      const cpName = cp.name || cp.title || cp.text?.slice(0, 35) || cp.id;
+                      const distText = cp.dist || (cp.distance_m ? `${cp.distance_m} m` : 'Nearby');
+                      const timeText = cp.time || (cp.distance_m ? `~${Math.max(1, Math.round(cp.distance_m / 75))} min walk` : 'Walking range');
+                      return (
+                        <div
+                          key={cp.id || cp.entity_id}
+                          onClick={() => handleSelectObservation(cp)}
+                          className={`p-3 rounded-2xl border text-xs cursor-pointer transition-all ${
+                            isDanger
+                              ? 'border-red-800/80 bg-red-950/25 text-red-200'
+                              : 'border-slate-800 bg-[#07111e] text-slate-200 hover:border-slate-700'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-sm text-slate-100">{cpName}</span>
+                            <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${
+                              isDanger ? 'bg-red-900 text-red-200 border border-red-700' : 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                            }`}>
+                              {isDanger ? 'Flooded Hazard' : (cp.status || 'Operational')}
                             </span>
-                          ))}
+                          </div>
+                          <p className="text-[11px] text-slate-400 font-mono mt-1">
+                            {distText} · {timeText}
+                          </p>
+                          {cp.hazard && (
+                            <div className="mt-2 text-xs text-red-400 font-semibold flex items-center gap-1">
+                              <TriangleAlert size={13} />
+                              <span>{cp.hazard} · Avoided via negative vector</span>
+                            </div>
+                          )}
+                          {cp.facilities?.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-2">
+                              {cp.facilities.map((f) => (
+                                <span key={f} className="text-[9px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 font-mono">
+                                  {typeof f === 'string' ? f.replace(/_/g, ' ') : f}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </Card>
 
             {/* Offline Wi-Fi Mesh Peers Card */}
@@ -1372,7 +1535,7 @@ export default function SurvivorHUD() {
       {/* Thumb-friendly, accessible, ergonomic navigation for smartphones */}
       {/* ========================================================================= */}
       <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#091322]/98 border-t border-slate-800/90 backdrop-blur-lg pb-safe">
-        <div className="grid grid-cols-5 h-16">
+        <div className="grid grid-cols-6 h-16">
           {TABS.map(([id, label, Icon]) => {
             const isActive = tab === id;
             return (
@@ -1389,7 +1552,10 @@ export default function SurvivorHUD() {
                 }`}
               >
                 <div className="relative">
-                  <Icon size={19} className={isActive ? 'stroke-[2.5]' : 'stroke-[1.75]'} />
+                  <Icon size={18} className={isActive ? 'stroke-[2.5]' : 'stroke-[1.75]'} />
+                  {id === 'compass' && nearestCasualty && (
+                    <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-red-500 animate-ping" />
+                  )}
                   {id === 'radar' && (
                     <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
                   )}
@@ -1397,7 +1563,7 @@ export default function SurvivorHUD() {
                     <span className="absolute -top-1 -right-1.5 w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
                   )}
                 </div>
-                <span className="text-[9px] tracking-tight">{label.split(' ')[0]}</span>
+                <span className="text-[8.5px] tracking-tight font-medium">{label.split(' ')[0]}</span>
               </button>
             );
           })}

@@ -137,11 +137,14 @@ export function Shell({ title, subtitle, children }) {
   }, [theme]);
 
   const nav = [
-    ['/', 'Home'],
-    ['/crisis', 'Crisis HUD'],
+    ['/', 'Emergency Chatbot'],
+    ['/compass', 'Survivor Compass'],
+    ['/map', 'Tactical Map'],
+    ['/radar', 'Survival Radar'],
   ];
   if (health?.role === 'volunteer' || health?.role === 'central') nav.push(['/volunteer', 'Field Board']);
   if (health?.role === 'central') nav.push(['/command', 'Command HQ']);
+  nav.push(['/about', 'About Mesh']);
 
   const exchanges = sync?.last_exchanges || [];
   const last = exchanges.map((item) => item.synced_at).filter(Boolean).sort().at(-1);
