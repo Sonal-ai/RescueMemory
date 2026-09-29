@@ -21,6 +21,8 @@ class Settings:
     guide_trust_key: str = ""
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.8-flash"
+    discovery_port: int = 8888
+    enable_discovery: bool = False
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -45,4 +47,6 @@ class Settings:
             guide_trust_key=os.getenv("GUIDE_TRUST_KEY", ""),
             gemini_api_key=os.getenv("GEMINI_API_KEY", ""),
             gemini_model=os.getenv("GEMINI_MODEL", "gemini-3.8-flash"),
+            discovery_port=int(os.getenv("DISCOVERY_PORT", "8888")),
+            enable_discovery=os.getenv("ENABLE_DISCOVERY", "true").lower() in {"1", "true", "yes"},
         )

@@ -172,11 +172,49 @@ async function handleOfflineFallback(path, method, body) {
       edge_brain: 'standalone_mobile_brain_active',
       node_id: 'survivor_phone_local',
       unsynced_reports_count: unsynced.length,
+      discovery_enabled: false,
       local_fallback: true,
     };
   }
 
+  // 7. Peer Discovery Fallback
+  if (path === '/api/discovery/peers') {
+    return {
+      peers: [],
+      count: 0,
+      enabled: false,
+      local_fallback: true,
+      mode: 'standalone_mobile_brain',
+    };
+  }
+
+  if (path === '/api/discovery/location') {
+    return {
+      updated: true,
+      local_fallback: true,
+      mode: 'standalone_mobile_brain',
+    };
+  }
+
   return { local_fallback: true, detail: 'Handled by on-device offline brain' };
+}
+
+export async function getDiscoveredPeers() {
+  return api('/api/discovery/peers');
+}
+
+export async function updateDeviceLocation(locationData) {
+  return api('/api/discovery/location', {
+    method: 'POST',
+    body: locationData,
+  });
+}
+
+export async function syncDiscoveredPeer(syncData) {
+  return api('/api/discovery/sync-peer', {
+    method: 'POST',
+    body: syncData,
+  });
 }
 
 export function formatTime(value) {
@@ -186,3 +224,4 @@ export function formatTime(value) {
 }
 
 export { triggerAutoSync, onSyncStateChange };
+

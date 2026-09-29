@@ -94,3 +94,17 @@ class GuidePublishRequest(BaseModel):
 class RecommendAlternativeRequest(BaseModel):
     compromised_id: str = Field(min_length=1, max_length=100)
     avoid_hazard: str = Field(default="flooded entrance live wires", max_length=500)
+
+
+class DeviceLocationUpdate(BaseModel):
+    lat: float = Field(ge=-90, le=90)
+    lon: float = Field(ge=-180, le=180)
+    status: str = Field(default="active", max_length=50)
+    battery: int | None = Field(default=None, ge=0, le=100)
+
+
+class DiscoverySyncRequest(BaseModel):
+    peer_url: str
+    scope: Literal["public", "group", "responders"] = "public"
+    group_id: str | None = None
+

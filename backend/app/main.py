@@ -11,7 +11,9 @@ from pydantic import BaseModel, Field
 
 from .cloud import mirror_to_qdrant_server
 from .config import Settings
-from .schemas import (AssessRequest, ChatRequest, CreateGroupRequest, GuidePublishRequest, JoinGroupRequest,
+from .discovery import PeerDiscovery
+from .schemas import (AssessRequest, ChatRequest, CreateGroupRequest, DeviceLocationUpdate,
+                      DiscoverySyncRequest, GuidePublishRequest, JoinGroupRequest,
                       NearbyRequest, PeerSyncRequest, RecommendAlternativeRequest, ReportRequest)
 from .service import RescueService
 from .sync import authorize, sync_with_peer, uplink_sos
@@ -36,7 +38,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.rescue = RescueService(settings)
+        disc = PeerDiscovery(
+            node_id=settings.node_id,
+            role=settings.role,
+            broadcast_port=settings.discovery_port,
+        )
+        app.state.discovery = disc
+        if settings.enable_discovery:
+            disc.start()
         yield
+        if settings.enable_discovery:
+            disc.stop()
         app.state.rescue.close()
 
     app = FastAPI(title="RescueMemory Edge API", version="0.1.0", lifespan=lifespan)
@@ -66,7 +78,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "guides_enabled": bool(settings.guide_trust_key),
                 "gemini_configured": bool(settings.gemini_api_key),
                 "central_configured": bool(settings.central_url),
-                "cloud_configured": bool(settings.qdrant_url)}
+                "cloud_configured": bool(settings.qdrant_url),
+                "discovery_enabled": settings.enable_discovery,
+                "discovery_port": settings.discovery_port}
 
     @app.post("/api/chat")
     def chat(request: ChatRequest, x_group_token: str | None = Header(default=None),
@@ -291,6 +305,45 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not settings.qdrant_url:
             raise HTTPException(400, "QDRANT_URL required")
         return mirror_to_qdrant_server(s)
+
+    @app.get("/api/discovery/peers")
+    def get_discovered_peers():
+        disc: PeerDiscovery | None = getattr(app.state, "discovery", None)
+        if not disc:
+            return {"peers": [], "count": 0, "enabled": False, "node_id": settings.node_id}
+        peers = disc.get_peers()
+        return {
+            "peers": peers,
+            "count": len(peers),
+            "enabled": settings.enable_discovery,
+            "node_id": settings.node_id,
+            "role": settings.role,
+            "my_location": disc.get_my_location(),
+        }
+
+    @app.post("/api/discovery/location")
+    def update_discovery_location(data: DeviceLocationUpdate):
+        disc: PeerDiscovery | None = getattr(app.state, "discovery", None)
+        if not disc:
+            return {"updated": False, "reason": "discovery_not_initialized"}
+        updated = disc.update_location(
+            lat=data.lat,
+            lon=data.lon,
+            status=data.status,
+            battery=data.battery,
+        )
+        return {"updated": True, "location": updated}
+
+    @app.post("/api/discovery/sync-peer")
+    def sync_discovered_peer(req: DiscoverySyncRequest,
+                             x_node_admin_key: str | None = Header(default=None),
+                             s: RescueService = Depends(service)):
+        if req.scope == "responders" and settings.role != "survivor":
+            if not settings.node_admin_key or not x_node_admin_key or not hmac.compare_digest(x_node_admin_key, settings.node_admin_key):
+                raise HTTPException(403, "node admin key required for responder sync")
+        if req.scope == "responders" and settings.role == "survivor":
+            return uplink_sos(s, req.peer_url)
+        return sync_with_peer(s, req.peer_url, req.scope, req.group_id)
 
     frontend = Path(__file__).resolve().parents[2] / "frontend" / "dist"
     if (frontend / "index.html").exists():
