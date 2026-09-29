@@ -195,3 +195,88 @@ def test_survival_radar_endpoints(tmp_path):
         data_get = resp_get.json()
         assert data_get["total_found"] > 0
         assert data_get["radius_m"] == 2500
+
+
+def test_central_to_local_sync_and_nearest_survivor_compass(tmp_path):
+    """
+    Simulates the exact user workflow:
+    1. A survivor uploads an emergency SOS report to Central server.
+    2. Central syncs the report down into the local edge node's Qdrant memory.
+    3. The local node retrieves the nearest survivor position from local memory.
+    4. Survival radar calculates bearing azimuth, distance, and heading for the compass needle.
+    """
+    # Setup Central Node
+    central_settings = Settings(
+        "central_hq",
+        "central",
+        tmp_path / "central_data",
+        MODEL_CACHE,
+        "mesh-secret-key",
+        "resp-secret-key",
+    )
+    central_svc = RescueService(central_settings)
+
+    # Setup Local Rescuer Edge Node
+    local_settings = Settings(
+        "local_rescuer_node",
+        "volunteer",
+        tmp_path / "local_data",
+        MODEL_CACHE,
+        "mesh-secret-key",
+        "resp-secret-key",
+    )
+    local_svc = RescueService(local_settings)
+
+    # 1. Survivor report uploaded to Central
+    survivor_report = ReportRequest(
+        reporter_id="survivor_phone_99",
+        text="Survivor trapped under collapsed ceiling, cannot walk, severe leg bleeding",
+        location={"lat": 28.7060, "lon": 77.1040},
+        visibility="responders",
+        entity_id="survivor_john_doe",
+        kind="incident",
+        severity="red",
+        status="active",
+    )
+    central_outcome = central_svc.report(survivor_report)
+    assert not central_outcome["duplicate"]
+
+    # 2. Sync from Central to Local Node Memory (export from central, import into local)
+    central_events = central_svc.scoped_events("responders")
+    assert len(central_events) >= 1
+    import_result = local_svc.import_events(central_events)
+    assert import_result["imported"] >= 1
+
+    # 3. Local node executes RAG spatial retrieval & polar compass calculation
+    # Rescuer is located at Checkpoint CP-17 (28.7041, 77.1025)
+    rescuer_loc = {"lat": 28.7041, "lon": 77.1025}
+    radar_req = SurvivalRadarRequest(
+        lat=rescuer_loc["lat"],
+        lon=rescuer_loc["lon"],
+        radius_m=3500.0,
+        filter_category="all",
+        include_responders=True,
+    )
+    radar_res = local_svc.survival_radar(radar_req)
+
+    # 4. Verify nearest survivor is retrieved from local memory
+    summary = radar_res["summary"]
+    assert summary["total_casualties"] >= 1
+    nearest = summary["nearest_casualty"]
+    assert nearest is not None
+    assert nearest["id"] == "survivor_john_doe" or "survivor_john_doe" in str(nearest)
+    assert nearest["triage_level"] == "immediate_red"
+
+    # 5. Verify polar coordinates for compass needle pointing
+    assert 200 <= nearest["distance_m"] <= 400
+    # Expected bearing from (28.7041, 77.1025) to (28.7060, 77.1040) is ~30° to 45° (North-Northeast)
+    assert 20 <= nearest["bearing_deg"] <= 50
+    assert nearest["cardinal"] in ["NNE", "NE"]
+    assert nearest["walk_time_min"] >= 1
+
+    # Verify origin and local memory signal source
+    assert nearest["signal_source"] == "qdrant_memory"
+
+    central_svc.close()
+    local_svc.close()
+
