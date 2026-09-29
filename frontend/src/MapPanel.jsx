@@ -30,7 +30,7 @@ export default function MapPanel({
     });
   };
 
-  const validPeers = peers.filter((p) => p.lat != null && p.lon != null);
+  const validPeers = (Array.isArray(peers) ? peers : []).filter((p) => p && p.lat != null && p.lon != null);
 
   return (
     <div className="select-none">
@@ -113,7 +113,7 @@ export default function MapPanel({
           </g>
 
           {/* Incident / Hazard / Checkpoint Pins */}
-          {items.filter((item) => item.location).map((item) => {
+          {(Array.isArray(items) ? items : []).filter((item) => item && item.location).map((item) => {
             const point = project(item.location);
             const isHazard = item.kind === 'hazard' || item.severity === 'red';
             const isResource = item.kind === 'resource';

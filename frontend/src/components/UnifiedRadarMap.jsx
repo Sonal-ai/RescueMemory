@@ -260,11 +260,12 @@ export default function UnifiedRadarMap({
 
   // Filtered items for MapPanel
   const filteredMapItems = useMemo(() => {
-    if (mapFilter === 'all') return items;
-    if (mapFilter === 'sos') return items.filter((i) => i.kind === 'incident' || i.severity === 'red');
-    if (mapFilter === 'hazard') return items.filter((i) => i.kind === 'hazard');
-    if (mapFilter === 'resource') return items.filter((i) => i.kind === 'resource' || i.kind === 'checkpoint');
-    return items;
+    const list = Array.isArray(items) ? items : [];
+    if (mapFilter === 'all') return list;
+    if (mapFilter === 'sos') return list.filter((i) => i.kind === 'incident' || i.severity === 'red');
+    if (mapFilter === 'hazard') return list.filter((i) => i.kind === 'hazard');
+    if (mapFilter === 'resource') return list.filter((i) => i.kind === 'resource' || i.kind === 'checkpoint');
+    return list;
   }, [items, mapFilter]);
 
   return (

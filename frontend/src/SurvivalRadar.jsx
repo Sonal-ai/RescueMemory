@@ -207,11 +207,12 @@ export default function SurvivalRadar({
     active_peers: 0
   };
 
-  const casualties = useMemo(() => items.filter((i) => i.category === 'casualty'), [items]);
-  const shelters = useMemo(() => items.filter((i) => i.category === 'shelter'), [items]);
-  const resources = useMemo(() => items.filter((i) => i.category === 'resource'), [items]);
-  const peers = useMemo(() => items.filter((i) => i.category === 'peer'), [items]);
-  const hazards = useMemo(() => items.filter((i) => i.category === 'hazard'), [items]);
+  const safeItems = Array.isArray(items) ? items : [];
+  const casualties = useMemo(() => safeItems.filter((i) => i.category === 'casualty'), [safeItems]);
+  const shelters = useMemo(() => safeItems.filter((i) => i.category === 'shelter'), [safeItems]);
+  const resources = useMemo(() => safeItems.filter((i) => i.category === 'resource'), [safeItems]);
+  const peers = useMemo(() => safeItems.filter((i) => i.category === 'peer'), [safeItems]);
+  const hazards = useMemo(() => safeItems.filter((i) => i.category === 'hazard'), [safeItems]);
 
   // Compute Active Target for Compass HUD:
   // Defaults to Nearest Casualty (from local Qdrant memory synced from central),

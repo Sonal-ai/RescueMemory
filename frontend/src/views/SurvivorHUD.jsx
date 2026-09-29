@@ -263,7 +263,8 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
           ...(groupId ? { group_id: groupId } : {})
         }
       });
-      setItems(result.items);
+      const raw = Array.isArray(result?.items) ? result.items : (Array.isArray(result?.events) ? result.events : []);
+      setItems(raw);
       setMapUpdatedAt(new Date());
     } catch (err) {
       setError(err.message);
@@ -590,7 +591,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
     setMessage('');
     setError('');
     try {
-      const validPeers = peers.filter((p) => p.url || p.ip);
+      const validPeers = (Array.isArray(peers) ? peers : []).filter((p) => p && (p.url || p.ip));
       const sortedPeers = [...validPeers].sort((a, b) => (a.distance_m ?? 99999) - (b.distance_m ?? 99999));
       const nearest = sortedPeers[0];
 
@@ -641,7 +642,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
     }
   };
 
-  const filteredItems = items.filter((item) => {
+  const filteredItems = (Array.isArray(items) ? items : []).filter((item) => {
     if (mapFilter === 'all') return true;
     if (mapFilter === 'sos') return item.kind === 'incident' || item.kind === 'presence';
     if (mapFilter === 'hazard') return item.kind === 'hazard' || item.kind === 'checkpoint';

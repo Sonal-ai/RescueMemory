@@ -184,9 +184,11 @@ async function handleOfflineFallback(path, method, body) {
   // 5. Nearby Map Records
   if (path === '/api/map/nearby') {
     const localReports = await getAllLocalReports();
+    const safeReports = Array.isArray(localReports) ? localReports : [];
     return {
-      events: localReports,
-      count: localReports.length,
+      items: safeReports,
+      events: safeReports,
+      count: safeReports.length,
       local_fallback: true,
     };
   }
