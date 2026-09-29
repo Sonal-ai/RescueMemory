@@ -432,15 +432,15 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
       const asstMsg = {
         id: `asst_${Date.now()}`,
         role: 'assistant',
-        text: result.ai_answer || result.local_answer || "No verified procedure matched your query.",
+        text: result.ai_answer || result.local_answer || result.text || result.answer?.text || "No verified procedure matched your query.",
         ai_answer: result.ai_answer,
-        local_answer: result.local_answer,
+        local_answer: result.local_answer || result.text || result.answer?.text,
         suggested_action: result.suggested_action,
-        cards: result.cards,
+        cards: result.cards || result.answer?.source_cards || [],
         memory_hits: result.memory_hits,
         timestamp: new Date(),
         isAi: Boolean(result.ai_answer),
-        score: result.cards?.[0]?.score
+        score: (result.cards || result.answer?.source_cards)?.[0]?.score
       };
       setMessages((prev) => [...prev, asstMsg]);
 

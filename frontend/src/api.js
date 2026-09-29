@@ -90,6 +90,9 @@ export async function api(path, options = {}) {
     }
 
     if (!response.ok) {
+      if (response.status >= 500 || response.status === 404 || response.status === 502 || response.status === 504) {
+        throw new Error(`SERVER_UNREACHABLE_${response.status}`);
+      }
       const detail = typeof data.detail === 'string' ? data.detail : `Request failed (${response.status})`;
       throw new Error(detail);
     }
@@ -101,10 +104,13 @@ export async function api(path, options = {}) {
     // Network failed or offline: activate Client-Side Offline Brain
     const isNetworkError =
       err.message === 'SW_OFFLINE_INDICATOR' ||
+      err.message.startsWith('SERVER_UNREACHABLE') ||
       err.name === 'TypeError' ||
       err.message.includes('fetch') ||
       err.message.includes('NetworkError') ||
-      err.message.includes('Failed to fetch');
+      err.message.includes('Failed to fetch') ||
+      err.name === 'AbortError' ||
+      err.message.includes('AbortError');
 
     if (isNetworkError) {
       setStandaloneMode(true);
@@ -124,12 +130,25 @@ async function handleOfflineFallback(path, method, body) {
 
   // 1. Local Search & Emergency Guidance
   if (path === '/api/chat') {
-    const query = body?.message || body?.query || '';
+    const query = body?.text || body?.message || body?.query || '';
     const answer = await searchKnowledgeLocal(query);
+    const topCard = answer.source_cards?.[0];
+    const qLower = query.toLowerCase();
+    const isSosQuery = qLower.includes('walk') || qLower.includes('trapped') || qLower.includes('rubble') || qLower.includes('sos') || qLower.includes('stuck');
+
     return {
       query,
+      answer_type: 'retrieved_cards',
+      cards: answer.source_cards || [],
+      local_answer: answer.text,
+      text: answer.text,
       answer,
-      cards: answer.source_cards,
+      ai_answer: null,
+      ai_status: 'offline_mode',
+      suggested_action: isSosQuery
+        ? { kind: 'sos', title: 'Broadcast Emergency SOS' }
+        : (topCard?.title ? { kind: 'protocol', title: `Follow protocol: ${topCard.title}` } : null),
+      warnings: answer.warnings || [],
       local_fallback: true,
       mode: 'standalone_mobile_brain',
     };

@@ -218,73 +218,141 @@ export async function recommendAlternativeLocal(compromisedId, avoidHazardText =
   };
 }
 
+const EMERGENCY_SYNONYMS = {
+  walk: ['walk', 'leg', 'extremity', 'weight', 'mobility', 'fracture', 'trauma'],
+  cant: ['cannot', 'unable', 'inability'],
+  hurt: ['injury', 'trauma', 'wound', 'pain'],
+  broken: ['fracture', 'bone', 'splint', 'trauma'],
+  water: ['water', 'drinking', 'purify', 'disinfection', 'filtration', 'hydration'],
+  burn: ['burn', 'burns', 'thermal', 'scald', 'fire'],
+  bleed: ['bleeding', 'blood', 'hemorrhage', 'tourniquet', 'wound'],
+  breath: ['breathing', 'respiratory', 'airway', 'cpr', 'choking'],
+  breathe: ['breathing', 'respiratory', 'airway', 'cpr', 'choking'],
+  stuck: ['trapped', 'rubble', 'collapse', 'extrication'],
+  trapped: ['trapped', 'rubble', 'collapse', 'debris', 'extrication'],
+  snake: ['snakebite', 'venom', 'envenomation'],
+  bite: ['bite', 'snakebite', 'puncture'],
+  chok: ['choking', 'airway', 'cpr', 'heimlich'],
+  cpr: ['cpr', 'resuscitation', 'cardiac', 'unresponsive'],
+  shock: ['shock', 'hypovolemic', 'perfusion', 'blanket'],
+  cold: ['hypothermia', 'frostbite', 'exposure'],
+  heat: ['heatstroke', 'exhaustion', 'hyperthermia'],
+};
+
+const STOP_WORDS = new Set([
+  'got', 'have', 'had', 'the', 'this', 'that', 'with', 'from', 'help', 'and', 'for', 
+  'are', 'was', 'were', 'what', 'how', 'can', 'you', 'please', 'need', 'make', 'give', 'does'
+]);
+
+function extractStepsFromCard(card) {
+  if (card.instructions && card.instructions.length > 0) {
+    return card.instructions;
+  }
+  if (!card.summary) return [];
+  return card.summary
+    .split(/(?<=[.?!;])\s+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 8);
+}
+
 /**
  * Client-Side Semantic & Keyword Search over 419 Emergency Cards
  */
 export async function searchKnowledgeLocal(queryText, limit = 5) {
   await initOfflineBrain();
-  if (!cachedCards) {
-    return { cards: [], text: 'Offline knowledge base unavailable.' };
-  }
-
-  const queryTerms = (queryText || '')
-    .toLowerCase()
-    .replace(/[^\w\s]/g, ' ')
-    .split(/\s+/)
-    .filter((t) => t.length > 2);
-
-  if (queryTerms.length === 0) {
+  if (!cachedCards || cachedCards.length === 0) {
     return {
-      cards: cachedCards.slice(0, limit),
-      text: 'Showing standard emergency protocols from local device storage.',
+      source_cards: [],
+      text: 'Offline emergency knowledge base is loading or unavailable.',
+      warnings: [],
+      on_device: true
     };
   }
 
-  const scoredCards = [];
-  for (const card of cachedCards) {
-    let score = 0;
-    const title = (card.title || '').toLowerCase();
-    const summary = (card.summary || '').toLowerCase();
-    const applicability = (card.applicability || '').toLowerCase();
-    const instructions = (card.instructions || []).join(' ').toLowerCase();
+  const rawWords = (queryText || '')
+    .toLowerCase()
+    .replace(/[^\w\s]/g, ' ')
+    .split(/\s+/)
+    .filter((t) => t.length > 2 && !STOP_WORDS.has(t));
 
-    for (const term of queryTerms) {
-      if (title.includes(term)) score += 10;
-      if (summary.includes(term)) score += 4;
-      if (applicability.includes(term)) score += 3;
-      if (instructions.includes(term)) score += 2;
-    }
-
-    if (score > 0) {
-      scoredCards.push({ card, score });
+  const expandedTermsSet = new Set(rawWords);
+  for (const w of rawWords) {
+    for (const [key, syns] of Object.entries(EMERGENCY_SYNONYMS)) {
+      if (w.includes(key)) {
+        syns.forEach((s) => expandedTermsSet.add(s));
+      }
     }
   }
+  const queryTerms = Array.from(expandedTermsSet);
 
-  scoredCards.sort((a, b) => b.score - a.score);
-  const topCards = scoredCards.slice(0, limit).map((sc) => sc.card);
+  const scoredCards = [];
+  if (queryTerms.length > 0) {
+    for (const card of cachedCards) {
+      let score = 0;
+      const id = (card.id || '').toLowerCase().replace(/[-_]/g, ' ');
+      const title = (card.title || '').toLowerCase();
+      const summary = (card.summary || '').toLowerCase();
+      const applicability = (card.applicability || '').toLowerCase();
+      const warningsText = (card.warnings || []).join(' ').toLowerCase();
 
-  // If no direct keyword hits, provide high-priority baseline emergency protocols
-  const finalCards = topCards.length > 0 ? topCards : cachedCards.slice(0, limit);
+      for (const term of queryTerms) {
+        if (id.includes(term)) score += 15;
+        if (title.includes(term)) score += 12;
+        if (summary.includes(term)) score += 5;
+        if (applicability.includes(term)) score += 3;
+        if (warningsText.includes(term)) score += 2;
+      }
 
-  // Construct conservative medical & rescue guidance
-  const cardSummary = finalCards.map((c) => `• **${c.title}**: ${c.summary || c.applicability || ''}`).join('\n');
-  const warnings = finalCards.flatMap((c) => c.warnings || []).filter(Boolean);
+      if (score > 0) {
+        scoredCards.push({ card, score });
+      }
+    }
+    scoredCards.sort((a, b) => b.score - a.score);
+  }
 
-  const answer = {
-    source_cards: finalCards.map((c) => ({
-      id: c.id,
-      title: c.title,
-      summary: c.summary,
-      instructions: c.instructions,
-      warnings: c.warnings,
-      source: c.source,
-    })),
-    text: `[Standalone Phone Brain]\nFound ${finalCards.length} verified emergency protocol(s) on your phone:\n\n${cardSummary}`,
-    warnings: warnings.slice(0, 3),
+  const matchesFound = scoredCards.length > 0;
+  const topCards = matchesFound
+    ? scoredCards.slice(0, limit).map((sc) => sc.card)
+    : cachedCards.slice(0, limit);
+
+  const mappedCards = topCards.map((c) => ({
+    id: c.id,
+    title: c.title,
+    summary: c.summary,
+    steps: extractStepsFromCard(c),
+    instructions: c.instructions || [],
+    warnings: c.warnings || [],
+    source: c.source,
+  }));
+
+  const primaryCard = mappedCards[0];
+  const allWarnings = mappedCards.flatMap((c) => c.warnings || []).filter(Boolean);
+
+  let formattedText = '';
+  if (primaryCard) {
+    formattedText = `### 🚨 Verified Protocol: ${primaryCard.title}\n\n`;
+    if (primaryCard.summary) {
+      formattedText += `**Protocol Summary:**\n${primaryCard.summary}\n\n`;
+    }
+    if (primaryCard.steps && primaryCard.steps.length > 0) {
+      formattedText += `**Action Steps:**\n` + primaryCard.steps.map((st, i) => `${i + 1}. ${st}`).join('\n') + '\n\n';
+    }
+    if (primaryCard.warnings && primaryCard.warnings.length > 0) {
+      formattedText += `⚠️ **Critical Warnings:**\n` + primaryCard.warnings.map((w) => `- ${w}`).join('\n') + '\n\n';
+    }
+    if (mappedCards.length > 1) {
+      formattedText += `**Related Reference Protocols:**\n` + mappedCards.slice(1).map((c) => `• **${c.title}**${c.summary ? `: ${c.summary}` : ''}`).join('\n');
+    }
+  } else {
+    formattedText = 'No verified emergency protocol matched your query. Please stay calm and check the emergency directory.';
+  }
+
+  return {
+    source_cards: mappedCards,
+    text: formattedText,
+    warnings: allWarnings.slice(0, 3),
     on_device: true,
   };
-
-  return answer;
 }
 
 /**
