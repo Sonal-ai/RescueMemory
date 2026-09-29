@@ -71,66 +71,54 @@ const QUICK_PROMPTS = [
   { label: "Nearest safe shelter", text: "Where is the nearest safe shelter and evacuation checkpoint?", icon: Navigation, urgent: false, category: 'shelter' }
 ];
 
-const EMERGENCY_PRESETS = [
+const EMERGENCY_TYPES = [
   {
-    title: 'Trapped in Rubble',
-    desc: 'Cannot move, debris entrapment',
-    text: 'Trapped under collapsed rubble or debris, cannot move, need rescue extraction.',
-    kind: 'incident',
-    severity: 'red',
-    visibility: 'responders',
-    icon: AlertOctagon,
-    badgeColor: 'border-red-500/50 bg-red-950/40 text-red-300'
-  },
-  {
-    title: 'Severe Bleeding',
-    desc: 'Deep wound, urgent tourniquet',
-    text: 'Severe uncontrolled bleeding from a deep wound, urgent medical aid required.',
+    id: 'medical',
+    title: 'Medical SOS',
+    subtitle: 'Severe injury, bleeding, cardiac, unconscious',
+    defaultText: 'Urgent medical SOS: severe physical trauma or uncontrolled bleeding, clinical assistance needed immediately.',
     kind: 'incident',
     severity: 'red',
     visibility: 'responders',
     icon: HeartPulse,
-    badgeColor: 'border-rose-500/50 bg-rose-950/40 text-rose-300'
+    badgeBg: 'bg-rose-500/10 text-rose-300 border-rose-500/30',
+    selectedStyle: 'border-red-500 bg-gradient-to-br from-red-950/80 to-[#0e172a] shadow-lg shadow-red-950/40 ring-2 ring-red-500/70'
   },
   {
-    title: 'Cannot Walk / Fracture',
-    desc: 'Immobile, limb injury',
-    text: 'Cannot walk due to suspected fracture or severe physical trauma, need stretcher.',
+    id: 'trapped',
+    title: 'Trapped / Rubble',
+    subtitle: 'Structural collapse, rising water, cannot move',
+    defaultText: 'Trapped survivor: structural collapse or rising floodwater, unable to move unassisted, need rescue extraction.',
     kind: 'incident',
     severity: 'red',
     visibility: 'responders',
-    icon: ShieldAlert,
-    badgeColor: 'border-amber-500/50 bg-amber-950/40 text-amber-300'
+    icon: AlertOctagon,
+    badgeBg: 'bg-red-500/10 text-red-300 border-red-500/30',
+    selectedStyle: 'border-rose-500 bg-gradient-to-br from-rose-950/80 to-[#0e172a] shadow-lg shadow-rose-950/40 ring-2 ring-rose-500/70'
   },
   {
-    title: 'Rising Floodwater',
-    desc: 'Escaping water, trapped high',
-    text: 'Rising floodwater approaching living quarters, access blocked, rescue boat or evacuation needed.',
-    kind: 'hazard',
-    severity: 'red',
-    visibility: 'public',
-    icon: Droplets,
-    badgeColor: 'border-blue-500/50 bg-blue-950/40 text-blue-300'
-  },
-  {
-    title: 'Hazardous Road Block',
-    desc: 'Downed wires / collapsed path',
-    text: 'Road completely blocked by live power lines or structural debris. Dangerous to traverse.',
+    id: 'hazard',
+    title: 'Route Hazard',
+    subtitle: 'Downed powerlines, fire, collapsed path',
+    defaultText: 'Dangerous obstacle: road completely blocked by live power lines or flood debris, alternate route needed.',
     kind: 'hazard',
     severity: 'yellow',
     visibility: 'public',
     icon: TriangleAlert,
-    badgeColor: 'border-yellow-500/50 bg-yellow-950/40 text-yellow-300'
+    badgeBg: 'bg-amber-500/10 text-amber-300 border-amber-500/30',
+    selectedStyle: 'border-amber-500 bg-gradient-to-br from-amber-950/80 to-[#0e172a] shadow-lg shadow-amber-950/40 ring-2 ring-amber-500/70'
   },
   {
-    title: 'Clean Water Shortage',
-    desc: 'Need water or rations',
-    text: 'Urgent shortage of clean drinking water, infant formula, or basic food supplies.',
+    id: 'supplies',
+    title: 'Water & Supplies',
+    subtitle: 'Dehydration, infant formula, supplies out',
+    defaultText: 'Emergency resource shortage: drinking water depleted, urgent replenishment requested.',
     kind: 'resource',
     severity: 'yellow',
     visibility: 'public',
     icon: Droplets,
-    badgeColor: 'border-cyan-500/50 bg-cyan-950/40 text-cyan-300'
+    badgeBg: 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30',
+    selectedStyle: 'border-cyan-500 bg-gradient-to-br from-cyan-950/80 to-[#0e172a] shadow-lg shadow-cyan-950/40 ring-2 ring-cyan-500/70'
   }
 ];
 
@@ -216,12 +204,14 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
 
   const [report, setReport] = useState({
     kind: 'incident',
-    text: '',
+    text: 'Urgent medical SOS: severe physical trauma or uncontrolled bleeding, clinical assistance needed immediately.',
     entity_id: '',
     status: 'needs_help',
     severity: 'red',
     visibility: 'responders'
   });
+  const [selectedEmergencyType, setSelectedEmergencyType] = useState('medical');
+  const [showSosDetails, setShowSosDetails] = useState(false);
 
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -555,33 +545,42 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
   };
 
   const submitReport = async (event) => {
-    event.preventDefault();
+    if (event) event.preventDefault();
     setError('');
     setMessage('');
+    setSavingSos(true);
     try {
       const groupId = setting('groupId');
       const visibility = report.kind === 'incident' ? 'responders' : report.visibility;
+      const reportText = (report.text || '').trim() ||
+        (report.kind === 'incident'
+          ? 'Urgent Medical / Rescue Assistance Required'
+          : report.kind === 'hazard'
+          ? 'Critical Hazard Alert / Road Blocked'
+          : 'Emergency Resource / Water Shortage');
       const result = await api('/api/reports', {
         method: 'POST',
         group: visibility === 'group',
         body: {
           ...report,
           visibility,
-          text: report.text.trim(),
+          text: reportText,
           reporter_id: setting('reporterId') || 'survivor-1',
           location: pin,
-          entity_id: report.entity_id.trim() || null,
+          entity_id: report.entity_id?.trim() || null,
           group_id: visibility === 'group' ? groupId : null
         }
       });
       const evtId = (result.event?.id || result.event_id || 'saved').slice(0, 10);
+      setSosSuccess(true);
       setMessage(result.duplicate
         ? 'Observation is already recorded in local memory.'
-        : `Recorded in local memory (#${evtId}). Available to nearby peers.`);
-      setReport({ ...report, text: '' });
+        : `Emergency SOS broadcasted & saved to local Qdrant memory (#${evtId}). Relayed to nearby peers.`);
       refreshMap();
     } catch (err) {
       setError(err.message);
+    } finally {
+      setSavingSos(false);
     }
   };
 
@@ -676,21 +675,31 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
       )}
 
       {/* Desktop HUD Segmented Navigation Pills */}
-      <div className="hidden sm:grid sm:grid-cols-4 gap-2 mb-5">
+      <div className="hidden sm:grid sm:grid-cols-4 gap-2.5 mb-5">
         {TABS.map(([id, label, Icon]) => {
           const isActive = tab === id;
+          const activeStyles = {
+            ask: 'bg-gradient-to-r from-cyan-600 via-sky-600 to-blue-600 text-white border-cyan-400 shadow-md shadow-cyan-600/30 ring-1 ring-cyan-400/50',
+            map: 'bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white border-emerald-400 shadow-md shadow-emerald-600/30 ring-1 ring-emerald-400/50',
+            report: 'bg-gradient-to-r from-red-600 via-rose-600 to-red-700 text-white border-rose-400 shadow-md shadow-red-600/35 ring-1 ring-rose-400/50',
+            beacon: 'bg-gradient-to-r from-sky-600 via-indigo-600 to-sky-700 text-white border-sky-400 shadow-md shadow-sky-600/30 ring-1 ring-sky-400/50'
+          };
+          const hasPing = (id === 'map' && (nearestCasualty || peers.length > 0)) || (id === 'beacon' && peers.length > 0);
           return (
             <button
               key={id}
               onClick={() => { setTab(id); setError(''); setMessage(''); }}
-              className={`rounded-2xl border px-3 py-3 text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+              className={`relative rounded-2xl border px-4 py-3.5 text-xs font-black flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${
                 isActive
-                  ? 'bg-red-600 text-white border-red-600 shadow-md shadow-red-500/25 scale-[1.01]'
-                  : 'bg-white dark:bg-[#091424] border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700 hover:text-slate-900 dark:hover:text-white'
+                  ? `${activeStyles[id] || 'bg-red-600 text-white'} scale-[1.01]`
+                  : 'bg-white dark:bg-[#0c1628]/90 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-cyan-500/40 hover:bg-slate-50 dark:hover:bg-[#111f38] hover:text-slate-900 dark:hover:text-white shadow-sm'
               }`}
             >
-              <Icon size={16} />
-              <span className="truncate">{label}</span>
+              <Icon size={17} className={isActive ? 'stroke-[2.5]' : 'stroke-[1.8] text-slate-400'} />
+              <span className="truncate tracking-wide">{label}</span>
+              {hasPing && (
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping absolute top-2.5 right-2.5" />
+              )}
             </button>
           );
         })}
@@ -730,7 +739,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
               </div>
               <button
                 type="button"
-                onClick={(e) => { e.stopPropagation(); setTab('compass'); }}
+                onClick={(e) => { e.stopPropagation(); setTab('map'); }}
                 className="btn-primary text-xs px-3.5 py-2 shrink-0 self-start sm:self-auto"
               >
                 <span>360° Compass</span>
@@ -835,8 +844,8 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                     <div
                       className={`chat-assistant-bubble transition-all ${
                         isUser
-                          ? 'max-w-[85%] sm:max-w-[70%] rounded-2xl p-3 sm:p-3.5 shadow-sm bg-red-600 text-white rounded-tr-xs ml-auto'
-                          : 'max-w-[92%] sm:max-w-[80%] rounded-2xl p-3.5 sm:p-4 shadow-sm bg-white dark:bg-[#0b1626] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-tl-xs'
+                          ? 'max-w-[85%] sm:max-w-[70%] rounded-2xl p-3 sm:p-3.5 shadow-md bg-gradient-to-r from-cyan-600 via-sky-600 to-blue-600 text-white rounded-tr-xs ml-auto'
+                          : 'max-w-[92%] sm:max-w-[80%] rounded-2xl p-3.5 sm:p-4 shadow-md bg-white dark:bg-gradient-to-b dark:from-[#0d172b] dark:to-[#081120] border border-slate-200 dark:border-cyan-500/15 text-slate-900 dark:text-slate-100 rounded-tl-xs'
                       }`}
                     >
                       {/* Header meta */}
@@ -1118,228 +1127,214 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
 
       {/* ========================================================================= */}
       {/* ========================================================================= */}
-      {/* TAB 3: REPORT SOS OR LOCAL HAZARD (Streamlined & Panic-Proof) */}
+      {/* TAB 3: EMERGENCY SOS ACTION CENTER (Ultra-Clean & Panic-Proof) */}
       {/* ========================================================================= */}
       {tab === 'report' && (
-        <div className="grid lg:grid-cols-[1fr_1fr] gap-6">
+        <div className="max-w-2xl mx-auto space-y-4">
           <Card
-            title="Log Incident or Emergency SOS"
-            subtitle="Recorded directly to local Qdrant memory. Relayed peer-to-peer across offline mesh nodes."
+            title="Immediate Emergency SOS Broadcast"
+            subtitle="1-tap select situation. Broadcasts instantly to local Qdrant memory and nearby Wi-Fi mesh."
           >
-            {/* Quick 1-Tap Situation Presets Grid */}
+            {/* 4 Clear High-Contrast Emergency Situation Tiles */}
             <div className="mb-4">
-              <label className="block text-xs text-slate-400 font-bold uppercase tracking-wider mb-2">
-                Quick 1-Tap Presets (No typing needed)
+              <label className="block text-xs text-slate-300 font-bold uppercase tracking-wider mb-2.5">
+                1. What is your immediate emergency?
               </label>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {EMERGENCY_PRESETS.map((preset) => {
-                  const PresetIcon = preset.icon;
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {EMERGENCY_TYPES.map((type) => {
+                  const isSelected = selectedEmergencyType === type.id;
+                  const TypeIcon = type.icon;
                   return (
                     <button
-                      key={preset.title}
+                      key={type.id}
                       type="button"
                       onClick={() => {
+                        setSelectedEmergencyType(type.id);
                         setReport({
                           ...report,
-                          kind: preset.kind,
-                          text: preset.text,
-                          severity: preset.severity,
-                          visibility: preset.visibility
+                          kind: type.kind,
+                          text: type.defaultText,
+                          severity: type.severity,
+                          visibility: type.visibility
                         });
                       }}
-                      className={`p-2.5 rounded-xl border text-left transition-all active:scale-95 hover:border-slate-600 ${preset.badgeColor}`}
+                      className={`p-3.5 rounded-2xl border text-left transition-all active:scale-[0.98] cursor-pointer ${
+                        isSelected
+                          ? type.selectedStyle
+                          : 'border-slate-800 bg-[#0b1322]/80 hover:border-slate-700 text-slate-300'
+                      }`}
                     >
-                      <div className="flex items-center gap-1.5 font-bold text-xs text-white">
-                        <PresetIcon size={14} className="shrink-0" />
-                        <span className="truncate">{preset.title}</span>
+                      <div className="flex items-center gap-2.5 mb-1">
+                        <div className={`p-2 rounded-xl border ${type.badgeBg}`}>
+                          <TypeIcon size={18} />
+                        </div>
+                        <span className="font-extrabold text-sm text-white tracking-tight">{type.title}</span>
                       </div>
-                      <div className="text-[10px] text-slate-300 truncate mt-0.5 opacity-90">
-                        {preset.desc}
-                      </div>
+                      <p className="text-xs text-slate-400 line-clamp-1 leading-tight ml-0.5">
+                        {type.subtitle}
+                      </p>
                     </button>
                   );
                 })}
               </div>
             </div>
 
+            {/* Editable Description & Broadcast Form */}
             <form onSubmit={submitReport} className="space-y-4">
-              <div>
-                <label className="block text-xs text-slate-300 font-bold uppercase tracking-wider mb-2">
-                  Observation Category
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    ['incident', 'Medical SOS', AlertOctagon],
-                    ['hazard', 'Hazard Alert', TriangleAlert],
-                    ['resource', 'Safe Resource', Droplets],
-                    ['checkpoint', 'Facility Check', Navigation]
-                  ].map(([k, label, Icon]) => {
-                    const isSelected = report.kind === k;
-                    return (
-                      <button
-                        type="button"
-                        key={k}
-                        onClick={() => {
-                          setReport({
-                            ...report,
-                            kind: k,
-                            visibility: k === 'incident' ? 'responders' : 'public',
-                            severity: k === 'incident' ? 'red' : 'yellow'
-                          });
-                        }}
-                        className={`p-3 rounded-xl border flex items-center gap-2 text-xs sm:text-sm font-bold transition-all active:scale-95 ${
-                          isSelected
-                            ? 'border-red-500 bg-red-600 text-white shadow-md shadow-red-600/30'
-                            : 'border-slate-800 bg-[#07111e] text-slate-300 hover:border-slate-700 hover:text-white'
-                        }`}
-                      >
-                        <Icon size={16} />
-                        <span>{label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {report.kind === 'incident' && (
-                <div className="p-3 rounded-xl bg-red-950/40 border border-red-800/80 text-xs text-red-200 flex items-center gap-2.5">
-                  <ShieldAlert size={17} className="shrink-0 text-red-400" />
-                  <span>Medical SOS is routed with high priority to authorized rescue nodes & local medical memory.</span>
-                </div>
-              )}
-
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-xs text-slate-300 font-bold uppercase tracking-wider">
-                    Situation Details
+                    2. Situation Details (Pre-filled, edit if needed)
                   </label>
                   <span className="text-[10px] text-slate-400 font-mono">
-                    {report.text.length} chars
+                    {(report.text || '').length} chars
                   </span>
                 </div>
                 <textarea
-                  className="field min-h-24 w-full"
+                  className="field min-h-20 w-full text-sm font-sans"
                   value={report.text}
-                  onChange={(event) => setReport({ ...report, text: event.target.value })}
+                  onChange={(e) => setReport({ ...report, text: e.target.value })}
                   required
                   minLength={3}
-                  placeholder={
-                    report.kind === 'incident'
-                      ? "Describe situation or injury (e.g., 'Trapped under concrete beam, 2 persons conscious, need stretcher')"
-                      : "Describe observation (e.g., 'Bridge washed out, safe bypass available on East Ridge path')"
-                  }
+                  placeholder="Describe emergency situation or specific injuries..."
                 />
               </div>
 
-              {/* Segmented Buttons for Severity Level (No broken select dropdowns) */}
-              <div>
-                <label className="block text-xs text-slate-300 font-bold uppercase tracking-wider mb-1.5">
-                  Severity Level
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { id: 'red', label: 'Urgent / Threat', icon: AlertOctagon, activeClass: 'border-red-500 bg-red-600 text-white shadow-md shadow-red-600/30' },
-                    { id: 'yellow', label: 'Attention Needed', icon: TriangleAlert, activeClass: 'border-amber-500 bg-amber-600 text-white shadow-md shadow-amber-600/30' },
-                    { id: 'green', label: 'Informational', icon: ShieldCheck, activeClass: 'border-emerald-500 bg-emerald-600 text-white shadow-md shadow-emerald-600/30' }
-                  ].map((s) => {
-                    const isSelected = report.severity === s.id;
-                    const SIcon = s.icon;
-                    return (
-                      <button
-                        key={s.id}
-                        type="button"
-                        onClick={() => setReport({ ...report, severity: s.id })}
-                        className={`p-2.5 rounded-xl border text-xs font-bold flex flex-col sm:flex-row items-center justify-center gap-1.5 transition-all ${
-                          isSelected
-                            ? s.activeClass
-                            : 'border-slate-800 bg-[#07111e] text-slate-400 hover:border-slate-700 hover:text-slate-200'
-                        }`}
-                      >
-                        <SIcon size={14} />
-                        <span>{s.label}</span>
-                      </button>
-                    );
-                  })}
+              {/* Real-time GPS Location Status Badge */}
+              <div className="rounded-xl bg-[#07111e] border border-cyan-500/20 p-3 text-xs text-slate-300 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
+                  </span>
+                  <span className="font-mono text-cyan-300">
+                    GPS: {pin.lat.toFixed(5)}, {pin.lon.toFixed(5)} · Offline Lock
+                  </span>
                 </div>
-              </div>
-
-              {/* Segmented Buttons for Visibility Scope (No broken select dropdowns) */}
-              <div>
-                <label className="block text-xs text-slate-300 font-bold uppercase tracking-wider mb-1.5">
-                  Visibility Scope
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setReport({ ...report, visibility: 'responders' })}
-                    className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all ${
-                      report.visibility === 'responders'
-                        ? 'border-cyan-500 bg-cyan-950/80 text-cyan-200 shadow-md shadow-cyan-950/40'
-                        : 'border-slate-800 bg-[#07111e] text-slate-400 hover:border-slate-700'
-                    }`}
-                  >
-                    <ShieldAlert size={14} />
-                    <span>Responders Only</span>
-                  </button>
-                  <button
-                    type="button"
-                    disabled={report.kind === 'incident'}
-                    onClick={() => setReport({ ...report, visibility: 'public' })}
-                    className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all ${
-                      report.kind === 'incident'
-                        ? 'opacity-40 cursor-not-allowed border-slate-900 bg-slate-900/50 text-slate-600'
-                        : report.visibility === 'public'
-                        ? 'border-emerald-500 bg-emerald-950/80 text-emerald-200 shadow-md shadow-emerald-950/40'
-                        : 'border-slate-800 bg-[#07111e] text-slate-400 hover:border-slate-700'
-                    }`}
-                  >
-                    <Wifi size={14} />
-                    <span>Public Mesh</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Coordinates status & GPS updater */}
-              <div className="rounded-xl bg-[#07111e] border border-slate-800 p-3 text-xs text-slate-300 flex items-center justify-between">
-                <span className="font-mono">
-                  Coordinates: {pin.lat.toFixed(5)}, {pin.lon.toFixed(5)}
-                </span>
                 <button
                   type="button"
                   onClick={useGps}
-                  className="text-cyan-300 hover:underline flex items-center gap-1 font-bold"
+                  className="text-cyan-400 hover:text-cyan-300 text-xs font-bold flex items-center gap-1 transition-colors"
                 >
                   <Cross size={13} /> Update GPS
                 </button>
               </div>
 
-              {/* 1-Tap SOS Broadcast Button */}
+              {/* Big Panic-Proof 1-Tap SOS Broadcast Button */}
               <button
                 type="submit"
-                className="w-full py-4 rounded-2xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-rose-600 text-white font-black text-sm sm:text-base shadow-xl shadow-red-700/40 flex items-center justify-center gap-2.5 transition-all active:scale-[0.98]"
+                disabled={savingSos}
+                className="w-full py-4 rounded-2xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-rose-600 text-white font-black text-base sm:text-lg shadow-xl shadow-red-700/40 flex items-center justify-center gap-3 transition-all active:scale-[0.98] disabled:opacity-50"
               >
-                <AlertOctagon size={19} className="animate-pulse" />
-                <span>Save to Local Qdrant Memory & Mesh</span>
-                <ArrowRight size={17} />
+                <AlertOctagon size={22} className="animate-pulse" />
+                <span>{savingSos ? 'Broadcasting to Mesh…' : 'BROADCAST EMERGENCY SOS NOW'}</span>
+                <ArrowRight size={20} />
               </button>
-            </form>
-          </Card>
 
-          {/* Coordinate Crosshair Placement */}
-          <Card
-            title="Incident Coordinates"
-            subtitle="Tap anywhere on the coordinate map grid to adjust where the incident is anchored."
-          >
-            <MapPanel
-              center={center}
-              items={items}
-              peers={peers}
-              selected={pin}
-              selectedPeer={selectedPeer}
-              onSelect={setPin}
-              onMarker={handleSelectObservation}
-              onSelectPeer={setSelectedPeer}
-            />
+              {/* Optional Collapsed Accordion for Severity, Scope & Map Crosshair */}
+              <div className="pt-2 border-t border-slate-800/80">
+                <button
+                  type="button"
+                  onClick={() => setShowSosDetails(!showSosDetails)}
+                  className="w-full py-2.5 px-3.5 rounded-xl bg-slate-900/60 hover:bg-slate-800/70 border border-slate-800 text-slate-400 hover:text-slate-200 text-xs font-bold flex items-center justify-between transition-colors"
+                >
+                  <span className="flex items-center gap-2">
+                    <MapPin size={15} className="text-cyan-400" />
+                    <span>Optional: Customize Severity, Visibility & Map Pin</span>
+                  </span>
+                  <ChevronDown size={15} className={`transition-transform duration-200 ${showSosDetails ? 'rotate-180' : ''}`} />
+                </button>
+
+                {showSosDetails && (
+                  <div className="mt-3 space-y-3.5 p-4 rounded-2xl bg-[#07111e]/90 border border-slate-800 animate-in fade-in">
+                    {/* Severity Level Buttons */}
+                    <div>
+                      <label className="block text-[11px] text-slate-400 font-bold uppercase tracking-wider mb-1.5">
+                        Severity Level
+                      </label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {[
+                          { id: 'red', label: 'Urgent / Threat', icon: AlertOctagon, activeClass: 'border-red-500 bg-red-600 text-white' },
+                          { id: 'yellow', label: 'Attention Needed', icon: TriangleAlert, activeClass: 'border-amber-500 bg-amber-600 text-white' },
+                          { id: 'green', label: 'Informational', icon: ShieldCheck, activeClass: 'border-emerald-500 bg-emerald-600 text-white' }
+                        ].map((s) => {
+                          const SIcon = s.icon;
+                          const isSel = report.severity === s.id;
+                          return (
+                            <button
+                              key={s.id}
+                              type="button"
+                              onClick={() => setReport({ ...report, severity: s.id })}
+                              className={`p-2 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all ${
+                                isSel ? s.activeClass : 'border-slate-800 bg-slate-900/60 text-slate-400'
+                              }`}
+                            >
+                              <SIcon size={13} />
+                              <span>{s.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Visibility Scope */}
+                    <div>
+                      <label className="block text-[11px] text-slate-400 font-bold uppercase tracking-wider mb-1.5">
+                        Visibility Scope
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setReport({ ...report, visibility: 'responders' })}
+                          className={`p-2 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all ${
+                            report.visibility === 'responders'
+                              ? 'border-cyan-500 bg-cyan-950 text-cyan-200'
+                              : 'border-slate-800 bg-slate-900/60 text-slate-400'
+                          }`}
+                        >
+                          <ShieldAlert size={13} />
+                          <span>Responders Only</span>
+                        </button>
+                        <button
+                          type="button"
+                          disabled={report.kind === 'incident'}
+                          onClick={() => setReport({ ...report, visibility: 'public' })}
+                          className={`p-2 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all ${
+                            report.kind === 'incident'
+                              ? 'opacity-40 cursor-not-allowed border-slate-900 bg-slate-950 text-slate-600'
+                              : report.visibility === 'public'
+                              ? 'border-emerald-500 bg-emerald-950 text-emerald-200'
+                              : 'border-slate-800 bg-slate-900/60 text-slate-400'
+                          }`}
+                        >
+                          <Wifi size={13} />
+                          <span>Public Mesh</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Interactive Map Crosshair */}
+                    <div className="pt-1">
+                      <label className="block text-[11px] text-slate-400 font-bold uppercase tracking-wider mb-1.5">
+                        Tap Map to Place Location Pin
+                      </label>
+                      <div className="rounded-xl overflow-hidden border border-slate-800">
+                        <MapPanel
+                          center={center}
+                          items={items}
+                          peers={peers}
+                          selected={pin}
+                          selectedPeer={selectedPeer}
+                          onSelect={setPin}
+                          onMarker={handleSelectObservation}
+                          onSelectPeer={setSelectedPeer}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </form>
           </Card>
         </div>
       )}
@@ -1362,10 +1357,16 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
       {/* ANDROID / MOBILE FIXED BOTTOM NAVIGATION BAR */}
       {/* Thumb-friendly, accessible, ergonomic navigation for smartphones */}
       {/* ========================================================================= */}
-      <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-slate-900/95 dark:bg-[#091322]/98 border-t border-slate-200 dark:border-slate-800/90 backdrop-blur-lg pb-safe">
+      <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#0a1324]/95 border-t border-slate-700/80 backdrop-blur-xl pb-safe shadow-2xl">
         <div className="grid grid-cols-4 h-16">
           {TABS.map(([id, label, Icon]) => {
             const isActive = tab === id;
+            const activeColors = {
+              ask: 'text-cyan-400',
+              map: 'text-emerald-400',
+              report: 'text-rose-500',
+              beacon: 'text-sky-400'
+            };
             return (
               <button
                 key={id}
@@ -1376,19 +1377,19 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                   window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
                 className={`flex flex-col items-center justify-center gap-1 transition-all active:scale-95 ${
-                  isActive ? 'text-red-500 font-bold' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                  isActive ? `${activeColors[id]} font-black` : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
                 <div className="relative">
-                  <Icon size={18} className={isActive ? 'stroke-[2.5]' : 'stroke-[1.75]'} />
+                  <Icon size={20} className={isActive ? 'stroke-[2.5]' : 'stroke-[1.8]'} />
                   {id === 'map' && (nearestCasualty || peers.length > 0) && (
-                    <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-red-500 animate-ping" />
+                    <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
                   )}
                   {id === 'beacon' && peers.length > 0 && (
-                    <span className="absolute -top-1 -right-1.5 w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                    <span className="absolute -top-1 -right-1.5 w-1.5 h-1.5 rounded-full bg-sky-400 animate-ping" />
                   )}
                 </div>
-                <span className="text-[10px] tracking-tight font-medium">{label.split(' ')[0]}</span>
+                <span className="text-[10px] tracking-tight font-bold">{label.split(' ')[0]}</span>
               </button>
             );
           })}

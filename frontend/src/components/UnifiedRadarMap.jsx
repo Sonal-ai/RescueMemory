@@ -331,7 +331,7 @@ export default function UnifiedRadarMap({
       </div>
 
       {/* Prominent Navigation Destination Dropdown Selector */}
-      <div className="bg-white dark:bg-[#0b1626] border border-slate-200 dark:border-slate-800 rounded-3xl p-4 sm:p-5 shadow-sm">
+      <div className="bg-white dark:bg-gradient-to-b dark:from-[#0d172b]/95 dark:to-[#091222]/95 border border-slate-200 dark:border-cyan-500/15 rounded-3xl p-4 sm:p-5 shadow-xl">
         <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-2 flex items-center justify-between">
           <span className="flex items-center gap-1.5">
             <MapPin size={14} className="text-red-500" />
@@ -348,7 +348,7 @@ export default function UnifiedRadarMap({
           <select
             value={selectedTargetId}
             onChange={(e) => handleSelectDestination(e.target.value)}
-            className="w-full appearance-none py-3.5 px-4 pr-10 rounded-2xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-cyan-500 cursor-pointer shadow-inner"
+            className="w-full appearance-none py-3.5 px-4 pr-10 rounded-2xl border border-slate-300 dark:border-cyan-500/30 bg-slate-50 dark:bg-[#07111e] text-slate-900 dark:text-slate-100 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-cyan-500 cursor-pointer shadow-inner"
           >
             {destinationOptions.map((dest) => {
               const isCas = dest.category === 'casualty';
@@ -368,7 +368,7 @@ export default function UnifiedRadarMap({
       </div>
 
       {/* TOP VIEW: Interactive Tactical Map */}
-      <div className="bg-white dark:bg-[#0b1626] border border-slate-200 dark:border-slate-800 rounded-3xl p-4 sm:p-5 shadow-sm">
+      <div className="bg-white dark:bg-gradient-to-b dark:from-[#0d172b]/95 dark:to-[#091222]/95 border border-slate-200 dark:border-cyan-500/15 rounded-3xl p-4 sm:p-5 shadow-xl">
         {/* Map Filter Pills */}
         <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
           <div className="flex flex-wrap gap-1.5">
@@ -425,7 +425,7 @@ export default function UnifiedRadarMap({
       </div>
 
       {/* JUST BELOW THE MAP: Working 360° Compass Pointer & Live Azimuth Dial */}
-      <div className="bg-white dark:bg-[#0b1626] border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-sm">
+      <div className="bg-white dark:bg-gradient-to-b dark:from-[#0d172b]/95 dark:to-[#091222]/95 border border-slate-200 dark:border-cyan-500/15 rounded-3xl p-5 sm:p-6 shadow-xl">
         <div className="flex flex-col lg:flex-row items-center justify-between gap-6">
           {/* Compass SVG Housing */}
           <div className="flex flex-col items-center justify-center shrink-0 w-full lg:w-auto">

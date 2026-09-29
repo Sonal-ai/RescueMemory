@@ -6,13 +6,13 @@
 
 :root {
   color-scheme: dark;
-  --bg-app: #060b13;
-  --bg-header: rgba(11, 21, 36, 0.95);
-  --bg-card: #0b1626;
-  --bg-card-elevated: #101f35;
-  --bg-field: #07101d;
-  --border-subtle: #192a40;
-  --border-default: #253d5c;
+  --bg-app: #080d19;
+  --bg-header: rgba(12, 21, 38, 0.94);
+  --bg-card: #0d172a;
+  --bg-card-elevated: #13223c;
+  --bg-field: #091222;
+  --border-subtle: rgba(56, 189, 248, 0.12);
+  --border-default: rgba(56, 189, 248, 0.22);
   --border-active: #38bdf8;
   --text-primary: #f8fafc;
   --text-secondary: #94a3b8;
@@ -26,14 +26,14 @@
 
 :root[data-theme="light"] {
   color-scheme: light;
-  --bg-app: #f4f7fb;
+  --bg-app: #f1f5f9;
   --bg-header: rgba(255, 255, 255, 0.96);
   --bg-card: #ffffff;
-  --bg-card-elevated: #eef3f9;
+  --bg-card-elevated: #f8fafc;
   --bg-field: #ffffff;
-  --border-subtle: #dbe4ee;
+  --border-subtle: #e2e8f0;
   --border-default: #cbd5e1;
-  --border-active: #0284c7;
+  --border-active: #0ea5e9;
   --text-primary: #0f172a;
   --text-secondary: #475569;
   --text-muted: #64748b;
@@ -46,6 +46,8 @@
 
 body {
   background-color: var(--bg-app);
+  background-image: radial-gradient(circle at 50% 0%, rgba(14, 165, 233, 0.09) 0%, transparent 60%);
+  background-attachment: fixed;
   color: var(--text-primary);
   margin: 0;
   font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;

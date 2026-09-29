@@ -148,7 +148,7 @@ export default function MeshSyncScanner({
   return (
     <div className="flex flex-col gap-5 text-slate-900 dark:text-slate-100">
       {/* Top Header */}
-      <div className="bg-white dark:bg-[#0b1626] border border-slate-200 dark:border-slate-800 rounded-3xl p-4 sm:p-5 shadow-sm flex flex-wrap items-center justify-between gap-3">
+      <div className="bg-white dark:bg-gradient-to-b dark:from-[#0d172b]/95 dark:to-[#091222]/95 border border-slate-200 dark:border-cyan-500/15 rounded-3xl p-4 sm:p-5 shadow-xl flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-cyan-600 to-emerald-600 flex items-center justify-center text-white shadow-md shadow-cyan-600/20 shrink-0">
             <Radio size={20} className={scanning || syncingAll ? 'animate-spin' : ''} />
@@ -191,7 +191,7 @@ export default function MeshSyncScanner({
       )}
 
       {/* Tactical Radar Scan Grid Visual */}
-      <div className="bg-white dark:bg-[#0b1626] border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-sm flex flex-col items-center">
+      <div className="bg-white dark:bg-gradient-to-b dark:from-[#0d172b]/95 dark:to-[#091222]/95 border border-slate-200 dark:border-cyan-500/15 rounded-3xl p-5 sm:p-6 shadow-xl flex flex-col items-center">
         <div className="text-center mb-4">
           <span className="text-xs uppercase font-bold tracking-wider text-slate-600 dark:text-slate-300">
             Local Wi-Fi Subnet Radar Scan Grid
@@ -332,7 +332,7 @@ export default function MeshSyncScanner({
       </div>
 
       {/* Discovered Beacons / Peer Devices List */}
-      <div className="bg-white dark:bg-[#0b1626] border border-slate-200 dark:border-slate-800 rounded-3xl p-5 shadow-sm">
+      <div className="bg-white dark:bg-gradient-to-b dark:from-[#0d172b]/95 dark:to-[#091222]/95 border border-slate-200 dark:border-cyan-500/15 rounded-3xl p-5 shadow-xl">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-2">
             <Wifi size={16} className="text-emerald-500" />
@@ -418,7 +418,7 @@ export default function MeshSyncScanner({
       </div>
 
       {/* Direct IP Fallback Endpoint Card */}
-      <div className="bg-white dark:bg-[#0b1626] border border-slate-200 dark:border-slate-800 rounded-3xl p-5 shadow-sm">
+      <div className="bg-white dark:bg-gradient-to-b dark:from-[#0d172b]/95 dark:to-[#091222]/95 border border-slate-200 dark:border-cyan-500/15 rounded-3xl p-5 shadow-xl">
         <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-2 flex items-center gap-1.5">
           <ExternalLink size={14} className="text-cyan-500" />
           <span>Manual Direct IP Connect</span>
