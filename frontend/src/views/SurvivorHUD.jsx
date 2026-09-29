@@ -12,14 +12,26 @@ import {
   MapPin,
   MessageCircle,
   Navigation,
+  Radio,
   RefreshCw,
   Send,
   ShieldAlert,
   Sparkles,
   TriangleAlert,
-  Users
+  Users,
+  Wifi
 } from 'lucide-react';
-import { api, formatTime, saveSetting, setting, onBrainStatusChange, onSyncStateChange } from '../api';
+import {
+  api,
+  formatTime,
+  saveSetting,
+  setting,
+  onBrainStatusChange,
+  onSyncStateChange,
+  getDiscoveredPeers,
+  updateDeviceLocation,
+  syncDiscoveredPeer
+} from '../api';
 import { Card, Empty, Shell } from '../components';
 import MapPanel from '../MapPanel';
 
@@ -48,6 +60,9 @@ export default function SurvivorHUD() {
   const [center, setCenter] = useState(DEFAULT_CENTER);
   const [pin, setPin] = useState(DEFAULT_CENTER);
   const [items, setItems] = useState([]);
+  const [peers, setPeers] = useState([]);
+  const [selectedPeer, setSelectedPeer] = useState(null);
+  const [syncingPeer, setSyncingPeer] = useState(false);
   const [mapUpdatedAt, setMapUpdatedAt] = useState(null);
   const [selected, setSelected] = useState(null);
   const [alternativeRec, setAlternativeRec] = useState(null);
@@ -71,14 +86,28 @@ export default function SurvivorHUD() {
   const [isOfflineBrain, setIsOfflineBrain] = useState(false);
   const [syncInfo, setSyncInfo] = useState({ state: 'idle', pendingCount: 0 });
 
+  const refreshPeers = useCallback(async () => {
+    try {
+      const res = await getDiscoveredPeers();
+      if (res?.peers) {
+        setPeers(res.peers);
+      }
+    } catch {
+      // offline silent
+    }
+  }, []);
+
   useEffect(() => {
     const unsubBrain = onBrainStatusChange(setIsOfflineBrain);
     const unsubSync = onSyncStateChange(setSyncInfo);
+    refreshPeers();
+    const peerTimer = setInterval(refreshPeers, 6000);
     return () => {
       unsubBrain();
       unsubSync();
+      clearInterval(peerTimer);
     };
-  }, []);
+  }, [refreshPeers]);
 
   const refreshMap = useCallback(async () => {
     try {
@@ -159,10 +188,35 @@ export default function SurvivorHUD() {
         setPin(location);
         setError('');
         setMessage('Updated your location to current GPS coordinates.');
+        // Broadcast our updated GPS coordinates to nearby nodes over offline Wi-Fi
+        updateDeviceLocation({
+          lat: location.lat,
+          lon: location.lon,
+          status: 'survivor_active'
+        }).catch(() => {});
       },
       () => setError('Location permission or secure HTTPS is required. Tap the map instead to set your location.'),
       { enableHighAccuracy: true, timeout: 8000 }
     );
+  };
+
+  const handleSyncPeer = async (peer) => {
+    setSyncingPeer(true);
+    setMessage('');
+    setError('');
+    try {
+      await syncDiscoveredPeer({
+        peer_url: peer.url,
+        scope: 'public'
+      });
+      setMessage(`Successfully synchronized memory with ${peer.node_id}!`);
+      refreshMap();
+      refreshPeers();
+    } catch (err) {
+      setError(`Sync with ${peer.node_id} failed: ${err.message}`);
+    } finally {
+      setSyncingPeer(false);
+    }
   };
 
   const askQuestion = async (queryText = text) => {
@@ -866,7 +920,16 @@ export default function SurvivorHUD() {
                 <Cross size={14} /> Use GPS
               </button>
             </div>
-            <MapPanel center={center} items={items} selected={pin} onSelect={setPin} onMarker={handleSelectObservation} />
+            <MapPanel
+              center={center}
+              items={items}
+              peers={peers}
+              selected={pin}
+              selectedPeer={selectedPeer}
+              onSelect={setPin}
+              onMarker={handleSelectObservation}
+              onSelectPeer={setSelectedPeer}
+            />
           </Card>
         </div>
       )}
@@ -874,7 +937,7 @@ export default function SurvivorHUD() {
       {/* TAB 3: NEARBY MAP */}
       {tab === 'map' && (
         <div className="grid lg:grid-cols-[1.3fr_.7fr] gap-5">
-          <Card title="Nearby Local Observations">
+          <Card title="Nearby Local Observations & Mesh Radar">
             <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
               <div className="flex flex-wrap gap-1.5">
                 {[
@@ -907,14 +970,94 @@ export default function SurvivorHUD() {
             </div>
 
             <p className="text-xs text-slate-400 mb-2">
-              Showing {filteredItems.length} reports within 5 km • Auto-refreshes every 30s
+              Showing {filteredItems.length} reports within 5 km • {peers.length} peer node{peers.length === 1 ? '' : 's'} in Wi-Fi range
               {mapUpdatedAt ? ` • Updated ${mapUpdatedAt.toLocaleTimeString()}` : ''}
             </p>
 
-            <MapPanel center={center} items={filteredItems} onMarker={handleSelectObservation} />
+            <MapPanel
+              center={center}
+              items={filteredItems}
+              peers={peers}
+              selectedPeer={selectedPeer}
+              onMarker={handleSelectObservation}
+              onSelectPeer={setSelectedPeer}
+            />
           </Card>
 
-          <Card title="Observation List">
+          <div className="space-y-4">
+            {/* Offline Wi-Fi Mesh Radar Widget */}
+            <Card title="Wi-Fi Mesh Radar">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <span className="relative flex h-2.5 w-2.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                  </span>
+                  <span className="text-xs font-semibold text-emerald-300 uppercase tracking-wide flex items-center gap-1">
+                    <Radio size={13} /> {peers.length} Peer{peers.length === 1 ? '' : 's'} Detected
+                  </span>
+                </div>
+                <button onClick={refreshPeers} className="text-xs text-cyan-400 hover:underline flex items-center gap-1">
+                  <RefreshCw size={11} /> Scan
+                </button>
+              </div>
+
+              {peers.length ? (
+                <div className="space-y-2 max-h-[220px] overflow-auto pr-1">
+                  {peers.map((peer) => {
+                    const isVol = peer.role === 'volunteer' || peer.role === 'central';
+                    const isSel = selectedPeer?.node_id === peer.node_id;
+                    return (
+                      <div
+                        key={peer.node_id}
+                        onClick={() => setSelectedPeer(peer)}
+                        className={`p-3 rounded-xl border text-xs cursor-pointer transition-all ${
+                          isSel ? 'border-cyan-500 bg-cyan-950/40' : 'border-slate-800 bg-slate-900/90 hover:border-slate-700'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5 font-bold text-slate-100">
+                            <span className={`w-2 h-2 rounded-full ${peer.is_online ? 'bg-emerald-400' : 'bg-slate-500'}`} />
+                            <span>{peer.node_id}</span>
+                          </div>
+                          <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${
+                            isVol ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-700/60' : 'bg-amber-950/80 text-amber-300 border border-amber-700/60'
+                          }`}>
+                            {peer.role}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-slate-400 mt-1 flex items-center justify-between font-mono">
+                          <span className="text-cyan-400 font-semibold">
+                            {peer.distance_m != null ? `~${peer.distance_m} m away` : 'On Wi-Fi Hotspot'}
+                          </span>
+                          <span>{peer.seconds_ago}s ago</span>
+                        </div>
+                        <div className="mt-2.5 flex items-center justify-between pt-2 border-t border-slate-800/70">
+                          <span className="text-[10px] text-slate-500 font-mono">{peer.ip}:{peer.port}</span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSyncPeer(peer);
+                            }}
+                            disabled={syncingPeer}
+                            className="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-[11px] flex items-center gap-1 transition-all disabled:opacity-50"
+                          >
+                            <Wifi size={12} />
+                            <span>Sync</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Broadcasting your location on local Wi-Fi. Other phones running RescueMemory on this hotspot will automatically appear here.
+                </p>
+              )}
+            </Card>
+
+            <Card title="Observation List">
             {filteredItems.length ? (
               <div className="max-h-[520px] overflow-auto space-y-2 pr-1">
                 {filteredItems.map((item) => {
@@ -955,6 +1098,7 @@ export default function SurvivorHUD() {
               <Empty>No nearby local reports recorded yet in this scope.</Empty>
             )}
           </Card>
+        </div>
 
           {selected && (
             <Card title="Selected Observation Details" className="lg:col-span-2">

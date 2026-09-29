@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ArrowUpRight, CloudUpload, RefreshCw, Radio, ShieldCheck, Users } from 'lucide-react';
-import { api, formatTime, setting } from '../api';
+import { ArrowUpRight, CloudUpload, RefreshCw, Radio, ShieldCheck, Users, Wifi } from 'lucide-react';
+import { api, formatTime, getDiscoveredPeers, saveSetting, setting, updateDeviceLocation } from '../api';
 import { Card, Empty, Shell } from '../components';
 import MapPanel from '../MapPanel';
 
@@ -10,6 +10,7 @@ export default function VolunteerBoard() {
   const [center, setCenter] = useState(CENTER);
   const [scope, setScope] = useState('public');
   const [items, setItems] = useState([]);
+  const [peers, setPeers] = useState([]);
   const [mapUpdatedAt, setMapUpdatedAt] = useState(null);
   const [status, setStatus] = useState(null);
   const [selected, setSelected] = useState(null);
@@ -21,27 +22,34 @@ export default function VolunteerBoard() {
   const refresh = useCallback(async () => {
     try {
       const groupId = scope === 'group' ? setting('groupId') : '';
-      const [map, sync] = await Promise.all([
+      const [map, sync, disc] = await Promise.all([
         api('/api/map/nearby', { method: 'POST', group: Boolean(groupId), responder: scope === 'responders',
           body: { location: center, radius_m: 5000,
             ...(groupId ? { group_id: groupId } : {}),
             include_responders: scope === 'responders' } }),
         api('/api/sync/status'),
+        getDiscoveredPeers().catch(() => ({ peers: [] })),
       ]);
       const matching = map.items.filter((item) => item.visibility === scope);
-      setItems(matching); setStatus(sync); setMapUpdatedAt(new Date()); setError('');
+      setItems(matching); setStatus(sync);
+      if (disc?.peers) setPeers(disc.peers);
+      setMapUpdatedAt(new Date()); setError('');
     } catch (err) { setError(err.message); }
   }, [scope, center]);
   useEffect(() => {
     refresh();
-    const timer = setInterval(refresh, 30000);
+    const timer = setInterval(refresh, 15000);
     return () => clearInterval(timer);
   }, [refresh]);
 
   const useGps = () => {
     if (!navigator.geolocation) { setError('GPS is unavailable. The map remains on its current center.'); return; }
     navigator.geolocation.getCurrentPosition(
-      (position) => setCenter({ lat: position.coords.latitude, lon: position.coords.longitude }),
+      (position) => {
+        const loc = { lat: position.coords.latitude, lon: position.coords.longitude };
+        setCenter(loc);
+        updateDeviceLocation({ lat: loc.lat, lon: loc.lon, status: 'responder_active' }).catch(() => {});
+      },
       () => setError('Location permission or secure HTTPS is required.'),
       { enableHighAccuracy: true, timeout: 8000 },
     );
@@ -92,13 +100,42 @@ export default function VolunteerBoard() {
           <button onClick={refresh} className="text-cyan-300 flex items-center gap-1 text-sm"><RefreshCw size={15} /> Refresh</button>
         </div>
         <p className="text-xs text-slate-400 mb-2">{items.filter((item) => item.kind === 'presence').length} people requesting contact · local memory refreshes every 30 s{mapUpdatedAt ? ` · updated ${mapUpdatedAt.toLocaleTimeString()}` : ''}</p>
-        <MapPanel center={center} items={items} onMarker={inspect} />
+        <MapPanel center={center} items={items} peers={peers} onMarker={inspect} />
         <div className="mt-4 space-y-2 max-h-72 overflow-auto">
           {items.length ? items.map((item) => <button key={item.id} onClick={() => inspect(item)} className={`w-full text-left border p-3 rounded-xl ${selected?.id === item.id ? 'border-cyan-500 bg-cyan-950/30' : 'border-slate-700 bg-slate-900'}`}><div className="font-semibold capitalize text-sm">{item.kind} · {item.status || item.severity}</div><div className="text-sm text-slate-300 mt-1">{item.text}</div><div className="text-xs text-slate-500 mt-1">{item.distance_m} m · {formatTime(item.observed_at)} · {item.origin_device}</div></button>) : <Empty>No visible reports in this scope. Group and responder scopes require their keys in Node settings.</Empty>}
         </div>
       </Card>
       <div className="space-y-5">
-        <Card title="Exchange memory"><p className="text-sm text-slate-400 mb-3">Nearby transport uses local HTTP over Wi-Fi or hotspot. Internet is only required for central sync.</p><p className="text-xs text-slate-500 mb-4">Peer: {setting('peerUrl') || 'Set nearby node URL in settings'}</p>
+        <Card title="Exchange memory">
+          <p className="text-sm text-slate-400 mb-2">Nearby transport uses local HTTP over Wi-Fi or hotspot. Internet is only required for central sync.</p>
+          <div className="text-xs text-slate-400 mb-3 bg-slate-900 border border-slate-800 p-2.5 rounded-lg flex items-center justify-between">
+            <span>Target Peer: <strong className="text-slate-200">{setting('peerUrl') || 'Auto-select nearby peer below'}</strong></span>
+            {peers.length > 0 && <span className="text-emerald-400 font-medium flex items-center gap-1"><Wifi size={12} /> {peers.length} active</span>}
+          </div>
+          {peers.length > 0 && (
+            <div className="mb-3 space-y-1.5 max-h-36 overflow-auto">
+              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Nearby Discovered Nodes</span>
+              {peers.map((p) => (
+                <button
+                  key={p.node_id}
+                  onClick={() => {
+                    saveSetting('peerUrl', p.url);
+                    refresh();
+                  }}
+                  className={`w-full text-left p-2 rounded-lg border text-xs flex items-center justify-between transition-all ${
+                    setting('peerUrl') === p.url ? 'border-cyan-500 bg-cyan-950/40 text-cyan-200' : 'border-slate-800 bg-slate-950 text-slate-300 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5 font-bold">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                    <span>{p.node_id}</span>
+                    <span className="text-[10px] text-slate-500 font-mono">({p.role})</span>
+                  </div>
+                  <span className="text-cyan-400 font-mono text-[11px]">{p.distance_m != null ? `${p.distance_m}m` : p.ip}</span>
+                </button>
+              ))}
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-2">
             <button disabled={Boolean(working)} onClick={() => exchange('public')} className="btn-secondary flex items-center justify-center gap-2"><Radio size={16} /> Public</button>
             <button disabled={Boolean(working)} onClick={() => exchange('group')} className="btn-secondary flex items-center justify-center gap-2"><Users size={16} /> Group</button>
