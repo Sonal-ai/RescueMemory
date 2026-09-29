@@ -212,7 +212,7 @@ export function Shell({ title, subtitle, children }) {
   const { health, sync, error } = useNodeStatus();
   const last = sync?.last_sync || sync?.last_uplink;
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [theme, setTheme] = useState(() => localStorage.getItem('rescue.theme') === 'light' ? 'light' : 'dark');
+  const [theme, setTheme] = useState(() => localStorage.getItem('rescue.theme') || 'light');
   const [online, setOnline] = useState(() => isOnlineMode());
 
   useEffect(() => {
@@ -230,9 +230,9 @@ export function Shell({ title, subtitle, children }) {
   }, [theme]);
 
   return (
-    <div className="app-shell min-h-screen bg-[#080d19] dark:bg-[#080d19] text-slate-100 flex flex-col pb-16 sm:pb-0">
+    <div className="app-shell min-h-screen bg-[#f8f6f0] dark:bg-[#080d19] text-stone-900 dark:text-slate-100 flex flex-col pb-16 sm:pb-0">
       {/* Top Tactical Navigation Header */}
-      <header className="app-header border-b border-slate-200 dark:border-cyan-500/15 bg-white/95 dark:bg-[#0b1528]/95 sticky top-0 z-40 backdrop-blur-xl shadow-md shadow-black/15">
+      <header className="app-header border-b border-[#ede9df] dark:border-cyan-500/15 bg-[#fefdfb]/95 dark:bg-[#0b1528]/95 sticky top-0 z-40 backdrop-blur-xl shadow-xs">
         <div className="h-0.5 w-full bg-gradient-to-r from-red-500 via-cyan-400 to-emerald-400 opacity-90" />
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2.5 flex items-center justify-between gap-3">
           
@@ -243,12 +243,12 @@ export function Shell({ title, subtitle, children }) {
             </span>
             <div className="flex flex-col">
               <div className="flex items-center gap-1.5 leading-none">
-                <span className="font-extrabold text-base sm:text-lg tracking-tight bg-gradient-to-r from-white via-slate-100 to-cyan-200 bg-clip-text text-transparent">RescueMemory</span>
-                <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-cyan-950/80 text-cyan-300 border border-cyan-500/30">
+                <span className="font-extrabold text-base sm:text-lg tracking-tight text-stone-900 dark:bg-gradient-to-r dark:from-white dark:via-slate-100 dark:to-cyan-200 dark:bg-clip-text dark:text-transparent">RescueMemory</span>
+                <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-cyan-100 dark:bg-cyan-950/80 text-cyan-800 dark:text-cyan-300 border border-cyan-300 dark:border-cyan-500/30">
                   EDGE
                 </span>
               </div>
-              <span className="text-[10px] text-cyan-400/80 font-mono tracking-wider">OFFLINE SURVIVAL MESH</span>
+              <span className="text-[10px] text-cyan-700 dark:text-cyan-400/80 font-mono tracking-wider font-semibold">OFFLINE SURVIVAL MESH</span>
             </div>
           </Link>
 
@@ -265,24 +265,24 @@ export function Shell({ title, subtitle, children }) {
               aria-pressed={online}
               className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl border text-xs font-bold cursor-pointer transition-all active:scale-95 ${
                 online
-                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20'
-                  : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 hover:bg-amber-500/20'
+                  ? 'bg-emerald-100 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-400 border-emerald-300 dark:border-emerald-500/30 hover:bg-emerald-200/60 dark:hover:bg-emerald-500/20'
+                  : 'bg-amber-100 dark:bg-amber-500/10 text-amber-800 dark:text-amber-400 border-amber-300 dark:border-amber-500/30 hover:bg-amber-200/60 dark:hover:bg-amber-500/20'
               }`}
               onClick={() => setOnlineMode(!online)}
             >
               {online ? (
                 <>
                   <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-600"></span>
                   </span>
-                  <Wifi size={13} className="text-emerald-500" />
+                  <Wifi size={13} className="text-emerald-600 dark:text-emerald-500" />
                   <span className="hidden sm:inline">Online</span>
                 </>
               ) : (
                 <>
                   <span className="inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
-                  <WifiOff size={13} className="text-amber-500" />
+                  <WifiOff size={13} className="text-amber-600 dark:text-amber-500" />
                   <span className="hidden sm:inline">Offline</span>
                 </>
               )}
@@ -294,7 +294,7 @@ export function Shell({ title, subtitle, children }) {
               title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
               aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
               aria-pressed={theme === 'light'}
-              className="theme-toggle-btn flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold cursor-pointer transition-all active:scale-95"
+              className="theme-toggle-btn flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#ddd8ce] dark:border-slate-700 bg-[#ede9df] dark:bg-slate-800 text-xs font-bold cursor-pointer transition-all active:scale-95 text-stone-800 dark:text-slate-200"
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
             >
               {theme === 'dark' ? (
@@ -305,7 +305,7 @@ export function Shell({ title, subtitle, children }) {
               ) : (
                 <>
                   <Moon size={14} className="text-indigo-600" />
-                  <span className="hidden sm:inline text-slate-800">Dark</span>
+                  <span className="hidden sm:inline text-stone-800">Dark</span>
                 </>
               )}
             </button>
@@ -314,7 +314,7 @@ export function Shell({ title, subtitle, children }) {
             <button
               title="Device & Mesh Settings"
               aria-label="Device & Mesh Settings"
-              className="icon-btn rounded-xl"
+              className="icon-btn rounded-xl text-stone-600 dark:text-slate-400 hover:text-stone-900 dark:hover:text-white"
               onClick={() => setSettingsOpen(true)}
             >
               <Settings2 size={18} />
@@ -330,11 +330,11 @@ export function Shell({ title, subtitle, children }) {
         <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
           {(title || subtitle) && (
             <div>
-              <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-100">
+              <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-stone-900 dark:text-slate-100">
                 {title}
               </h1>
               {subtitle && (
-                <p className="text-slate-400 text-xs sm:text-sm mt-0.5 leading-relaxed">
+                <p className="text-stone-600 dark:text-slate-400 text-xs sm:text-sm mt-0.5 leading-relaxed">
                   {subtitle}
                 </p>
               )}
@@ -342,8 +342,8 @@ export function Shell({ title, subtitle, children }) {
           )}
 
           {last && (
-            <div className="text-xs text-slate-400 bg-slate-900/90 border border-slate-800/80 rounded-xl px-3 py-1.5 flex items-center gap-2 shadow-sm font-mono">
-              <Cloud size={13} className="text-cyan-400" />
+            <div className="text-xs text-stone-600 dark:text-slate-400 bg-[#ede9df] dark:bg-slate-900/90 border border-[#ddd8ce] dark:border-slate-800/80 rounded-xl px-3 py-1.5 flex items-center gap-2 shadow-xs font-mono">
+              <Cloud size={13} className="text-cyan-600 dark:text-cyan-400" />
               <span>Mesh sync: {new Date(last).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
             </div>
           )}
@@ -353,10 +353,10 @@ export function Shell({ title, subtitle, children }) {
         {error && (
           <div
             role="alert"
-            className="mb-6 rounded-2xl border border-red-800/80 bg-red-950/50 p-4 text-red-200 text-sm flex items-center justify-between gap-3 shadow-md shadow-red-950/20"
+            className="mb-6 rounded-2xl border border-red-300 dark:border-red-800/80 bg-red-50 dark:bg-red-950/50 p-4 text-red-800 dark:text-red-200 text-sm flex items-center justify-between gap-3 shadow-sm"
           >
             <div className="flex items-center gap-2.5">
-              <CloudOff size={18} className="text-red-400 shrink-0" />
+              <CloudOff size={18} className="text-red-500 dark:text-red-400 shrink-0" />
               <span>Edge node is currently unreachable: {error}. Start the backend or connect to its Wi-Fi hotspot.</span>
             </div>
           </div>
@@ -373,17 +373,17 @@ export function Shell({ title, subtitle, children }) {
 
 export function Card({ title, subtitle, action, children, className = '' }) {
   return (
-    <section className={`app-card bg-white dark:bg-gradient-to-b dark:from-[#0d172b]/95 dark:to-[#091222]/95 border border-slate-200 dark:border-cyan-500/15 rounded-2xl p-5 sm:p-6 shadow-xl shadow-black/20 backdrop-blur-sm transition-all ${className}`}>
+    <section className={`app-card bg-white dark:bg-gradient-to-b dark:from-[#0d172b]/95 dark:to-[#091222]/95 border border-[#ede9df] dark:border-cyan-500/15 rounded-3xl p-5 sm:p-6 shadow-sm backdrop-blur-sm transition-all ${className}`}>
       {(title || action) && (
-        <div className="flex items-center justify-between mb-4 border-b border-slate-200 dark:border-cyan-500/10 pb-3">
+        <div className="flex items-center justify-between mb-4 border-b border-[#ede9df] dark:border-cyan-500/10 pb-3">
           <div>
             {title && (
-              <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100 tracking-tight flex items-center gap-2">
-                <span className="w-1.5 h-4 rounded-full bg-gradient-to-b from-cyan-400 to-blue-500 inline-block"></span>
+              <h2 className="text-base sm:text-lg font-bold text-stone-900 dark:text-slate-100 tracking-tight flex items-center gap-2">
+                <span className="w-1.5 h-4 rounded-full bg-gradient-to-b from-cyan-500 to-blue-600 inline-block"></span>
                 <span>{title}</span>
               </h2>
             )}
-            {subtitle && <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 ml-3.5 leading-relaxed">{subtitle}</p>}
+            {subtitle && <p className="text-xs text-stone-500 dark:text-slate-400 mt-0.5 ml-3.5 leading-relaxed">{subtitle}</p>}
           </div>
           {action && <div>{action}</div>}
         </div>
