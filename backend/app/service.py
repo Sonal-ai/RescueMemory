@@ -342,8 +342,21 @@ class RescueService:
         effective = (latest_verified if latest_verified and
                      (not danger or latest_verified["observed_at"] > danger["observed_at"])
                      else danger or (reports[-1] if reports else None))
+        conflict = len({e.get("status") for e in reports}) > 1
+        alternative = None
+        if danger or conflict or (effective and effective.get("status") in {"danger", "flooded", "blocked"}):
+            hazard_text = (danger.get("text") if danger else effective.get("text") if effective else "flooded hazard blocked")
+            alternative = self.memory.recommend_alternative(entity_id, hazard_text)
         return {"entity_id": entity_id, "effective": effective, "timeline": reports,
-                "conflict": len({e.get("status") for e in reports}) > 1}
+                "conflict": conflict, "alternative_recommendation": alternative}
+
+    def recommend_alternative_checkpoint(self, compromised_id: str, avoid_hazard: str = "flooded entrance live wires") -> dict:
+        rec = self.memory.recommend_alternative(compromised_id, avoid_hazard)
+        return {
+            "compromised_id": compromised_id,
+            "avoid_hazard": avoid_hazard,
+            "recommended": rec,
+        }
 
     def signed_guides(self) -> list[dict]:
         return [card for card in self.memory.all("reference") if card.get("auth_tag")]

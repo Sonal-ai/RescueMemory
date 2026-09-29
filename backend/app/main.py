@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from .cloud import mirror_to_qdrant_server
 from .config import Settings
 from .schemas import (AssessRequest, ChatRequest, CreateGroupRequest, GuidePublishRequest, JoinGroupRequest,
-                      NearbyRequest, PeerSyncRequest, ReportRequest)
+                      NearbyRequest, PeerSyncRequest, RecommendAlternativeRequest, ReportRequest)
 from .service import RescueService
 from .sync import authorize, sync_with_peer, uplink_sos
 
@@ -121,6 +121,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(403, "group token required")
         responder = valid_responder_token(x_responder_key)
         return s.entity_timeline(entity_id, group_id, responder)
+
+    @app.post("/api/checkpoints/recommend-alternative")
+    def recommend_alternative(request: RecommendAlternativeRequest, s: RescueService = Depends(service)):
+        return s.recommend_alternative_checkpoint(request.compromised_id, request.avoid_hazard)
 
     @app.get("/api/provenance/{event_id}")
     def provenance(event_id: str, group_id: str | None = None,

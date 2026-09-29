@@ -89,3 +89,8 @@ class GuidePublishRequest(BaseModel):
     warnings: list[str] = Field(default_factory=list, max_length=10)
     source: str = Field(pattern=r"^https://", max_length=500)
     reviewer: str = Field(min_length=2, max_length=100)
+
+
+class RecommendAlternativeRequest(BaseModel):
+    compromised_id: str = Field(min_length=1, max_length=100)
+    avoid_hazard: str = Field(default="flooded entrance live wires", max_length=500)

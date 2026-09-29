@@ -134,4 +134,74 @@ class Memory:
                 chunk = points[i:i + batch_size]
                 self.shards["reference"].update(UpdateOperation.upsert_points(chunk))
 
+    def recommend_alternative(
+        self,
+        compromised_id: str,
+        avoid_hazard_text: str = "flooded entrance live wires",
+        limit: int = 1
+    ) -> dict | None:
+        """
+        Calculates an alternative safe checkpoint or facility using vector arithmetic:
+        V_rec = normalize(V_compromised - 0.5 * V_hazard)
+        Excludes the compromised location and retrieves the closest matching safe facility.
+        """
+        base_item = self.get("reference", compromised_id) or self.get("events", compromised_id)
+        if not base_item:
+            for item in self.all("reference"):
+                if item.get("id") == compromised_id or item.get("entity_id") == compromised_id:
+                    base_item = item
+                    break
+        if not base_item:
+            for item in self.all("events"):
+                if item.get("id") == compromised_id or item.get("entity_id") == compromised_id:
+                    base_item = item
+                    break
+
+        base_text = (
+            f"{base_item.get('title', '')} {base_item.get('summary', '')} {' '.join(base_item.get('facilities', []))}"
+            if base_item
+            else f"{compromised_id} emergency shelter medical facility clean water"
+        )
+        base_vec = next(self.embedder.embed([base_text])).tolist()
+        hazard_vec = next(self.embedder.embed([avoid_hazard_text])).tolist()
+
+        target_vec = [b - 0.5 * h for b, h in zip(base_vec, hazard_vec)]
+        norm = (sum(x * x for x in target_vec)) ** 0.5 or 1.0
+        target_vec = [x / norm for x in target_vec]
+
+        request = QueryRequest(
+            limit=10,
+            query=Query.Nearest(target_vec, using="dense"),
+            with_payload=True
+        )
+        with self.lock:
+            hits = self.shards["reference"].query(request)
+
+        candidates = []
+        for hit in hits:
+            p = hit.payload
+            cid = p.get("id") or p.get("entity_id")
+            if cid == compromised_id or p.get("entity_id") == compromised_id:
+                continue
+            is_checkpoint = (
+                p.get("kind") == "checkpoint"
+                or "shelter" in cid.lower()
+                or "clinic" in cid.lower()
+                or "cp_" in cid.lower()
+                or "shelter" in p.get("title", "").lower()
+                or "hospital" in p.get("title", "").lower()
+            )
+            if is_checkpoint:
+                candidates.append({
+                    "recommended_id": cid,
+                    "name": p.get("title") or p.get("name"),
+                    "location": p.get("location"),
+                    "facilities": p.get("facilities", []),
+                    "base_capacity": p.get("base_capacity"),
+                    "score": round(hit.score, 4),
+                    "rationale": f"Alternative safe facility matching resources of {compromised_id} while avoiding hazards related to '{avoid_hazard_text}'."
+                })
+
+        return candidates[0] if candidates else None
+
 
