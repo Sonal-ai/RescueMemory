@@ -1,6 +1,7 @@
 import { ArrowRight, Cloud, Cpu, Database, HeartPulse, MapPin, Radio, ShieldAlert, ShieldCheck, Wifi, Zap } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { Shell, useNodeStatus } from '../components';
+import { Shell } from '../components';
+import { useNodeStatus } from '../hooks/useNodeStatus';
 
 export default function ActivationScreen() {
   const { health, sync } = useNodeStatus();

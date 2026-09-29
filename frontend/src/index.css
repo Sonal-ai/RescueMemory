@@ -25,24 +25,25 @@
 }
 
 :root[data-theme="light"],
+html.light,
 html:not(.dark) {
   color-scheme: light;
-  --bg-app: #f8f6f0; /* Warm elegant cream background */
-  --bg-header: rgba(253, 251, 247, 0.96); /* Warm ivory frosted header */
-  --bg-card: #ffffff; /* Crisp warm white card */
-  --bg-card-elevated: #faf8f4;
-  --bg-field: #ffffff;
-  --border-subtle: #ede9df;
-  --border-default: #ddd8ce;
+  --bg-app: #f4f7fa; /* Elegant bluish cream background */
+  --bg-header: rgba(255, 255, 255, 0.96); /* Crisp frosted header */
+  --bg-card: #ffffff; /* Crisp white card */
+  --bg-card-elevated: #eef4f9; /* Soft bluish cream surface */
+  --bg-field: #f8fafc; /* Shaded text input bar */
+  --border-subtle: #e2e8f0;
+  --border-default: #cbd5e1;
   --border-active: #0284c7;
-  --text-primary: #1c1917; /* Warm deep charcoal (Stone 900) */
-  --text-secondary: #57534e; /* Warm stone text (Stone 600) */
-  --text-muted: #78716c; /* Stone 500 */
-  --map-bg: #f4efe6; /* Warm parchment map background */
-  --map-grid: #ded8cb;
-  --map-road: #c7beae;
-  --map-road-line: #8c8270;
-  --map-label: #44403c;
+  --text-primary: #0f172a; /* Sharp deep slate text (100% visible) */
+  --text-secondary: #475569; /* Balanced slate secondary text */
+  --text-muted: #64748b;
+  --map-bg: #f1f5f9;
+  --map-grid: #e2e8f0;
+  --map-road: #cbd5e1;
+  --map-road-line: #94a3b8;
+  --map-label: #334155;
 }
 
 body {
@@ -274,21 +275,21 @@ html:not(.dark) .app-header {
 :root[data-theme="light"] .settings-dialog,
 html:not(.dark) .settings-dialog {
   background: #ffffff !important;
-  border-color: #ddd8ce !important;
-  color: #1c1917 !important;
-  box-shadow: 0 20px 50px rgba(28, 25, 23, 0.12) !important;
+  border-color: #dbe6f0 !important;
+  color: #0f172a !important;
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.12) !important;
 }
 
 /* Light mode mobile bottom navigation */
 :root[data-theme="light"] nav.fixed,
 html:not(.dark) nav.fixed {
-  background-color: rgba(254, 253, 250, 0.98) !important;
-  border-color: #ede9df !important;
-  box-shadow: 0 -4px 20px rgba(28, 25, 23, 0.05) !important;
+  background-color: rgba(244, 248, 251, 0.98) !important;
+  border-color: #dbe6f0 !important;
+  box-shadow: 0 -4px 20px rgba(15, 23, 42, 0.05) !important;
 }
 :root[data-theme="light"] nav.fixed button,
 html:not(.dark) nav.fixed button {
-  color: #78716c;
+  color: #475569;
 }
 
 /* Form fields in light mode */
@@ -297,37 +298,31 @@ html:not(.dark) nav.fixed button {
 html:not(.dark) textarea.field,
 html:not(.dark) input.field {
   background-color: #ffffff !important;
-  color: #1c1917 !important;
-  border-color: #ddd8ce !important;
+  color: #0f172a !important;
+  border-color: #cbdbe9 !important;
 }
 :root[data-theme="light"] textarea.field::placeholder,
 :root[data-theme="light"] input.field::placeholder,
 html:not(.dark) textarea.field::placeholder,
 html:not(.dark) input.field::placeholder {
-  color: #a8a29e !important;
+  color: #94a3b8 !important;
 }
 
-/* Ensure ALL primary action buttons, active navigation pills, and emergency badges keep vivid colors & crisp WHITE text in Light Mode */
-:root[data-theme="light"] .btn-primary,
-:root[data-theme="light"] .btn-primary *,
-:root[data-theme="light"] .btn-sos-broadcast,
-:root[data-theme="light"] .btn-sos-broadcast *,
-html:not(.dark) .btn-primary,
-html:not(.dark) .btn-primary *,
-html:not(.dark) .btn-sos-broadcast,
-html:not(.dark) .btn-sos-broadcast *,
-[class*="from-red-600"],
-[class*="from-red-600"] *,
-[class*="from-rose-600"],
-[class*="from-rose-600"] *,
-[class*="from-cyan-600"],
-[class*="from-cyan-600"] *,
-[class*="from-emerald-600"],
-[class*="from-emerald-600"] *,
-[class*="from-sky-600"],
-[class*="from-sky-600"] *,
-[class*="from-blue-600"],
-[class*="from-blue-600"] * {
+/* Ensure primary action buttons, active navigation pills, and SOS broadcast buttons keep crisp WHITE text */
+.btn-primary,
+.btn-primary *,
+.btn-sos-broadcast,
+.btn-sos-broadcast *,
+button[class*="from-red-600"],
+button[class*="from-red-600"] *,
+button[class*="from-rose-600"],
+button[class*="from-rose-600"] *,
+button[class*="from-cyan-600"],
+button[class*="from-cyan-600"] *,
+button[class*="from-emerald-600"],
+button[class*="from-emerald-600"] *,
+button[class*="from-sky-600"],
+button[class*="from-sky-600"] * {
   color: #ffffff !important;
 }
 
@@ -357,7 +352,7 @@ html:not(.dark) [class*="from-slate-900"] {
 :root[data-theme="light"] .chat-assistant-bubble,
 html:not(.dark) .chat-assistant-bubble {
   background: #ffffff;
-  color: #1c1917;
+  color: #0f172a;
 }
 :root[data-theme="light"] .chat-assistant-bubble p,
 :root[data-theme="light"] .chat-assistant-bubble span,
@@ -365,7 +360,7 @@ html:not(.dark) .chat-assistant-bubble {
 html:not(.dark) .chat-assistant-bubble p,
 html:not(.dark) .chat-assistant-bubble span,
 html:not(.dark) .chat-assistant-bubble li {
-  color: #292524;
+  color: #1e293b;
 }
 :root[data-theme="light"] .chat-assistant-bubble strong,
 :root[data-theme="light"] .chat-assistant-bubble b,
@@ -375,7 +370,7 @@ html:not(.dark) .chat-assistant-bubble strong,
 html:not(.dark) .chat-assistant-bubble b,
 html:not(.dark) .chat-assistant-bubble h3,
 html:not(.dark) .chat-assistant-bubble h4 {
-  color: #1c1917;
+  color: #0f172a;
   font-weight: 700;
 }
 

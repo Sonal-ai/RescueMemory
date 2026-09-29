@@ -146,27 +146,27 @@ export default function MeshSyncScanner({
   };
 
   return (
-    <div className="flex flex-col gap-5 text-stone-900 dark:text-slate-100">
+    <div className="flex flex-col gap-5 text-slate-900 dark:text-slate-100">
       {/* Top Header */}
-      <div className="bg-white dark:bg-[#0b1626] border border-[#e8e4db] dark:border-slate-800 rounded-3xl p-4 sm:p-5 shadow-xs flex flex-wrap items-center justify-between gap-3">
+      <div className="bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 rounded-3xl p-4 sm:p-5 shadow-xs flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-cyan-600 to-emerald-600 flex items-center justify-center text-white shadow-md shadow-cyan-600/20 shrink-0">
             <Radio size={20} className={scanning || syncingAll ? 'animate-spin' : ''} />
           </div>
           <div>
-            <h2 className="text-base sm:text-lg font-bold tracking-tight text-stone-900 dark:text-slate-100 flex items-center gap-2">
+            <h2 className="text-base sm:text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100 flex items-center gap-2">
               <span>Mesh Sync & Beacon Scanner</span>
               <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
                 Zero-Conf LAN
               </span>
             </h2>
-            <p className="text-xs text-stone-500 dark:text-slate-400 mt-0.5">
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-medium">
               Automatic peer-to-peer discovery on UDP port 8888. No internet or setup required.
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 text-xs font-mono text-stone-500 dark:text-slate-400">
+        <div className="flex items-center gap-2 text-xs font-mono text-slate-500 dark:text-slate-400">
           <Clock size={13} />
           <span>Last scan: {lastScanTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
         </div>
@@ -191,12 +191,12 @@ export default function MeshSyncScanner({
       )}
 
       {/* Tactical Radar Scan Grid Visual */}
-      <div className="bg-white dark:bg-[#0b1626] border border-[#e8e4db] dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xs flex flex-col items-center">
+      <div className="bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xs flex flex-col items-center">
         <div className="text-center mb-4">
-          <span className="text-xs uppercase font-bold tracking-wider text-stone-700 dark:text-slate-300">
+          <span className="text-xs uppercase font-bold tracking-wider text-slate-700 dark:text-slate-300">
             Local Wi-Fi Subnet Radar Scan Grid
           </span>
-          <p className="text-[11px] text-stone-500 dark:text-slate-400 mt-0.5">
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
             Continuously sweeping LAN for responder nodes & survivor hotspots
           </p>
         </div>
@@ -332,9 +332,9 @@ export default function MeshSyncScanner({
       </div>
 
       {/* Discovered Beacons / Peer Devices List */}
-      <div className="bg-white dark:bg-[#0b1626] border border-[#e8e4db] dark:border-slate-800 rounded-3xl p-5 shadow-xs">
+      <div className="bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 rounded-3xl p-5 shadow-xs">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-bold text-stone-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-2">
+          <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-2">
             <Wifi size={16} className="text-emerald-500" />
             <span>Discovered Mesh Nodes ({peers.length})</span>
           </h3>
@@ -358,12 +358,12 @@ export default function MeshSyncScanner({
               return (
                 <div
                   key={peer.node_id}
-                  className="p-4 rounded-2xl border border-[#ede9df] dark:border-slate-800 bg-[#faf8f4] dark:bg-slate-900/60 hover:border-cyan-500 dark:hover:border-cyan-500/80 transition-all flex flex-col justify-between"
+                  className="p-4 rounded-2xl border border-[#dbe6f0] dark:border-slate-800 bg-[#f8fafc] dark:bg-slate-900/60 hover:border-cyan-500 dark:hover:border-cyan-500/80 transition-all flex flex-col justify-between"
                 >
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
-                      <div className="flex items-center gap-2 font-bold text-stone-900 dark:text-slate-100 text-sm">
-                        <span className={`w-2.5 h-2.5 rounded-full ${peer.is_online !== false ? 'bg-emerald-500 animate-pulse' : 'bg-stone-400'}`} />
+                      <div className="flex items-center gap-2 font-bold text-slate-900 dark:text-slate-100 text-sm">
+                        <span className={`w-2.5 h-2.5 rounded-full ${peer.is_online !== false ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
                         <span>{peer.node_id}</span>
                       </div>
                       <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${
@@ -373,11 +373,11 @@ export default function MeshSyncScanner({
                       </span>
                     </div>
 
-                    <p className="text-xs font-mono text-stone-500 dark:text-slate-400 mb-2 truncate">
+                    <p className="text-xs font-mono text-slate-500 dark:text-slate-400 mb-2 truncate">
                       {peer.url || `http://${peer.ip || '127.0.0.1'}:${peer.port || 8001}`}
                     </p>
 
-                    <div className="flex items-center gap-3 text-[11px] text-stone-600 dark:text-slate-400 font-mono mb-3">
+                    <div className="flex items-center gap-3 text-[11px] text-slate-600 dark:text-slate-400 font-mono mb-3">
                       <span>Signal: {peer.distance_m != null ? `~${peer.distance_m}m` : 'Direct LAN'}</span>
                       {peer.seconds_ago != null && (
                         <span>Seen: {peer.seconds_ago}s ago</span>
@@ -408,9 +408,9 @@ export default function MeshSyncScanner({
             })}
           </div>
         ) : (
-          <div className="p-6 rounded-2xl border border-dashed border-[#ddd8ce] dark:border-slate-800 text-center bg-[#faf8f4]/60 dark:bg-slate-900/30">
-            <Radio size={28} className="mx-auto text-stone-400 mb-2 animate-pulse" />
-            <p className="text-xs text-stone-600 dark:text-slate-400 max-w-sm mx-auto">
+          <div className="p-6 rounded-2xl border border-dashed border-[#cbdbe9] dark:border-slate-800 text-center bg-[#f8fafc]/60 dark:bg-slate-900/30">
+            <Radio size={28} className="mx-auto text-slate-400 mb-2 animate-pulse" />
+            <p className="text-xs text-slate-600 dark:text-slate-400 max-w-sm mx-auto">
               No peer beacons found on this subnet yet. Connect to a mobile hotspot or Wi-Fi network where other RescueMemory nodes are running.
             </p>
           </div>
@@ -418,12 +418,12 @@ export default function MeshSyncScanner({
       </div>
 
       {/* Direct IP Fallback Endpoint Card */}
-      <div className="bg-white dark:bg-[#0b1626] border border-[#e8e4db] dark:border-slate-800 rounded-3xl p-5 shadow-xs">
-        <h4 className="text-xs font-bold uppercase tracking-wider text-stone-700 dark:text-slate-300 mb-2 flex items-center gap-1.5">
+      <div className="bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 rounded-3xl p-5 shadow-xs">
+        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-2 flex items-center gap-1.5">
           <ExternalLink size={14} className="text-cyan-500" />
           <span>Manual Direct IP Connect</span>
         </h4>
-        <p className="text-xs text-stone-500 dark:text-slate-400 mb-3">
+        <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
           If zero-conf UDP multicast is disabled by your Wi-Fi router, enter the peer IP address directly to transfer memory.
         </p>
 

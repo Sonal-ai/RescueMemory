@@ -81,8 +81,8 @@ const EMERGENCY_TYPES = [
     severity: 'red',
     visibility: 'responders',
     icon: HeartPulse,
-    badgeBg: 'bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-500/30',
-    selectedStyle: 'border-red-500 bg-red-50 dark:bg-gradient-to-br dark:from-red-950/80 dark:to-[#0e172a] shadow-lg shadow-red-500/10 dark:shadow-red-950/40 ring-2 ring-red-500'
+    badgeBg: 'bg-rose-100 dark:bg-rose-500/20 text-rose-800 dark:text-rose-300 border-rose-200 dark:border-rose-500/30',
+    selectedStyle: 'border-red-500 bg-red-50/90 dark:bg-gradient-to-br dark:from-red-950/80 dark:to-[#0e172a] shadow-md ring-2 ring-red-500/30 text-red-950 dark:text-white'
   },
   {
     id: 'trapped',
@@ -93,8 +93,8 @@ const EMERGENCY_TYPES = [
     severity: 'red',
     visibility: 'responders',
     icon: AlertOctagon,
-    badgeBg: 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-300 border-red-200 dark:border-red-500/30',
-    selectedStyle: 'border-rose-500 bg-rose-50 dark:bg-gradient-to-br dark:from-rose-950/80 dark:to-[#0e172a] shadow-lg shadow-rose-500/10 dark:shadow-rose-950/40 ring-2 ring-rose-500'
+    badgeBg: 'bg-red-100 dark:bg-red-500/20 text-red-800 dark:text-red-300 border-red-200 dark:border-red-500/30',
+    selectedStyle: 'border-rose-500 bg-rose-50/90 dark:bg-gradient-to-br dark:from-rose-950/80 dark:to-[#0e172a] shadow-md ring-2 ring-rose-500/30 text-rose-950 dark:text-white'
   },
   {
     id: 'hazard',
@@ -105,8 +105,8 @@ const EMERGENCY_TYPES = [
     severity: 'yellow',
     visibility: 'public',
     icon: TriangleAlert,
-    badgeBg: 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-500/30',
-    selectedStyle: 'border-amber-500 bg-amber-50 dark:bg-gradient-to-br dark:from-amber-950/80 dark:to-[#0e172a] shadow-lg shadow-amber-500/10 dark:shadow-amber-950/40 ring-2 ring-amber-500'
+    badgeBg: 'bg-amber-100 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-500/30',
+    selectedStyle: 'border-amber-500 bg-amber-50/90 dark:bg-gradient-to-br dark:from-amber-950/80 dark:to-[#0e172a] shadow-md ring-2 ring-amber-500/30 text-amber-950 dark:text-white'
   },
   {
     id: 'supplies',
@@ -117,8 +117,8 @@ const EMERGENCY_TYPES = [
     severity: 'yellow',
     visibility: 'public',
     icon: Droplets,
-    badgeBg: 'bg-cyan-100 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 border-cyan-200 dark:border-cyan-500/30',
-    selectedStyle: 'border-cyan-500 bg-cyan-50 dark:bg-gradient-to-br dark:from-cyan-950/80 dark:to-[#0e172a] shadow-lg shadow-cyan-500/10 dark:shadow-cyan-950/40 ring-2 ring-cyan-500'
+    badgeBg: 'bg-cyan-100 dark:bg-cyan-500/20 text-cyan-800 dark:text-cyan-300 border-cyan-200 dark:border-cyan-500/30',
+    selectedStyle: 'border-cyan-500 bg-cyan-50/90 dark:bg-gradient-to-br dark:from-cyan-950/80 dark:to-[#0e172a] shadow-md ring-2 ring-cyan-500/30 text-cyan-950 dark:text-white'
   }
 ];
 
@@ -693,10 +693,10 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
               className={`relative rounded-2xl border px-4 py-3.5 text-xs font-black flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${
                 isActive
                   ? `${activeStyles[id] || 'bg-red-600 text-white'} scale-[1.01]`
-                  : 'bg-[#ede9df] dark:bg-[#0c1628]/90 border-[#ded8cb] dark:border-slate-800 text-stone-700 dark:text-slate-300 hover:bg-[#e4dfd3] dark:hover:bg-[#111f38] hover:text-stone-900 dark:hover:text-white shadow-xs font-bold'
+                  : 'bg-[#e6f0f7] dark:bg-[#0c1628] border-[#cce0ef] dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-[#d9e8f4] dark:hover:bg-[#111f38] hover:text-slate-900 dark:hover:text-white shadow-xs font-bold'
               }`}
             >
-              <Icon size={17} className={isActive ? 'stroke-[2.5]' : 'stroke-[1.8] text-stone-500 dark:text-slate-400'} />
+              <Icon size={17} className={isActive ? 'stroke-[2.5]' : 'stroke-[1.8] text-slate-500 dark:text-slate-400'} />
               <span className="truncate tracking-wide">{label}</span>
               {hasPing && (
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping absolute top-2.5 right-2.5" />
@@ -750,24 +750,24 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
           )}
 
           {/* Full ChatGPT / Antigravity Style Conversational Assistant Container */}
-          <div className="flex flex-col h-[calc(100dvh-13.5rem)] sm:h-[calc(100vh-270px)] min-h-[460px] max-h-[820px] rounded-3xl border border-[#e8e4db] dark:border-slate-800 bg-white dark:bg-[#08121e] shadow-lg overflow-hidden transition-all">
+          <div className="flex flex-col h-[calc(100dvh-13.5rem)] sm:h-[calc(100vh-270px)] min-h-[460px] max-h-[820px] rounded-3xl border border-[#cfe1f0] dark:border-slate-800 bg-[#f0f5fa] dark:bg-[#08121e] shadow-lg overflow-hidden transition-all">
             {/* Chat Header */}
-            <div className="px-3.5 py-2.5 sm:px-5 sm:py-3.5 border-b border-[#e8e4db] dark:border-slate-800 bg-[#faf8f4] dark:bg-[#0b1626] flex items-center justify-between gap-2.5 shrink-0">
+            <div className="px-3.5 py-2.5 sm:px-5 sm:py-3.5 border-b border-[#cfe1f0] dark:border-slate-800 bg-[#e3eef7] dark:bg-[#0b1626] flex items-center justify-between gap-2.5 shrink-0">
               <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
                 <div className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl bg-gradient-to-tr from-red-600 to-rose-500 flex items-center justify-center text-white shadow-md shadow-red-500/20 shrink-0">
                   <Bot size={18} className="sm:w-5 sm:h-5" />
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5 sm:gap-2">
-                    <h2 className="text-sm sm:text-base font-bold text-stone-900 dark:text-slate-100 truncate">
+                    <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 truncate">
                       RescueMemory Assistant
                     </h2>
-                    <span className="inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-medium px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300/60 dark:border-emerald-700/60 shrink-0">
+                    <span className="inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-300 border border-emerald-300/80 dark:border-emerald-700/60 shrink-0">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                       Offline Active
                     </span>
                   </div>
-                  <p className="text-[11px] text-stone-500 dark:text-slate-400 truncate hidden sm:block">
+                  <p className="text-[11px] text-slate-600 dark:text-slate-400 truncate hidden sm:block font-medium">
                     420 Clinical Guidelines · Qdrant Vector Memory · Zero Cloud Needed
                   </p>
                 </div>
@@ -776,10 +776,10 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
               <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
                 {/* Online / Offline status badge */}
                 <div
-                  className={`hidden sm:inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-xl border font-semibold ${
+                  className={`hidden sm:inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-xl border font-bold ${
                     useAi
-                      ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
-                      : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
+                      ? 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-400 border-emerald-400/40 dark:border-emerald-500/20'
+                      : 'bg-amber-500/15 text-amber-800 dark:text-amber-400 border-amber-400/40 dark:border-amber-500/20'
                   }`}
                   title={useAi ? 'Connected to Internet: Cloud AI answers by default' : 'Offline Mode: Answers synthesized locally from Qdrant Edge Memory'}
                 >
@@ -789,13 +789,13 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                         <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
                       </span>
-                      <Wifi size={12} className="text-emerald-500" />
+                      <Wifi size={12} className="text-emerald-600 dark:text-emerald-500" />
                       <span>Cloud AI Active</span>
                     </>
                   ) : (
                     <>
                       <span className="inline-flex rounded-full h-1.5 w-1.5 bg-amber-500"></span>
-                      <WifiOff size={12} className="text-amber-500" />
+                      <WifiOff size={12} className="text-amber-600 dark:text-amber-500" />
                       <span>Offline Edge Mode</span>
                     </>
                   )}
@@ -806,9 +806,9 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                   type="button"
                   onClick={useGps}
                   title="Click to refresh GPS pin"
-                  className="hidden md:inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-xl border border-[#e8e4db] dark:border-slate-700 bg-white dark:bg-slate-800 text-stone-600 dark:text-slate-300 hover:text-cyan-600 dark:hover:text-cyan-400 font-mono transition-colors"
+                  className="hidden md:inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-xl border border-[#cbdbe9] dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-cyan-700 dark:hover:text-cyan-400 font-mono transition-colors font-semibold"
                 >
-                  <MapPin size={13} className="text-cyan-500" />
+                  <MapPin size={13} className="text-cyan-600 dark:text-cyan-400" />
                   <span>{pin.lat.toFixed(3)}, {pin.lon.toFixed(3)}</span>
                 </button>
 
@@ -817,7 +817,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                   type="button"
                   onClick={clearChat}
                   title="Reset conversation"
-                  className="inline-flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-xl border border-[#e8e4db] dark:border-slate-700 bg-white dark:bg-slate-800 text-stone-600 dark:text-slate-300 hover:text-red-500 dark:hover:text-red-400 transition-colors"
+                  className="inline-flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-xl border border-[#cbdbe9] dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-red-600 dark:hover:text-red-400 transition-colors font-semibold"
                 >
                   <Trash2 size={13} />
                   <span>Clear</span>
@@ -826,7 +826,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
             </div>
 
             {/* Scrollable Message History Area */}
-            <div className="flex-1 overflow-y-auto p-3.5 sm:p-5 space-y-3.5 sm:space-y-4 bg-[#fcfbf9] dark:bg-[#07111e]/70">
+            <div className="flex-1 overflow-y-auto p-3.5 sm:p-5 space-y-3.5 sm:space-y-4 bg-[#edf4fa] dark:bg-[#07111e]/70">
               {messages.map((msg) => {
                 const isUser = msg.role === 'user';
                 return (
@@ -846,7 +846,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                       className={`chat-assistant-bubble transition-all ${
                         isUser
                           ? 'max-w-[85%] sm:max-w-[70%] rounded-2xl p-3 sm:p-3.5 shadow-md bg-gradient-to-r from-cyan-600 via-sky-600 to-blue-600 text-white rounded-tr-xs ml-auto'
-                          : 'max-w-[92%] sm:max-w-[80%] rounded-2xl p-3.5 sm:p-4 shadow-md bg-white dark:bg-gradient-to-b dark:from-[#0d172b] dark:to-[#081120] border border-[#e8e4db] dark:border-cyan-500/15 text-stone-900 dark:text-slate-100 rounded-tl-xs'
+                          : 'max-w-[92%] sm:max-w-[80%] rounded-2xl p-3.5 sm:p-4 shadow-sm bg-white dark:bg-gradient-to-b dark:from-[#0d172b] dark:to-[#081120] border border-[#d3e3f0] dark:border-cyan-500/15 text-slate-900 dark:text-slate-100 rounded-tl-xs'
                       }`}
                     >
                       {/* Header meta */}
@@ -1026,7 +1026,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
             </div>
 
             {/* Quick Emergency Prompt Chips */}
-            <div className="px-3 sm:px-4 py-2 border-t border-[#e8e4db] dark:border-slate-800 bg-[#faf8f4] dark:bg-[#0b1626] shrink-0">
+            <div className="px-3 sm:px-4 py-2 border-t border-[#cfe1f0] dark:border-slate-800 bg-[#e3eef7] dark:bg-[#0b1626] shrink-0">
               <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5 touch-pan-x">
                 {QUICK_PROMPTS.map((q) => {
                   const Icon = q.icon;
@@ -1035,10 +1035,10 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                       type="button"
                       key={q.text}
                       onClick={() => handleQuickPrompt(q.text)}
-                      className={`shrink-0 text-xs py-1.5 px-3 rounded-full border flex items-center gap-1.5 font-semibold transition-all active:scale-95 touch-manipulation ${
+                      className={`shrink-0 text-xs py-1.5 px-3 rounded-full border flex items-center gap-1.5 font-bold transition-all active:scale-95 touch-manipulation ${
                         q.urgent
-                          ? 'border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/60'
-                          : 'border-[#ddd8ce] dark:border-slate-800 bg-[#ede9df] dark:bg-slate-900/60 text-stone-700 dark:text-slate-300 hover:bg-[#e4dfd3] dark:hover:bg-slate-800'
+                          ? 'border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/40 text-red-800 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/60'
+                          : 'border-[#cbdbe9] dark:border-slate-800 bg-[#dce8f3] dark:bg-slate-900/60 text-slate-800 dark:text-slate-300 hover:bg-[#d0e0ec] dark:hover:bg-slate-800'
                       }`}
                     >
                       <Icon size={13} className={q.urgent ? 'text-red-600 dark:text-red-400' : 'text-cyan-600 dark:text-cyan-400'} />
@@ -1050,7 +1050,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
             </div>
 
             {/* Bottom Input Box */}
-            <div className="p-2.5 sm:p-3.5 border-t border-[#e8e4db] dark:border-slate-800 bg-[#faf8f4] dark:bg-[#0b1626] shrink-0 pb-safe">
+            <div className="p-2.5 sm:p-3.5 border-t border-[#cfe1f0] dark:border-slate-800 bg-[#e3eef7] dark:bg-[#0b1626] shrink-0 pb-safe">
               <form onSubmit={onFormSubmit} className="relative flex items-center gap-2">
                 {/* Voice speech-to-text mic trigger */}
                 <button
@@ -1060,16 +1060,16 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                   className={`p-2.5 sm:p-3 rounded-xl border transition-all shrink-0 active:scale-95 touch-manipulation ${
                     isListening
                       ? 'bg-red-600 text-white border-red-500 animate-pulse shadow-md shadow-red-600/40'
-                      : 'bg-[#ede9df] dark:bg-slate-800 text-stone-700 dark:text-slate-300 border-[#ddd8ce] dark:border-slate-700 hover:bg-[#e4dfd3] dark:hover:bg-slate-700'
+                      : 'bg-[#dce8f3] dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-[#cbdbe9] dark:border-slate-700 hover:bg-[#d0e0ec] dark:hover:bg-slate-700'
                   }`}
                 >
                   <Mic size={18} />
                 </button>
 
-                {/* Input box */}
+                {/* Shaded Input text bar */}
                 <input
                   type="text"
-                  className="flex-1 bg-white dark:bg-slate-900 border border-[#dcd7cc] dark:border-slate-700 rounded-xl px-3.5 sm:px-4 py-2.5 sm:py-3 text-sm sm:text-base text-stone-900 dark:text-white placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-red-500 transition-all"
+                  className="flex-1 bg-[#f8fafc] dark:bg-slate-900 border-2 border-[#cbd5e1] dark:border-slate-700 rounded-xl px-3.5 sm:px-4 py-2.5 sm:py-3 text-sm sm:text-base text-slate-900 dark:text-white placeholder:text-slate-500 shadow-inner focus:outline-none focus:ring-2 focus:ring-red-500 focus:bg-white transition-all font-medium"
                   placeholder="Ask emergency question (e.g. Can't walk, severe bleeding, safe water)..."
                   value={text}
                   onChange={(e) => setText(e.target.value)}
@@ -1080,22 +1080,22 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                 <button
                   type="submit"
                   disabled={chatBusy || !text.trim()}
-                  className="p-2.5 sm:p-3 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white font-bold transition-all active:scale-95 shrink-0 shadow-md shadow-red-600/30 touch-manipulation"
+                  className="p-2.5 sm:p-3 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white font-bold transition-all active:scale-95 shrink-0 shadow-md shadow-red-600/30 touch-manipulation cursor-pointer"
                 >
                   <Send size={18} />
                 </button>
               </form>
-              <div className="mt-2 flex flex-wrap items-center justify-between gap-1 text-[11px] text-stone-500 dark:text-slate-400 px-1">
-                <span className="truncate">Runs 100% offline via local Qdrant memory</span>
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-1 text-[11px] text-slate-600 dark:text-slate-400 px-1">
+                <span className="truncate font-medium">Runs 100% offline via local Qdrant memory</span>
                 <label className="flex items-center gap-1.5 cursor-pointer ml-auto">
                   <input
                     type="checkbox"
                     checked={useAi}
                     onChange={(e) => setUseAi(e.target.checked)}
-                    className="rounded border-[#ddd8ce] dark:border-slate-700 text-cyan-600 focus:ring-0"
+                    className="rounded border-[#cbdbe9] dark:border-slate-700 text-cyan-600 focus:ring-0"
                   />
-                  <span className="flex items-center gap-1 text-stone-600 dark:text-slate-400 font-medium">
-                    <Sparkles size={11} className="text-cyan-500" /> Cloud AI Synthesis
+                  <span className="flex items-center gap-1 text-slate-700 dark:text-slate-400 font-bold">
+                    <Sparkles size={11} className="text-cyan-600 dark:text-cyan-400" /> Cloud AI Synthesis
                   </span>
                 </label>
               </div>
@@ -1138,7 +1138,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
           >
             {/* 4 Clear High-Contrast Emergency Situation Tiles */}
             <div className="mb-4">
-              <label className="block text-xs text-stone-700 dark:text-slate-300 font-bold uppercase tracking-wider mb-2.5">
+              <label className="block text-xs text-slate-900 dark:text-slate-200 font-extrabold uppercase tracking-wider mb-2.5">
                 1. What is your immediate emergency?
               </label>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -1162,16 +1162,16 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                       className={`p-3.5 rounded-2xl border text-left transition-all active:scale-[0.98] cursor-pointer ${
                         isSelected
                           ? type.selectedStyle
-                          : 'border-[#ede9df] dark:border-slate-800 bg-[#faf8f4] dark:bg-[#0b1322]/80 hover:bg-[#ede9df] dark:hover:bg-[#0f1b2d] hover:border-[#ddd8ce] dark:hover:border-slate-700 text-stone-800 dark:text-slate-300 shadow-xs'
+                          : 'border-[#dbe6f0] dark:border-slate-800 bg-[#f8fafc] dark:bg-[#0b1322]/80 hover:bg-[#edf5fb] dark:hover:bg-[#0f1b2d] hover:border-[#cbdbe9] dark:hover:border-slate-700 text-slate-800 dark:text-slate-300 shadow-xs'
                       }`}
                     >
                       <div className="flex items-center gap-2.5 mb-1">
                         <div className={`p-2 rounded-xl border ${type.badgeBg}`}>
                           <TypeIcon size={18} />
                         </div>
-                        <span className="font-extrabold text-sm text-stone-900 dark:text-white tracking-tight">{type.title}</span>
+                        <span className="font-extrabold text-sm text-slate-900 dark:text-white tracking-tight">{type.title}</span>
                       </div>
-                      <p className="text-xs text-stone-600 dark:text-slate-400 line-clamp-1 leading-tight ml-0.5">
+                      <p className="text-xs text-slate-600 dark:text-slate-400 line-clamp-1 leading-tight ml-0.5 font-medium">
                         {type.subtitle}
                       </p>
                     </button>
@@ -1184,10 +1184,10 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
             <form onSubmit={submitReport} className="space-y-4">
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs text-stone-700 dark:text-slate-300 font-bold uppercase tracking-wider">
+                  <label className="text-xs text-slate-900 dark:text-slate-200 font-extrabold uppercase tracking-wider">
                     2. Situation Details (Pre-filled, edit if needed)
                   </label>
-                  <span className="text-[10px] text-stone-500 dark:text-slate-400 font-mono">
+                  <span className="text-[10px] text-slate-600 dark:text-slate-400 font-mono font-bold">
                     {(report.text || '').length} chars
                   </span>
                 </div>
@@ -1202,20 +1202,20 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
               </div>
 
               {/* Real-time GPS Location Status Badge */}
-              <div className="rounded-xl bg-[#faf8f4] dark:bg-[#07111e] border border-cyan-500/30 p-3 text-xs text-stone-700 dark:text-slate-300 flex items-center justify-between">
+              <div className="rounded-xl bg-[#eef6fb] dark:bg-[#07111e] border border-cyan-400/50 p-3 text-xs text-slate-800 dark:text-slate-300 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="relative flex h-2 w-2">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-500 opacity-75"></span>
                     <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
                   </span>
-                  <span className="font-mono text-cyan-800 dark:text-cyan-300 font-bold">
+                  <span className="font-mono text-cyan-950 dark:text-cyan-300 font-bold">
                     GPS: {pin.lat.toFixed(5)}, {pin.lon.toFixed(5)} · Offline Lock
                   </span>
                 </div>
                 <button
                   type="button"
                   onClick={useGps}
-                  className="text-cyan-700 dark:text-cyan-400 hover:text-cyan-800 dark:hover:text-cyan-300 text-xs font-bold flex items-center gap-1 transition-colors"
+                  className="text-cyan-700 dark:text-cyan-400 hover:text-cyan-900 dark:hover:text-cyan-300 text-xs font-bold flex items-center gap-1 transition-colors"
                 >
                   <Cross size={13} /> Update GPS
                 </button>
@@ -1233,11 +1233,11 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
               </button>
 
               {/* Optional Collapsed Accordion for Severity, Scope & Map Crosshair */}
-              <div className="pt-2 border-t border-[#ede9df] dark:border-slate-800/80">
+              <div className="pt-2 border-t border-[#dbe6f0] dark:border-slate-800/80">
                 <button
                   type="button"
                   onClick={() => setShowSosDetails(!showSosDetails)}
-                  className="w-full py-2.5 px-3.5 rounded-xl bg-[#ede9df] dark:bg-slate-900/60 hover:bg-[#e4dfd3] dark:hover:bg-slate-800/70 border border-[#ddd8ce] dark:border-slate-800 text-stone-700 dark:text-slate-400 hover:text-stone-900 dark:hover:text-slate-200 text-xs font-bold flex items-center justify-between transition-colors"
+                  className="w-full py-2.5 px-3.5 rounded-xl bg-[#edf4f9] dark:bg-slate-900/60 hover:bg-[#e2edf6] dark:hover:bg-slate-800/70 border border-[#d2e2ef] dark:border-slate-800 text-slate-800 dark:text-slate-400 hover:text-slate-950 dark:hover:text-slate-200 text-xs font-bold flex items-center justify-between transition-colors"
                 >
                   <span className="flex items-center gap-2">
                     <MapPin size={15} className="text-cyan-600 dark:text-cyan-400" />
@@ -1247,10 +1247,10 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                 </button>
 
                 {showSosDetails && (
-                  <div className="mt-3 space-y-3.5 p-4 rounded-2xl bg-[#faf8f4] dark:bg-[#07111e]/90 border border-[#ede9df] dark:border-slate-800 animate-in fade-in">
+                  <div className="mt-3 space-y-3.5 p-4 rounded-2xl bg-[#f8fafc] dark:bg-[#07111e]/90 border border-[#dbe6f0] dark:border-slate-800 animate-in fade-in">
                     {/* Severity Level Buttons */}
                     <div>
-                      <label className="block text-[11px] text-stone-600 dark:text-slate-400 font-bold uppercase tracking-wider mb-1.5">
+                      <label className="block text-[11px] text-slate-700 dark:text-slate-400 font-bold uppercase tracking-wider mb-1.5">
                         Severity Level
                       </label>
                       <div className="grid grid-cols-3 gap-2">
@@ -1267,7 +1267,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                               type="button"
                               onClick={() => setReport({ ...report, severity: s.id })}
                               className={`p-2 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all ${
-                                isSel ? s.activeClass : 'border-[#ddd8ce] dark:border-slate-800 bg-white dark:bg-slate-900/60 text-stone-700 dark:text-slate-400 hover:bg-[#ede9df] dark:hover:bg-slate-800'
+                                isSel ? s.activeClass : 'border-[#cbdbe9] dark:border-slate-800 bg-white dark:bg-slate-900/60 text-slate-700 dark:text-slate-400 hover:bg-[#edf5fb] dark:hover:bg-slate-800'
                               }`}
                             >
                               <SIcon size={13} />
@@ -1280,7 +1280,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
 
                     {/* Visibility Scope */}
                     <div>
-                      <label className="block text-[11px] text-stone-600 dark:text-slate-400 font-bold uppercase tracking-wider mb-1.5">
+                      <label className="block text-[11px] text-slate-700 dark:text-slate-400 font-bold uppercase tracking-wider mb-1.5">
                         Visibility Scope
                       </label>
                       <div className="grid grid-cols-2 gap-2">
@@ -1290,7 +1290,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                           className={`p-2 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all ${
                             report.visibility === 'responders'
                               ? 'border-cyan-500 bg-cyan-600 text-white shadow-sm'
-                              : 'border-[#ddd8ce] dark:border-slate-800 bg-white dark:bg-slate-900/60 text-stone-700 dark:text-slate-400 hover:bg-[#ede9df] dark:hover:bg-slate-800'
+                              : 'border-[#cbdbe9] dark:border-slate-800 bg-white dark:bg-slate-900/60 text-slate-700 dark:text-slate-400 hover:bg-[#edf5fb] dark:hover:bg-slate-800'
                           }`}
                         >
                           <ShieldAlert size={13} />
@@ -1305,7 +1305,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                               ? 'opacity-40 cursor-not-allowed border-slate-200 dark:border-slate-900 bg-slate-100 dark:bg-slate-950 text-slate-400 dark:text-slate-600'
                               : report.visibility === 'public'
                               ? 'border-emerald-500 bg-emerald-600 text-white shadow-sm'
-                              : 'border-[#ddd8ce] dark:border-slate-800 bg-white dark:bg-slate-900/60 text-stone-700 dark:text-slate-400 hover:bg-[#ede9df] dark:hover:bg-slate-800'
+                              : 'border-[#cbdbe9] dark:border-slate-800 bg-white dark:bg-slate-900/60 text-slate-700 dark:text-slate-400 hover:bg-[#edf5fb] dark:hover:bg-slate-800'
                           }`}
                         >
                           <Wifi size={13} />
@@ -1316,7 +1316,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
 
                     {/* Interactive Map Crosshair */}
                     <div className="pt-1">
-                      <label className="block text-[11px] text-slate-600 dark:text-slate-400 font-bold uppercase tracking-wider mb-1.5">
+                      <label className="block text-[11px] text-slate-700 dark:text-slate-400 font-bold uppercase tracking-wider mb-1.5">
                         Tap Map to Place Location Pin
                       </label>
                       <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800">
@@ -1358,7 +1358,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
       {/* ANDROID / MOBILE FIXED BOTTOM NAVIGATION BAR */}
       {/* Thumb-friendly, accessible, ergonomic navigation for smartphones */}
       {/* ========================================================================= */}
-      <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#faf8f5]/95 dark:bg-[#0a1324]/95 border-t border-[#ede9df] dark:border-slate-700/80 backdrop-blur-xl pb-safe shadow-2xl">
+      <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#f4f8fb]/95 dark:bg-[#0a1324]/95 border-t border-[#dbe6f0] dark:border-slate-700/80 backdrop-blur-xl pb-safe shadow-2xl">
         <div className="grid grid-cols-4 h-16">
           {TABS.map(([id, label, Icon]) => {
             const isActive = tab === id;
@@ -1378,7 +1378,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                   window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
                 className={`flex flex-col items-center justify-center gap-1 transition-all active:scale-95 ${
-                  isActive ? `${activeColors[id]} font-black` : 'text-stone-500 dark:text-slate-400 hover:text-stone-900 dark:hover:text-slate-200'
+                  isActive ? `${activeColors[id]} font-black` : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                 }`}
               >
                 <div className="relative">
