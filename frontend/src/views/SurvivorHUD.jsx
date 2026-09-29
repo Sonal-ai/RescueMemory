@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AlertOctagon,
   ArrowRight,
   BookOpen,
+  Bot,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
@@ -24,7 +25,9 @@ import {
   ShieldAlert,
   ShieldCheck,
   Sparkles,
+  Trash2,
   TriangleAlert,
+  User,
   Users,
   Wifi,
   Zap
@@ -46,6 +49,7 @@ import {
 import { Card, Empty, Shell } from '../components';
 import MapPanel from '../MapPanel';
 import SurvivalRadar from '../SurvivalRadar';
+import MarkdownContent from '../components/MarkdownContent';
 
 const DEFAULT_CENTER = { lat: 28.7041, lon: 77.1025 };
 
@@ -92,6 +96,23 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
   const [checkedSteps, setCheckedSteps] = useState({});
   const [isListening, setIsListening] = useState(false);
   const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
+
+  const [messages, setMessages] = useState([
+    {
+      id: 'welcome',
+      role: 'assistant',
+      text: "Hello! I am your **RescueMemory Offline Emergency Assistant**.\n\nI run 100% locally on this device with **420 verified clinical guidelines** and offline sensor memory. How can I help you right now?",
+      timestamp: new Date(),
+      isAi: false
+    }
+  ]);
+  const messagesEndRef = useRef(null);
+
+  useEffect(() => {
+    if (tab === 'ask') {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, tab]);
 
   // Poll survival radar to detect nearest survivor in real-time
   const pinLat = pin?.lat ?? 28.7041;
@@ -310,21 +331,32 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
     }
   };
 
-  // Ask local Qdrant Edge memory
+  // Ask local Qdrant Edge memory with conversational multi-turn thread
   const askQuestion = async (queryText = text) => {
     if (!queryText.trim()) return;
+    const trimmed = queryText.trim();
+    setText('');
     setError('');
     setMessage('');
     setSosSuccess(false);
+
+    // Append user message to chat thread
+    const userMsg = {
+      id: `user_${Date.now()}`,
+      role: 'user',
+      text: trimmed,
+      timestamp: new Date()
+    };
+    setMessages((prev) => [...prev, userMsg]);
     setChatBusy(true);
-    setCheckedSteps({});
+
     try {
       const groupId = setting('groupId');
       const result = await api('/api/chat', {
         method: 'POST',
         group: Boolean(groupId),
         body: {
-          text: queryText,
+          text: trimmed,
           use_ai: useAi,
           survivor_id: setting('reporterId') || 'survivor-1',
           share_location: shareLocation,
@@ -333,12 +365,53 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
         }
       });
       setAnswer(result);
+
+      // Append assistant response to chat thread
+      const asstMsg = {
+        id: `asst_${Date.now()}`,
+        role: 'assistant',
+        text: result.ai_answer || result.local_answer || "No verified procedure matched your query.",
+        ai_answer: result.ai_answer,
+        local_answer: result.local_answer,
+        suggested_action: result.suggested_action,
+        cards: result.cards,
+        memory_hits: result.memory_hits,
+        timestamp: new Date(),
+        isAi: Boolean(result.ai_answer),
+        score: result.cards?.[0]?.score
+      };
+      setMessages((prev) => [...prev, asstMsg]);
+
       if (shareLocation) refreshMap();
     } catch (err) {
       setError(err.message);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `err_${Date.now()}`,
+          role: 'assistant',
+          isError: true,
+          text: `⚠️ **Unable to retrieve guidance:** ${err.message}. Check your local edge memory connection.`,
+          timestamp: new Date()
+        }
+      ]);
     } finally {
       setChatBusy(false);
     }
+  };
+
+  const clearChat = () => {
+    setMessages([
+      {
+        id: `welcome_${Date.now()}`,
+        role: 'assistant',
+        text: "Chat cleared. What emergency assistance or survival guidance do you need?",
+        timestamp: new Date(),
+        isAi: false
+      }
+    ]);
+    setAnswer(null);
+    setError('');
   };
 
   const onFormSubmit = (event) => {
@@ -347,7 +420,6 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
   };
 
   const handleQuickPrompt = (promptText) => {
-    setText(promptText);
     askQuestion(promptText);
   };
 
@@ -514,21 +586,21 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
     >
       {/* Global Status & Alerts */}
       {error && (
-        <div role="alert" className="mb-4 p-4 rounded-2xl border border-red-800/80 bg-red-950/40 text-red-200 text-sm flex items-center justify-between shadow-lg shadow-red-950/20">
+        <div role="alert" className="mb-4 p-4 rounded-2xl border border-red-200 dark:border-red-800/80 bg-red-50 dark:bg-red-950/40 text-red-800 dark:text-red-200 text-sm flex items-center justify-between shadow-sm">
           <div className="flex items-center gap-2.5">
-            <TriangleAlert size={18} className="shrink-0 text-red-400" />
+            <TriangleAlert size={18} className="shrink-0 text-red-500 dark:text-red-400" />
             <span>{error}</span>
           </div>
-          <button onClick={() => setError('')} className="text-xs text-red-300 hover:underline font-semibold ml-2">Dismiss</button>
+          <button onClick={() => setError('')} className="text-xs text-red-600 dark:text-red-300 hover:underline font-semibold ml-2">Dismiss</button>
         </div>
       )}
       {message && (
-        <div role="status" className="mb-4 p-4 rounded-2xl border border-emerald-800/80 bg-emerald-950/40 text-emerald-200 text-sm flex items-center justify-between shadow-lg shadow-emerald-950/20">
+        <div role="status" className="mb-4 p-4 rounded-2xl border border-emerald-200 dark:border-emerald-800/80 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 text-sm flex items-center justify-between shadow-sm">
           <div className="flex items-center gap-2.5">
-            <CheckCircle2 size={18} className="shrink-0 text-emerald-400" />
+            <CheckCircle2 size={18} className="shrink-0 text-emerald-500 dark:text-emerald-400" />
             <span>{message}</span>
           </div>
-          <button onClick={() => setMessage('')} className="text-xs text-emerald-300 hover:underline font-semibold ml-2">Dismiss</button>
+          <button onClick={() => setMessage('')} className="text-xs text-emerald-600 dark:text-emerald-300 hover:underline font-semibold ml-2">Dismiss</button>
         </div>
       )}
 
@@ -538,14 +610,14 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
         <button
           type="button"
           onClick={() => { setTab('compass'); setError(''); setMessage(''); }}
-          className={`p-3.5 sm:p-4 rounded-2xl border text-left transition-all active:scale-98 flex items-center justify-between gap-3 shadow-md ${
+          className={`p-3.5 sm:p-4 rounded-2xl border text-left transition-all active:scale-98 flex items-center justify-between gap-3 shadow-sm ${
             tab === 'compass'
-              ? 'bg-gradient-to-r from-red-600 to-rose-600 text-white border-red-500 shadow-red-500/25 ring-2 ring-red-400'
-              : 'bg-gradient-to-r from-red-950/40 to-[#0b1626] border-red-800/60 hover:border-red-500 text-slate-100 hover:text-white'
+              ? 'bg-gradient-to-r from-red-600 to-rose-600 text-white border-red-500 shadow-md ring-2 ring-red-400'
+              : 'bg-white dark:bg-[#0b1626] border-slate-200 dark:border-slate-800 hover:border-red-500 text-slate-900 dark:text-slate-100'
           }`}
         >
           <div className="flex items-center gap-3 min-w-0">
-            <div className="p-2.5 rounded-xl bg-red-600 text-white shrink-0 shadow-md shadow-red-600/40">
+            <div className="p-2.5 rounded-xl bg-red-600 text-white shrink-0 shadow-md shadow-red-600/30">
               <Crosshair size={22} className={nearestCasualty ? 'animate-pulse' : ''} />
             </div>
             <div className="truncate">
@@ -556,19 +628,19 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                     Target Locked
                   </span>
                 ) : (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono">
                     360° Compass
                   </span>
                 )}
               </div>
-              <p className="text-xs text-red-300/80 truncate mt-0.5">
+              <p className="text-xs text-slate-500 dark:text-red-300/80 truncate mt-0.5">
                 {nearestCasualty
                   ? `${nearestCasualty.name || 'Casualty'} · ${nearestCasualty.distance_m}m ${nearestCasualty.cardinal} (${nearestCasualty.bearing_deg}°)`
                   : 'Point 360° survival compass & radar to locate injured'}
               </p>
             </div>
           </div>
-          <ArrowRight size={18} className="shrink-0 text-red-400" />
+          <ArrowRight size={18} className="shrink-0 text-red-500" />
         </button>
 
         {/* Button 2: Sync with Nearest Beacon */}
@@ -576,10 +648,10 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
           type="button"
           disabled={syncingBeacon}
           onClick={handleSyncNearestBeacon}
-          className="p-3.5 sm:p-4 rounded-2xl border border-cyan-800/60 bg-gradient-to-r from-cyan-950/40 to-[#0b1626] hover:border-cyan-500 text-slate-100 hover:text-white text-left transition-all active:scale-98 flex items-center justify-between gap-3 shadow-md"
+          className="p-3.5 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0b1626] hover:border-cyan-500 text-slate-900 dark:text-slate-100 text-left transition-all active:scale-98 flex items-center justify-between gap-3 shadow-sm"
         >
           <div className="flex items-center gap-3 min-w-0">
-            <div className="p-2.5 rounded-xl bg-cyan-600 text-white shrink-0 shadow-md shadow-cyan-600/40">
+            <div className="p-2.5 rounded-xl bg-cyan-600 text-white shrink-0 shadow-md shadow-cyan-600/30">
               {syncingBeacon ? (
                 <RefreshCw size={22} className="animate-spin" />
               ) : (
@@ -594,19 +666,19 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                     {peers.length} Online
                   </span>
                 ) : (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono">
                     Auto-Mesh
                   </span>
                 )}
               </div>
-              <p className="text-xs text-cyan-300/80 truncate mt-0.5">
+              <p className="text-xs text-slate-500 dark:text-cyan-300/80 truncate mt-0.5">
                 {peers.length > 0
                   ? `Nearest: ${peers[0].node_id} (~${peers[0].distance_m ?? 0}m away)`
                   : '1-tap peer exchange over Wi-Fi / hotspot (UDP 8888)'}
               </p>
             </div>
           </div>
-          <Zap size={18} className="shrink-0 text-cyan-400" />
+          <Zap size={18} className="shrink-0 text-cyan-500" />
         </button>
       </div>
 
@@ -620,8 +692,8 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
               onClick={() => { setTab(id); setError(''); setMessage(''); }}
               className={`rounded-2xl border px-3 py-3 text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
                 isActive
-                  ? 'bg-red-500 text-white border-red-600 shadow-md shadow-red-500/25 scale-[1.01]'
-                  : 'bg-[#091424] border-slate-800 text-slate-300 hover:border-slate-700 hover:text-white'
+                  ? 'bg-red-600 text-white border-red-600 shadow-md shadow-red-500/25 scale-[1.01]'
+                  : 'bg-white dark:bg-[#091424] border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               <Icon size={16} />
@@ -632,7 +704,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
       </div>
 
       {/* ========================================================================= */}
-      {/* TAB 1: ASK & EMERGENCY CLINICAL TRIAGE */}
+      {/* TAB 1: CONVERSATIONAL ASSISTANT & EMERGENCY CLINICAL CHAT */}
       {/* ========================================================================= */}
       {tab === 'ask' && (
         <div className="space-y-4">
@@ -640,25 +712,25 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
           {nearestCasualty && (
             <div
               onClick={() => setTab('compass')}
-              className="p-4 sm:p-5 rounded-3xl border-2 border-red-500 bg-gradient-to-r from-red-950/60 to-[#0b1626] cursor-pointer hover:border-red-400 transition-all shadow-xl shadow-red-950/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 group"
+              className="p-3.5 sm:p-4 rounded-2xl border-2 border-red-500 bg-red-50/80 dark:bg-red-950/40 cursor-pointer hover:border-red-400 transition-all shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3 group"
             >
               <div className="flex items-start sm:items-center gap-3.5">
-                <div className="p-3 rounded-2xl bg-red-600 text-white shrink-0 shadow-lg shadow-red-600/40 animate-pulse">
-                  <Compass size={24} />
+                <div className="p-2.5 rounded-xl bg-red-600 text-white shrink-0 shadow-md shadow-red-600/40 animate-pulse">
+                  <Compass size={22} />
                 </div>
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-red-600 text-white">
                       Nearest Survivor Detected
                     </span>
-                    <span className="text-xs font-mono font-bold text-red-300">
+                    <span className="text-xs font-mono font-bold text-red-700 dark:text-red-300">
                       {nearestCasualty.distance_m}m · {nearestCasualty.cardinal} ({String(nearestCasualty.bearing_deg || 0).padStart(3, '0')}°)
                     </span>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono">
                       Qdrant Synced
                     </span>
                   </div>
-                  <p className="text-sm sm:text-base font-black text-slate-100 mt-1 line-clamp-1 group-hover:text-red-200 transition-colors">
+                  <p className="text-sm font-bold text-slate-900 dark:text-slate-100 mt-1 line-clamp-1 group-hover:text-red-600 dark:group-hover:text-red-300 transition-colors">
                     {nearestCasualty.name || 'Casualty in distress'} — {nearestCasualty.text}
                   </p>
                 </div>
@@ -666,7 +738,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); setTab('compass'); }}
-                className="btn-primary text-xs px-4 py-2.5 shrink-0 self-start sm:self-auto"
+                className="btn-primary text-xs px-3.5 py-2 shrink-0 self-start sm:self-auto"
               >
                 <span>360° Compass</span>
                 <ArrowRight size={14} />
@@ -674,422 +746,314 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
             </div>
           )}
 
-          {/* Reassuring Calm Greeting & 3 Big Panic Action Tiles */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <button
-              type="button"
-              onClick={() => handleQuickPrompt("How do I stop severe bleeding from a deep wound?")}
-              className="p-4 rounded-2xl border border-red-900/60 bg-red-950/30 hover:bg-red-900/40 text-left transition-all active:scale-98 shadow-sm group"
-            >
-              <div className="p-2.5 rounded-xl bg-red-600 text-white w-fit mb-2.5 shadow-md shadow-red-600/30">
-                <HeartPulse size={20} />
+          {/* Full ChatGPT / Antigravity Style Conversational Assistant Container */}
+          <div className="flex flex-col h-[700px] max-h-[80vh] rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#08121e] shadow-lg overflow-hidden">
+            {/* Chat Header */}
+            <div className="px-4 py-3 sm:px-5 sm:py-3.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/90 dark:bg-[#0b1626] flex items-center justify-between gap-3 shrink-0">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-red-600 to-rose-500 flex items-center justify-center text-white shadow-md shadow-red-500/20 shrink-0">
+                  <Bot size={20} />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white truncate">
+                      RescueMemory Assistant
+                    </h2>
+                    <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300/60 dark:border-emerald-700/60 shrink-0">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      Offline Edge Active
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                    420 Clinical Guidelines · Qdrant Vector Memory · Zero Cloud Needed
+                  </p>
+                </div>
               </div>
-              <div className="text-sm font-bold text-red-200 group-hover:text-white">
-                Medical First Aid
-              </div>
-              <p className="text-xs text-red-300/80 mt-1 leading-relaxed">
-                Severe bleeding, CPR, burns, broken bones, trauma care.
-              </p>
-            </button>
 
-            <button
-              type="button"
-              onClick={() => setTab('compass')}
-              className="p-4 rounded-2xl border border-emerald-900/60 bg-emerald-950/30 hover:bg-emerald-900/40 text-left transition-all active:scale-98 shadow-sm group"
-            >
-              <div className="p-2.5 rounded-xl bg-emerald-600 text-white w-fit mb-2.5 shadow-md shadow-emerald-600/30">
-                <Compass size={20} />
-              </div>
-              <div className="text-sm font-bold text-emerald-200 group-hover:text-white">
-                Safe Shelter & Water
-              </div>
-              <p className="text-xs text-emerald-300/80 mt-1 leading-relaxed">
-                Direct 360° compass navigation to nearest verified shelter.
-              </p>
-            </button>
+              <div className="flex items-center gap-2 shrink-0">
+                {/* GPS location pill */}
+                <button
+                  type="button"
+                  onClick={useGps}
+                  title="Click to refresh GPS pin"
+                  className="hidden sm:inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-cyan-500 dark:hover:text-cyan-400 font-mono transition-colors"
+                >
+                  <MapPin size={13} className="text-cyan-500" />
+                  <span>{pin.lat.toFixed(3)}, {pin.lon.toFixed(3)}</span>
+                </button>
 
-            <button
-              type="button"
-              onClick={() => {
-                setReport({
-                  kind: 'incident',
-                  text: "Survivor cannot walk and requests immediate rescue assistance.",
-                  entity_id: '',
-                  status: 'needs_help',
-                  severity: 'red',
-                  visibility: 'responders'
-                });
-                setTab('report');
-              }}
-              className="p-4 rounded-2xl border border-amber-900/60 bg-amber-950/30 hover:bg-amber-900/40 text-left transition-all active:scale-98 shadow-sm group"
-            >
-              <div className="p-2.5 rounded-xl bg-amber-600 text-white w-fit mb-2.5 shadow-md shadow-amber-600/30">
-                <AlertOctagon size={20} />
+                {/* Clear chat button */}
+                <button
+                  type="button"
+                  onClick={clearChat}
+                  title="Reset conversation"
+                  className="inline-flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-red-500 dark:hover:text-red-400 transition-colors"
+                >
+                  <Trash2 size={13} />
+                  <span className="hidden md:inline">Clear</span>
+                </button>
               </div>
-              <div className="text-sm font-bold text-amber-200 group-hover:text-white">
-                Cannot Walk / Trapped
-              </div>
-              <p className="text-xs text-amber-300/80 mt-1 leading-relaxed">
-                Dispatch 1-tap emergency SOS to nearby volunteer responders.
-              </p>
-            </button>
-          </div>
+            </div>
 
-          <div className="grid lg:grid-cols-[1.1fr_.9fr] gap-6">
-            <Card
-              title="Ask Offline Memory or Trigger SOS"
-              subtitle="Enter your symptoms, disaster situation, or needed emergency guidance."
-            >
-            <form onSubmit={onFormSubmit} className="space-y-4">
-              <div className="relative">
-                <textarea
-                  className="field min-h-32 text-base leading-relaxed pr-12 pt-3"
-                  placeholder="Ask in plain language... e.g. 'I can't walk and need help', 'Severe leg cut bleeding fast', 'Where is safe drinking water?'"
-                  value={text}
-                  onChange={(event) => setText(event.target.value)}
-                  required
-                  minLength={2}
-                />
+            {/* Scrollable Message History Area */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 sm:space-y-5 bg-slate-50/50 dark:bg-[#07111e]/70">
+              {messages.map((msg) => {
+                const isUser = msg.role === 'user';
+                return (
+                  <div
+                    key={msg.id}
+                    className={`flex items-start gap-3 ${isUser ? 'justify-end' : 'justify-start'}`}
+                  >
+                    {/* Assistant Avatar */}
+                    {!isUser && (
+                      <div className="h-8 w-8 rounded-xl bg-gradient-to-tr from-cyan-600 to-blue-600 flex items-center justify-center text-white shadow-md shadow-cyan-600/20 shrink-0 mt-0.5">
+                        <Bot size={16} />
+                      </div>
+                    )}
+
+                    {/* Message Bubble Container */}
+                    <div
+                      className={`max-w-[88%] sm:max-w-[78%] rounded-2xl p-4 shadow-sm transition-all ${
+                        isUser
+                          ? 'bg-red-600 text-white rounded-tr-xs'
+                          : 'bg-white dark:bg-[#0b1626] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-tl-xs'
+                      }`}
+                    >
+                      {/* Header meta */}
+                      <div className="flex items-center justify-between gap-3 mb-1.5 text-[11px] opacity-75">
+                        <span className="font-semibold">
+                          {isUser ? 'You' : msg.isAi ? 'Cloud AI Response' : 'RescueMemory Edge RAG'}
+                        </span>
+                        <span className="font-mono">
+                          {msg.timestamp ? formatTime(msg.timestamp) : ''}
+                        </span>
+                      </div>
+
+                      {/* Message Body with rich Markdown parsing */}
+                      <div className={isUser ? 'text-sm text-white font-medium whitespace-pre-wrap' : 'text-sm'}>
+                        {isUser ? (
+                          msg.text
+                        ) : (
+                          <MarkdownContent content={msg.text} />
+                        )}
+                      </div>
+
+                      {/* If Urgent SOS Action is suggested */}
+                      {msg.suggested_action?.kind === 'sos' && (
+                        <div className="mt-3.5 p-3.5 rounded-xl border border-red-300 dark:border-red-800/80 bg-red-50 dark:bg-red-950/40 text-slate-900 dark:text-red-100">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-red-600 text-white">
+                              PRIORITY 1 · IMMEDIATE
+                            </span>
+                            <span className="text-xs text-red-700 dark:text-red-300 font-mono">
+                              GPS: {pin.lat.toFixed(4)}, {pin.lon.toFixed(4)}
+                            </span>
+                          </div>
+                          <p className="text-xs text-red-900 dark:text-red-200 mb-3">
+                            Mobility assistance needed. Tap below to log emergency SOS and broadcast to nearby responder nodes.
+                          </p>
+                          <button
+                            onClick={() => saveSosToLocalDatabase()}
+                            disabled={savingSos || sosSuccess}
+                            className={`w-full py-2.5 px-3 rounded-xl font-bold flex items-center justify-center gap-2 text-xs transition-all active:scale-98 ${
+                              sosSuccess
+                                ? 'bg-emerald-600 text-white shadow-md cursor-default'
+                                : 'bg-red-600 hover:bg-red-500 text-white shadow-md'
+                            }`}
+                          >
+                            {savingSos ? (
+                              <>
+                                <RefreshCw size={14} className="animate-spin" />
+                                <span>Logging SOS to Qdrant...</span>
+                              </>
+                            ) : sosSuccess ? (
+                              <>
+                                <CheckCircle2 size={16} />
+                                <span>SOS Active & Alerted Responders</span>
+                              </>
+                            ) : (
+                              <>
+                                <Send size={14} />
+                                <span>1-Tap Save to Qdrant & Broadcast SOS</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Action Steps Checklist */}
+                      {msg.cards?.[0]?.steps?.length > 0 && (
+                        <div className="mt-3.5 pt-3 border-t border-slate-200 dark:border-slate-800">
+                          <p className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-2 flex items-center gap-1.5">
+                            <CheckCircle2 size={13} className="text-emerald-500" />
+                            <span>Checklist (Tap to mark done):</span>
+                          </p>
+                          <div className="space-y-1.5">
+                            {msg.cards[0].steps.map((step, idx) => {
+                              const isDone = !!checkedSteps[idx];
+                              return (
+                                <label
+                                  key={idx}
+                                  className={`flex items-start gap-2.5 p-2 rounded-lg border text-xs cursor-pointer transition-all ${
+                                    isDone
+                                      ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 line-through opacity-75'
+                                      : 'bg-slate-50 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:border-slate-300 dark:hover:border-slate-700'
+                                  }`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isDone}
+                                    onChange={(e) =>
+                                      setCheckedSteps({ ...checkedSteps, [idx]: e.target.checked })
+                                    }
+                                    className="mt-0.5 rounded border-slate-300 dark:border-slate-700 text-emerald-600 focus:ring-0"
+                                  />
+                                  <span className="leading-snug">{step}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Warning Banner */}
+                      {msg.cards?.[0]?.warnings?.length > 0 && (
+                        <div className="mt-3 p-2.5 rounded-xl border border-red-200 dark:border-red-800/80 bg-red-50 dark:bg-red-950/30 text-red-800 dark:text-red-200 text-xs flex items-start gap-2">
+                          <TriangleAlert size={14} className="text-red-500 shrink-0 mt-0.5" />
+                          <div className="leading-relaxed">
+                            <span className="font-bold">CRITICAL WARNING: </span>
+                            <span>{msg.cards[0].warnings.join(' ')}</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Collapsible Verified Clinical Evidence & Vector Hits */}
+                      {msg.cards?.length > 0 && (
+                        <details className="mt-3 text-xs group/details">
+                          <summary className="cursor-pointer text-[11px] font-semibold text-slate-500 dark:text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-400 flex items-center gap-1 select-none">
+                            <ShieldCheck size={12} className="text-cyan-500" />
+                            <span>View Grounded Clinical Sources ({msg.cards.length} guidelines)</span>
+                          </summary>
+                          <div className="mt-2 space-y-2 pl-2 border-l-2 border-slate-200 dark:border-slate-800">
+                            {msg.cards.map((card, cIdx) => (
+                              <div key={card.id || cIdx} className="p-2 rounded-lg bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800">
+                                <div className="font-bold text-slate-800 dark:text-slate-200 text-[11px]">
+                                  [G{cIdx + 1}] {card.title}
+                                </div>
+                                <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">{card.summary}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      )}
+                    </div>
+
+                    {/* User Avatar */}
+                    {isUser && (
+                      <div className="h-8 w-8 rounded-xl bg-slate-200 dark:bg-slate-800 flex items-center justify-center text-slate-700 dark:text-slate-300 shrink-0 mt-0.5">
+                        <User size={16} />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* Typing indicator when assistant is processing */}
+              {chatBusy && (
+                <div className="flex items-start gap-3">
+                  <div className="h-8 w-8 rounded-xl bg-gradient-to-tr from-cyan-600 to-blue-600 flex items-center justify-center text-white shadow-md shadow-cyan-600/20 shrink-0 mt-0.5">
+                    <Bot size={16} />
+                  </div>
+                  <div className="bg-white dark:bg-[#0b1626] border border-slate-200 dark:border-slate-800 rounded-2xl rounded-tl-xs p-3.5 shadow-sm">
+                    <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                      <RefreshCw size={14} className="animate-spin text-cyan-500" />
+                      <span>Searching offline Qdrant vectors & clinical memory...</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Scroll anchor */}
+              <div ref={messagesEndRef} />
+            </div>
+
+            {/* Quick Emergency Prompt Chips */}
+            <div className="px-3 sm:px-4 py-2 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0b1626] shrink-0">
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1">
+                {QUICK_PROMPTS.map((q) => {
+                  const Icon = q.icon;
+                  return (
+                    <button
+                      type="button"
+                      key={q.text}
+                      onClick={() => handleQuickPrompt(q.text)}
+                      className={`shrink-0 text-xs py-1.5 px-3 rounded-full border flex items-center gap-1.5 font-semibold transition-all active:scale-95 ${
+                        q.urgent
+                          ? 'border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/60'
+                          : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      <Icon size={13} className={q.urgent ? 'text-red-600 dark:text-red-400' : 'text-cyan-600 dark:text-cyan-400'} />
+                      <span>{q.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Bottom Input Box */}
+            <div className="p-3 sm:p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0b1626] shrink-0">
+              <form onSubmit={onFormSubmit} className="relative flex items-center gap-2">
                 {/* Voice speech-to-text mic trigger */}
                 <button
                   type="button"
                   onClick={toggleSpeechRecognition}
                   title={isListening ? "Listening... click to stop" : "Voice input (Dictate emergency)"}
-                  className={`absolute right-3 bottom-3 p-2.5 rounded-xl border transition-all ${
+                  className={`p-2.5 rounded-xl border transition-all shrink-0 ${
                     isListening
-                      ? 'bg-red-600 text-white border-red-500 animate-pulse shadow-lg shadow-red-600/40'
-                      : 'bg-slate-800/80 text-slate-300 border-slate-700 hover:text-white hover:bg-slate-700'
+                      ? 'bg-red-600 text-white border-red-500 animate-pulse shadow-md shadow-red-600/40'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700'
                   }`}
                 >
-                  <Mic size={17} />
+                  <Mic size={18} />
                 </button>
-              </div>
 
-              {/* Instant Emergency Prompt Chips */}
-              <div>
-                <p className="text-xs text-slate-400 font-semibold mb-2 flex items-center gap-1.5">
-                  <Zap size={13} className="text-amber-400" />
-                  <span>Instant 1-Tap Emergency Actions:</span>
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {QUICK_PROMPTS.map((q) => {
-                    const Icon = q.icon;
-                    return (
-                      <button
-                        type="button"
-                        key={q.text}
-                        onClick={() => handleQuickPrompt(q.text)}
-                        className={`text-left text-xs py-2.5 px-3.5 rounded-xl border flex items-center gap-2.5 font-bold transition-all active:scale-98 ${
-                          q.urgent
-                            ? 'border-red-800/80 bg-red-950/30 text-red-300 hover:bg-red-900/40 hover:border-red-600 shadow-sm'
-                            : 'btn-secondary text-slate-200'
-                        }`}
-                      >
-                        <Icon size={16} className={q.urgent ? 'text-red-400 shrink-0' : 'text-cyan-400 shrink-0'} />
-                        <span className="truncate">{q.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+                {/* Input box */}
+                <input
+                  type="text"
+                  className="flex-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500"
+                  placeholder="Ask emergency question (e.g. Can't walk, severe bleeding, safe water)..."
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  disabled={chatBusy}
+                />
 
-              {/* Tactical Context Strip: Location & Optional AI Enhancement */}
-              <div className="rounded-xl bg-[#07111e] border border-slate-800/80 p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-300">
-                <div className="flex items-center gap-2">
-                  <MapPin size={14} className="text-cyan-400 shrink-0" />
-                  <span className="font-mono">Pin: {pin.lat.toFixed(4)}, {pin.lon.toFixed(4)}</span>
-                  <button
-                    type="button"
-                    onClick={useGps}
-                    className="text-cyan-300 hover:underline flex items-center gap-1 ml-1.5 font-semibold"
-                  >
-                    <Cross size={12} /> Sync GPS
-                  </button>
-                </div>
-                <div className="flex items-center gap-3">
-                  <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={shareLocation}
-                      onChange={(e) => setShareLocation(e.target.checked)}
-                      className="rounded border-slate-700 bg-slate-900 text-red-500 focus:ring-0"
-                    />
-                    <span className="font-medium">Include Coordinates</span>
-                  </label>
-                  <label className="flex items-center gap-1.5 cursor-pointer" title="Synthesize with Gemini when cloud API is available">
-                    <input
-                      type="checkbox"
-                      checked={useAi}
-                      onChange={(e) => setUseAi(e.target.checked)}
-                      className="rounded border-slate-700 bg-slate-900 text-cyan-500 focus:ring-0"
-                    />
-                    <span className="flex items-center gap-1 font-medium">
-                      <Sparkles size={12} className="text-cyan-400" /> Cloud AI
-                    </span>
-                  </label>
-                </div>
-              </div>
-
-              {/* Search / Triage Button */}
-              <button
-                disabled={chatBusy}
-                className="btn-primary w-full py-3.5 text-base tracking-wide"
-              >
-                {chatBusy ? (
-                  <>
-                    <RefreshCw size={18} className="animate-spin" />
-                    <span>Searching Qdrant Edge Memory…</span>
-                  </>
-                ) : (
-                  <>
-                    <span>Query Offline Survival Memory</span>
-                    <ArrowRight size={18} />
-                  </>
-                )}
-              </button>
-            </form>
-          </Card>
-
-          {/* Right Column: Answers, Guidance, and Emergency Action Cards */}
-          <div className="space-y-4">
-            {!answer && (
-              <Card title="Grounded Offline Knowledge">
-                <Empty icon={BookOpen}>
-                  Type a question or tap an emergency prompt to retrieve clinical procedures and real-time hazard reports from this edge node.
-                </Empty>
-              </Card>
-            )}
-
-            {answer && (
-              <>
-                {/* 1. URGENT SOS ACTION CARD: Appears when user says 'can't walk' or indicates distress */}
-                {answer.suggested_action?.kind === 'sos' && (
-                  <div className="rounded-3xl border-2 border-red-500 bg-gradient-to-b from-red-950/60 to-[#0b1626] p-5 sm:p-6 shadow-xl shadow-red-950/40">
-                    <div className="flex items-start gap-3.5">
-                      <div className="p-2.5 rounded-2xl bg-red-600 text-white shrink-0 mt-0.5 animate-pulse shadow-lg shadow-red-600/50">
-                        <AlertOctagon size={26} />
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-red-600 text-white">
-                            PRIORITY 1 · IMMEDIATE
-                          </span>
-                          <span className="text-xs text-red-300/80 font-mono">
-                            {pin.lat.toFixed(4)}, {pin.lon.toFixed(4)}
-                          </span>
-                        </div>
-                        <h3 className="text-lg sm:text-xl font-black text-red-100 mt-1">
-                          Mobility Assistance SOS Required
-                        </h3>
-                        <p className="text-xs sm:text-sm text-red-200/90 mt-1 leading-relaxed">
-                          You reported being unable to walk or trapped. Dispatching an emergency SOS alerts all nearby volunteer and medical responder nodes via local Wi-Fi peer relay.
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Quick 1-Tap SOS Action Buttons */}
-                    <div className="mt-5 space-y-2.5">
-                      <button
-                        onClick={() => saveSosToLocalDatabase()}
-                        disabled={savingSos || sosSuccess}
-                        className={`w-full py-4 px-4 rounded-2xl font-black flex items-center justify-center gap-2 text-sm sm:text-base transition-all active:scale-98 ${
-                          sosSuccess
-                            ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/40 cursor-default'
-                            : 'bg-red-600 hover:bg-red-500 text-white shadow-xl shadow-red-600/40 hover:shadow-red-500/50'
-                        }`}
-                      >
-                        {savingSos ? (
-                          <>
-                            <RefreshCw size={18} className="animate-spin" />
-                            <span>Recording in Qdrant Memory…</span>
-                          </>
-                        ) : sosSuccess ? (
-                          <>
-                            <CheckCircle2 size={20} />
-                            <span>SOS Logged to Qdrant & Alerted Responders</span>
-                          </>
-                        ) : (
-                          <>
-                            <Send size={18} />
-                            <span>1-Tap Save to Local Database & Alert Responders</span>
-                          </>
-                        )}
-                      </button>
-
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => { setTab('map'); refreshMap(); }}
-                          className="btn-secondary text-xs py-2.5 rounded-xl flex items-center justify-center gap-1.5"
-                        >
-                          <Navigation size={14} className="text-cyan-400" />
-                          <span>Show Safe Shelters</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => followAction(answer.suggested_action)}
-                          className="btn-secondary text-xs py-2.5 rounded-xl flex items-center justify-center gap-1.5"
-                        >
-                          <ShieldAlert size={14} className="text-amber-400" />
-                          <span>Detailed Triage Form</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* 2. PRIMARY CLINICAL ANSWER CARD */}
-                <Card
-                  title="Verified Survival Procedure"
-                  subtitle="Retrieved via in-process Qdrant Edge semantic vectors matching symptoms and available materials."
+                {/* Send button */}
+                <button
+                  type="submit"
+                  disabled={chatBusy || !text.trim()}
+                  className="p-2.5 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white font-bold transition-all active:scale-95 shrink-0 shadow-md shadow-red-600/30"
                 >
-                  {/* Optional Cloud AI Synthesis Banner */}
-                  {answer.ai_answer && (
-                    <div className="rounded-2xl border border-cyan-800/80 bg-cyan-950/30 p-4 mb-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs uppercase tracking-wider text-cyan-300 font-bold flex items-center gap-1.5">
-                          <Sparkles size={14} className="text-cyan-400" /> Cloud AI Synthesis
-                        </span>
-                        <span className="text-[10px] bg-cyan-900/60 text-cyan-200 px-2 py-0.5 rounded font-mono">
-                          Grounded in local Qdrant vectors
-                        </span>
-                      </div>
-                      <p className="text-sm text-slate-200 whitespace-pre-wrap leading-relaxed">
-                        {answer.ai_answer}
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Local Offline RAG Direct Guidance */}
-                  <div className="rounded-2xl border border-slate-800 bg-[#07111e] p-4 sm:p-5">
-                    <div className="flex items-center justify-between mb-3 border-b border-slate-800 pb-2.5">
-                      <span className="text-xs uppercase tracking-wider text-cyan-400 font-bold flex items-center gap-1.5">
-                        <span className="h-2 w-2 rounded-full bg-emerald-400 inline-block animate-pulse"></span>
-                        {answer.ai_answer ? 'Local Grounded Evidence' : 'Offline Qdrant Guidance'}
-                      </span>
-                      <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded font-mono">
-                        Vector Score: {answer.cards?.[0]?.score ? answer.cards[0].score.toFixed(3) : 'High Match'}
-                      </span>
-                    </div>
-
-                    <div className="text-sm text-slate-200 whitespace-pre-wrap leading-relaxed">
-                      {answer.local_answer}
-                    </div>
-
-                    {/* Interactive Action Steps Checklist (Allows survivors/medics to check off steps in real-time) */}
-                    {answer.cards?.[0]?.steps?.length > 0 && (
-                      <div className="mt-4 pt-3 border-t border-slate-800">
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300 mb-2 flex items-center gap-1.5">
-                          <CheckCircle2 size={13} className="text-emerald-400" />
-                          <span>Action Steps (Tap to Check Off):</span>
-                        </h4>
-                        <div className="space-y-2">
-                          {answer.cards[0].steps.map((step, idx) => {
-                            const isDone = !!checkedSteps[idx];
-                            return (
-                              <label
-                                key={idx}
-                                className={`flex items-start gap-2.5 p-2.5 rounded-xl border cursor-pointer transition-all ${
-                                  isDone
-                                    ? 'bg-emerald-950/30 border-emerald-800/80 text-emerald-200 line-through opacity-80'
-                                    : 'bg-slate-900/60 border-slate-800 text-slate-200 hover:border-slate-700'
-                                }`}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={isDone}
-                                  onChange={(e) =>
-                                    setCheckedSteps({ ...checkedSteps, [idx]: e.target.checked })
-                                  }
-                                  className="mt-0.5 rounded border-slate-700 bg-slate-950 text-emerald-500 focus:ring-0"
-                                />
-                                <span className="text-xs leading-relaxed font-medium">
-                                  {step}
-                                </span>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Critical Clinical Warnings */}
-                    {answer.cards?.[0]?.warnings?.length > 0 && (
-                      <div className="mt-4 p-3 rounded-xl border border-red-800/80 bg-red-950/30 text-red-200 text-xs flex items-start gap-2">
-                        <TriangleAlert size={16} className="text-red-400 shrink-0 mt-0.5" />
-                        <div>
-                          <span className="font-bold">CRITICAL WARNING: </span>
-                          <span>{answer.cards[0].warnings.join(' ')}</span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Progressive Disclosure: Collapsible Technical Provenance & Vector Evidence */}
-                  <div className="mt-4">
-                    <button
-                      type="button"
-                      onClick={() => setShowTechnicalDetails(!showTechnicalDetails)}
-                      className="w-full text-xs text-slate-400 hover:text-slate-200 flex items-center justify-between p-2.5 rounded-xl bg-slate-900/50 border border-slate-800/70 transition-all"
-                    >
-                      <span className="flex items-center gap-1.5 font-medium">
-                        <ShieldCheck size={14} className="text-cyan-400" />
-                        <span>Verification Details & Evidence ({answer.cards?.length || 0} guides, {answer.memory_hits?.length || 0} reports)</span>
-                      </span>
-                      {showTechnicalDetails ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                    </button>
-
-                    {showTechnicalDetails && (
-                      <div className="mt-3 space-y-3 pt-2">
-                        {answer.cards?.map((card, index) => (
-                          <div key={card.id || index} className="rounded-xl border border-slate-800 bg-[#07111e] p-3 text-xs">
-                            <div className="flex items-center justify-between font-bold text-slate-200">
-                              <span>[G{index + 1}] {card.title}</span>
-                              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300">
-                                {card.review_status || 'Verified Clinical Pack'}
-                              </span>
-                            </div>
-                            <p className="text-slate-400 mt-1 leading-relaxed">{card.summary}</p>
-                            {card.source && (
-                              <a
-                                href={card.source}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-[11px] text-cyan-400 hover:underline mt-2 inline-flex items-center gap-1"
-                              >
-                                <span>Official source guideline</span>
-                                <ExternalLink size={10} />
-                              </a>
-                            )}
-                          </div>
-                        ))}
-
-                        {answer.memory_hits?.length > 0 && (
-                          <div className="space-y-2 pt-1">
-                            <h5 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Nearby Mesh Observations</h5>
-                            {answer.memory_hits.map((hit) => (
-                              <div key={hit.id} className="text-xs p-2.5 rounded-xl border border-slate-800 bg-slate-900/60">
-                                <p className="text-slate-200 font-medium">{hit.text}</p>
-                                <div className="text-[10px] text-slate-400 mt-1 flex items-center gap-2 font-mono">
-                                  <span className="capitalize">{hit.kind}</span>
-                                  <span>•</span>
-                                  <span>{formatTime(hit.observed_at)}</span>
-                                  <span>•</span>
-                                  <span>From: {hit.origin_device}</span>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </Card>
-              </>
-            )}
+                  <Send size={18} />
+                </button>
+              </form>
+              <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400 px-1">
+                <span>Runs 100% offline via local Qdrant memory</span>
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={useAi}
+                    onChange={(e) => setUseAi(e.target.checked)}
+                    className="rounded border-slate-300 dark:border-slate-700 text-cyan-600 focus:ring-0"
+                  />
+                  <span className="flex items-center gap-1 text-slate-500 dark:text-slate-400">
+                    <Sparkles size={11} className="text-cyan-500" /> Cloud AI Synthesis
+                  </span>
+                </label>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
       )}
 
       {/* ========================================================================= */}

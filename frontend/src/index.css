@@ -259,6 +259,16 @@ body {
   color: #0f172a !important;
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.12) !important;
 }
+:root[data-theme="light"] [class*="bg-gradient-to-"],
+:root[data-theme="light"] [class*="from-red-950"],
+:root[data-theme="light"] [class*="from-cyan-950"],
+:root[data-theme="light"] [class*="from-emerald-950"],
+:root[data-theme="light"] [class*="from-amber-950"],
+:root[data-theme="light"] [class*="to-[#0b1626]"],
+:root[data-theme="light"] [class*="to-[#07111e]"] {
+  background-image: none !important;
+}
+
 :root[data-theme="light"] [class*="bg-slate-900"],
 :root[data-theme="light"] [class*="bg-slate-950"],
 :root[data-theme="light"] [class*="bg-[#091424]"],
@@ -406,4 +416,59 @@ body {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(148, 163, 184, 0.45);
+}
+
+/* Light mode overrides for hardcoded dark background and border utilities */
+:root[data-theme="light"] [class*="bg-\[\#07111e\]"],
+:root[data-theme="light"] [class*="bg-\[\#0b1626\]"],
+:root[data-theme="light"] [class*="bg-\[\#091424\]"],
+:root[data-theme="light"] [class*="bg-\[\#07101d\]"],
+:root[data-theme="light"] [class*="bg-\[\#060b13\]"] {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
+:root[data-theme="light"] [class*="border-slate-800"],
+:root[data-theme="light"] [class*="border-slate-700"] {
+  border-color: #e2e8f0 !important;
+}
+
+:root[data-theme="light"] [class*="text-slate-100"],
+:root[data-theme="light"] [class*="text-slate-200"],
+:root[data-theme="light"] [class*="text-slate-300"] {
+  color: #1e293b !important;
+}
+
+:root[data-theme="light"] [class*="bg-red-950"] {
+  background-color: #fef2f2 !important;
+  color: #991b1b !important;
+}
+
+:root[data-theme="light"] [class*="bg-cyan-950"] {
+  background-color: #ecfeff !important;
+  color: #155e75 !important;
+}
+
+:root[data-theme="light"] [class*="bg-emerald-950"] {
+  background-color: #ecfdf5 !important;
+  color: #065f46 !important;
+}
+
+:root[data-theme="light"] [class*="bg-amber-950"] {
+  background-color: #fffbeb !important;
+  color: #92400e !important;
+}
+
+/* Eliminate dark linear gradients in light mode */
+:root[data-theme="light"] [class*="bg-gradient-to-"] {
+  background-image: none !important;
+}
+
+/* Preserve colorful gradients on buttons and badges */
+:root[data-theme="light"] .btn-primary,
+:root[data-theme="light"] [class*="from-red-600"],
+:root[data-theme="light"] [class*="from-cyan-600"],
+:root[data-theme="light"] [class*="from-emerald-600"],
+:root[data-theme="light"] [class*="from-blue-600"] {
+  background-image: initial !important;
 }
