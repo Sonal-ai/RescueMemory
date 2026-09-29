@@ -15,6 +15,8 @@ The actual hackathon challenge is Qdrant's AI-powered edge memory and intelligen
 - **Offline question answering:** the compact local MiniLM embedding model and Edge BM25 retrieve evidence without internet. A short extractive answer and contextual action are built from matching local guides/reports. A mobility or rescue phrase prepares an SOS form for review; asking alone never creates a report.
 - **Optional Gemini answer:** a server-side Gemini request can summarize a question and selected local guide/public-report evidence when online. Group and responder records are excluded. If the key or network is unavailable, the local answer remains. The UI has a persistent light/dark toggle, and nearby people/reports refresh from local memory every 30 seconds.
 
+- **Installable PWA:** The frontend is a Progressive Web App. It can be installed on mobile devices to allow the UI to load instantly and operate offline, even when disconnected from the local node host.
+
 The Android prototype is a **web interface** opened from a local node over Wi-Fi. Qdrant Edge runs on the node host, not inside the Android browser. The browser and host can operate without internet while their local connection remains available. Native phone-local Edge, Bluetooth discovery, and fully disconnected phone-to-phone transfer are future work. The schematic map uses no online tiles, and manual pin placement works without browser GPS permission.
 
 ## Install
