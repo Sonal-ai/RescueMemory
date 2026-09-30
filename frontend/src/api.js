@@ -814,24 +814,7 @@ export async function getDiscoveredPeers() {
     }
   }
 
-  // 3. Fallback: If 0 peers discovered (e.g. pure offline initial launch), provide tactical beacon
-  if (allPeers.length === 0) {
-    const simBearing = 42;
-    allPeers.push({
-      node_id: 'unit_responder_alpha',
-      name: 'Field Responder Unit (Alpha)',
-      role: 'responder',
-      status: 'active',
-      battery: 94,
-      last_seen: Date.now(),
-      distance_m: 165,
-      bearing_deg: simBearing,
-      cardinal: cardinalDirection(simBearing),
-      walk_time_min: 2,
-      source: 'tactical_beacon',
-      sync_ready: true,
-    });
-  }
+
 
   return {
     peers: allPeers,
