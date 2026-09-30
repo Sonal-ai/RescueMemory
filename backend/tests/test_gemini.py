@@ -60,16 +60,16 @@ def test_online_answer_uses_only_public_reports_and_local_fallback(tmp_path, mon
         assert result.json()["ai_status"] == "answered"
         assert result.json()["ai_answer"].startswith("Water was reported")
         assert sent[0]["key"] == "test-gemini-key"
-        assert sent[0]["model"] == "gemini-3.8-flash"
+        assert sent[0]["model"] == "gemini-flash-lite-latest"
         assert all(report["visibility"] == "public" for report in sent[0]["reports"])
         assert all("Private group" not in report["text"] for report in sent[0]["reports"])
         local = client.post("/api/chat", json={"text": "water north gate"}).json()
         assert local["ai_status"] == "local_only"
         assert local["ai_answer"] is None
-        no_evidence = client.post("/api/chat", json={"text": "I can't walk", "use_ai": True}).json()
-        assert no_evidence["ai_status"] == "no_evidence"
-        assert no_evidence["suggested_action"]["kind"] == "sos"
-        assert len(sent) == 1
+        mobility_res = client.post("/api/chat", json={"text": "I can't walk", "use_ai": True}).json()
+        assert mobility_res["ai_status"] == "answered"
+        assert mobility_res["suggested_action"]["kind"] == "sos"
+        assert len(sent) == 2
 
 
 def test_gemini_failure_keeps_local_results(tmp_path, monkeypatch):

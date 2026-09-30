@@ -473,6 +473,6 @@ if (typeof window !== 'undefined') {
     .catch(() => {});
 }
 
-export { triggerAutoSync, onSyncStateChange };
+export { triggerAutoSync, onSyncStateChange, recommendAlternativeLocal };
 
 
