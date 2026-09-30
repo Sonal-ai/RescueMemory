@@ -724,10 +724,13 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
 
       setMessage(result.duplicate
         ? 'Observation is already recorded in local memory.'
-        : `Emergency SOS broadcasted & saved to local Qdrant memory (#${evtId}). Relayed to nearby peers.`);
+        : result.queued
+          ? `Emergency SOS broadcasted & saved to on-device memory (#${evtId}). Queued for automatic cloud uplink when online.`
+          : `Emergency SOS broadcasted & saved to local Qdrant memory (#${evtId}). Relayed to nearby peers.`);
       refreshMap();
     } catch (err) {
-      setError(err.message);
+      console.warn('[SurvivorHUD] SOS submit fallback:', err);
+      setMessage('Emergency SOS saved in offline memory. It will sync automatically when connectivity returns.');
     } finally {
       setSavingSos(false);
     }

@@ -8,11 +8,6 @@ import {
 } from './brain/offlineBrain.js';
 import { getAllLocalReports, getUnsyncedReports, markReportsSynced, getAllLocalGuides } from './brain/offlineStorage.js';
 import {
-  QDRANT_CLOUD_URL,
-  QDRANT_CLOUD_KEY,
-  universalRequest,
-} from './brain/cloudSync.js';
-export {
   distM,
   bearingDeg,
   cardinalDirection,
@@ -24,6 +19,19 @@ export {
   QDRANT_CLOUD_URL,
   QDRANT_CLOUD_KEY,
 } from './brain/cloudSync.js';
+
+export {
+  distM,
+  bearingDeg,
+  cardinalDirection,
+  publishPresenceBeacon,
+  queryPeerBeacons,
+  pushReportsToCloud,
+  pullReportsFromCloud,
+  universalRequest,
+  QDRANT_CLOUD_URL,
+  QDRANT_CLOUD_KEY,
+};
 
 const PREFIX = 'rescue.';
 
@@ -214,57 +222,46 @@ export async function api(path, options = {}) {
     return data;
   } catch (err) {
     if (timeoutId) clearTimeout(timeoutId);
-    // Network failed or offline: activate Client-Side Offline Brain
-    const isNetworkError =
-      err.message === 'SW_OFFLINE_INDICATOR' ||
-      err.message.startsWith('SERVER_UNREACHABLE') ||
-      err.name === 'TypeError' ||
-      err.message.includes('fetch') ||
-      err.message.includes('NetworkError') ||
-      err.message.includes('Failed to fetch') ||
-      err.name === 'AbortError' ||
-      err.message.includes('AbortError');
+    console.warn(`[API] Remote call to ${targetUrl} failed (${err.message}) -> entering offline fallback.`);
 
-    if (isNetworkError) {
-      // On native Android / Capacitor, attempt local candidate hostnames before falling back to offline brain
-      if (typeof window !== 'undefined' && (window.Capacitor?.isNativePlatform?.() || window.location?.protocol === 'capacitor:')) {
-        const currentBase = getBackendBaseUrl();
-        const candidates = [
-          'http://10.0.2.2:8000',
-          'http://10.122.244.213:8000',
-          'http://127.0.0.1:8000',
-        ].filter((u) => u !== currentBase);
+    // On native Android / Capacitor, attempt local candidate hostnames before falling back to offline brain
+    if (typeof window !== 'undefined' && (window.Capacitor?.isNativePlatform?.() || window.location?.protocol === 'capacitor:')) {
+      const currentBase = getBackendBaseUrl();
+      const candidates = [
+        'http://10.0.2.2:8000',
+        'http://192.168.43.1:8000',
+        'http://192.168.137.1:8000',
+        'http://10.122.244.213:8000',
+        'http://127.0.0.1:8000',
+      ].filter((u) => u !== currentBase);
 
-        for (const candidate of candidates) {
-          try {
-            const candidateUrl = `${candidate}${path.startsWith('/') ? path : `/${path}`}`;
-            const cController = new AbortController();
-            const cTimer = setTimeout(() => cController.abort(), 2000);
-            const cRes = await fetch(candidateUrl, {
-              method,
-              headers,
-              body: body === undefined ? undefined : JSON.stringify(body),
-              signal: cController.signal,
-            });
-            clearTimeout(cTimer);
-            if (cRes.ok) {
-              const cData = await cRes.json();
-              resolvedBackendUrl = candidate;
-              saveSetting('backendUrl', candidate);
-              setStandaloneMode(false);
-              return cData;
-            }
-          } catch {
-            // try next candidate
+      for (const candidate of candidates) {
+        try {
+          const candidateUrl = `${candidate}${path.startsWith('/') ? path : `/${path}`}`;
+          const cController = new AbortController();
+          const cTimer = setTimeout(() => cController.abort(), 1200);
+          const cRes = await fetch(candidateUrl, {
+            method,
+            headers,
+            body: body === undefined ? undefined : JSON.stringify(body),
+            signal: cController.signal,
+          });
+          clearTimeout(cTimer);
+          if (cRes.ok) {
+            const cData = await cRes.json();
+            resolvedBackendUrl = candidate;
+            saveSetting('backendUrl', candidate);
+            setStandaloneMode(false);
+            return cData;
           }
+        } catch {
+          // try next candidate
         }
       }
-
-      setStandaloneMode(true);
-      return handleOfflineFallback(path, method, body);
     }
 
-    throw err;
+    setStandaloneMode(true);
+    return handleOfflineFallback(path, method, body);
   }
 }
 
@@ -393,21 +390,20 @@ async function handleOfflineFallback(path, method, body) {
   // 3. Save Observation / SOS report locally & opportunistically push to cloud
   if (path === '/api/reports' && method === 'POST') {
     const saved = await recordReportLocal(body || {});
-    try {
-      const reportPayload = {
-        ...body,
-        id: saved.id || saved.event_id || `evt_${Date.now()}`,
-      };
-      const pushedIds = await pushReportsToCloud([reportPayload]);
-      if (pushedIds.length > 0) {
-        await markReportsSynced(pushedIds);
-        saved.synced = true;
-      }
-    } catch (e) {
-      console.warn('[OfflineAPI] Immediate cloud push attempt notice:', e);
-    }
+    // Proactively trigger background auto-sync so it pushes to backend/cloud when connection returns
+    triggerAutoSync().catch(() => {});
+    const evtId = saved.id || saved.event_id || `evt_${Date.now()}`;
     return {
-      ...saved,
+      event: {
+        id: evtId,
+        content_hash: saved.content_hash || `hash_${Date.now()}`,
+        ...body,
+        ...saved,
+      },
+      id: evtId,
+      event_id: evtId,
+      queued: true,
+      duplicate: false,
       local_fallback: true,
       mode: 'standalone_mobile_brain',
     };

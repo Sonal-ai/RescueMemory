@@ -52,6 +52,8 @@ def make_event(
     group_id: str | None = None,
     verified: bool = True,
 ) -> dict:
+    if len(event_id) != 64:
+        event_id = hashlib.sha256(event_id.encode()).hexdigest()
     observed_at = datetime.now(timezone.utc).isoformat()
     body = {
         "kind": kind,

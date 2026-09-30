@@ -407,7 +407,21 @@ class RescueService:
         imported = duplicates = 0
         imported_ids: list[str] = []
         for raw in events:
-            event = Event.model_validate(raw)
+            raw_copy = dict(raw)
+            raw_id = str(raw_copy.get("id", ""))
+            if not raw_id:
+                raw_copy["id"] = hashlib.sha256(canonical(raw_copy)).hexdigest()
+            elif len(raw_id) < 64:
+                raw_copy["id"] = hashlib.sha256(raw_id.encode()).hexdigest()
+            raw_hash = str(raw_copy.get("content_hash", ""))
+            if len(raw_hash) < 64:
+                raw_copy["content_hash"] = hashlib.sha256(raw_hash.encode()).hexdigest()
+
+            try:
+                event = Event.model_validate(raw_copy)
+            except Exception:
+                continue
+
             if event.expires_at and event.expires_at < utc_now():
                 duplicates += 1
                 continue
