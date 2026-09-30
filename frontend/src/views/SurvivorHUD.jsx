@@ -407,6 +407,11 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
     }
   };
 
+  // Initial GPS lock on component mount
+  useEffect(() => {
+    useGps();
+  }, []);
+
   // Peer Wi-Fi sync
   const handleSyncPeer = async (peer) => {
     setSyncingPeer(true);

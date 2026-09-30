@@ -249,6 +249,11 @@ export default function VolunteerBoard() {
           peers={peers}
           selectedTarget={selected}
           onRefreshGps={useGps}
+          onSelectLocation={(loc) => {
+            if (loc?.lat != null && loc?.lon != null) {
+              setCenter({ lat: loc.lat, lon: loc.lon });
+            }
+          }}
           onNavigateTarget={(target) => {
             const loc = target.location || { lat: target.lat, lon: target.lon };
             if (loc?.lat) setCenter({ lat: loc.lat, lon: loc.lon });

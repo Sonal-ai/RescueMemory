@@ -557,13 +557,26 @@ export default function UnifiedRadarMap({
 
   // Filtered items for MapPanel
   const filteredMapItems = useMemo(() => {
-    const list = Array.isArray(items) ? items : [];
+    const list = [...(Array.isArray(items) ? items : [])];
+    for (const d of destinationOptions) {
+      if (!list.some((it) => it.id === d.id || it.entity_id === d.id)) {
+        list.push({
+          id: d.id,
+          entity_id: d.id,
+          title: d.name,
+          kind: d.category === 'casualty' ? 'incident' : d.category === 'hazard' ? 'hazard' : d.category === 'resource' ? 'resource' : 'checkpoint',
+          severity: d.triage_level === 'immediate_red' ? 'red' : 'green',
+          location: d.location,
+          text: d.text
+        });
+      }
+    }
     if (mapFilter === 'all') return list;
     if (mapFilter === 'sos') return list.filter((i) => i.kind === 'incident' || i.severity === 'red');
     if (mapFilter === 'hazard') return list.filter((i) => i.kind === 'hazard');
     if (mapFilter === 'resource') return list.filter((i) => i.kind === 'resource' || i.kind === 'checkpoint');
     return list;
-  }, [items, mapFilter]);
+  }, [items, destinationOptions, mapFilter]);
 
   return (
     <div className="flex flex-col gap-3 text-slate-900 dark:text-slate-100">
@@ -581,17 +594,27 @@ export default function UnifiedRadarMap({
             </h2>
           </div>
 
-          {/* Right Action Menu: GPS Pill, Options and Refresh */}
+          {/* Right Action Menu: Live GPS Pill, Options and Refresh */}
           <div className="flex items-center gap-1.5">
-            {userLocation?.lat != null && (
+            {(liveCoords?.lat != null || userLocation?.lat != null) && (
               <button
                 type="button"
-                onClick={onRefreshGps}
-                title="Your current GPS coordinates. Tap to refresh."
-                className="inline-flex items-center gap-1 text-[11px] sm:text-xs px-2 py-0.5 rounded-lg border border-[#cbdbe9] dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-mono font-semibold hover:border-cyan-500 transition-colors"
+                onClick={handleManualRefreshGps}
+                title="Your live walking GPS coordinates. Tap to refresh satellite lock."
+                className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs px-2.5 py-1 rounded-lg border border-cyan-500/40 bg-cyan-50/80 dark:bg-cyan-950/40 text-cyan-900 dark:text-cyan-200 font-mono font-bold shadow-xs hover:border-cyan-400 transition-colors cursor-pointer"
               >
-                <MapPin size={11} className="text-cyan-600 dark:text-cyan-400" />
-                <span>{userLocation.lat.toFixed(3)}, {userLocation.lon.toFixed(3)}</span>
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                <span className="tabular-nums">
+                  {(liveCoords?.lat ?? userLocation.lat).toFixed(5)}, {(liveCoords?.lon ?? userLocation.lon).toFixed(5)}
+                </span>
+                {gpsAccuracy != null && (
+                  <span className="text-[10px] text-cyan-600 dark:text-cyan-400 font-normal">
+                    (±{gpsAccuracy}m)
+                  </span>
+                )}
               </button>
             )}
 
@@ -752,10 +775,10 @@ export default function UnifiedRadarMap({
           {/* Map Canvas */}
           <div className="relative rounded-xl overflow-hidden border border-[#e8e4db] dark:border-slate-800 bg-[#091927] flex items-center justify-center">
             <MapPanel
-              center={userLocation}
+              center={liveCoords || userLocation}
               items={filteredMapItems}
               peers={peers}
-              selected={activeTarget?.location || userLocation}
+              selected={activeTarget?.location || (liveCoords || userLocation)}
               onSelect={onSelectLocation}
               onMarker={(item) => {
                 if (!item) return;
@@ -948,18 +971,33 @@ export default function UnifiedRadarMap({
             <div className="flex-1 flex flex-col gap-1.5 min-w-0 font-mono">
               <div className="grid grid-cols-2 gap-1.5 text-center">
                 <div className="bg-[#f8fafc] dark:bg-slate-950/80 p-2 rounded-xl border border-[#dbe6f0] dark:border-slate-800">
-                  <span className="text-[9px] text-slate-500 uppercase block font-semibold">Distance</span>
-                  <strong className="text-xs sm:text-sm font-black text-slate-900 dark:text-cyan-400">{targetDistance} m</strong>
+                  <div className="flex items-center justify-between px-0.5 mb-0.5">
+                    <span className="text-[9px] text-slate-500 uppercase block font-semibold">Distance</span>
+                    {isLiveWalking && (
+                      <span className="text-[8px] font-mono font-black px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 animate-pulse">
+                        LIVE
+                      </span>
+                    )}
+                  </div>
+                  <strong className="text-xs sm:text-sm font-black text-slate-900 dark:text-cyan-400 tabular-nums">{targetDistance} m</strong>
                 </div>
                 <div className="bg-[#f8fafc] dark:bg-slate-950/80 p-2 rounded-xl border border-[#dbe6f0] dark:border-slate-800">
-                  <span className="text-[9px] text-slate-500 uppercase block font-semibold">Azimuth</span>
-                  <strong className="text-xs sm:text-sm font-black text-slate-900 dark:text-cyan-400">{targetBearing}° {targetCardinal}</strong>
+                  <span className="text-[9px] text-slate-500 uppercase block font-semibold mb-0.5">Azimuth</span>
+                  <strong className="text-xs sm:text-sm font-black text-slate-900 dark:text-cyan-400 tabular-nums">{targetBearing}° {targetCardinal}</strong>
                 </div>
               </div>
 
-              <div className="bg-[#f8fafc] dark:bg-slate-950/80 p-1.5 rounded-xl border border-[#dbe6f0] dark:border-slate-800 text-center">
-                <span className="text-[9px] text-slate-500 uppercase block font-semibold">Est. Walk Time</span>
-                <strong className="text-xs sm:text-sm font-black text-slate-900 dark:text-cyan-400">~{Math.max(1, Math.round(targetDistance / 75))} min</strong>
+              <div className="bg-[#f8fafc] dark:bg-slate-950/80 p-1.5 rounded-xl border border-[#dbe6f0] dark:border-slate-800 text-center flex items-center justify-around">
+                <div>
+                  <span className="text-[9px] text-slate-500 uppercase block font-semibold">Est. Walk</span>
+                  <strong className="text-xs sm:text-sm font-black text-slate-900 dark:text-cyan-400 tabular-nums">~{Math.max(1, Math.round(targetDistance / 75))} min</strong>
+                </div>
+                {totalMetersWalked > 0 && (
+                  <div className="border-l border-[#dbe6f0] dark:border-slate-800 pl-3">
+                    <span className="text-[9px] text-emerald-600 dark:text-emerald-400 uppercase block font-semibold">Walked</span>
+                    <strong className="text-xs sm:text-sm font-black text-emerald-600 dark:text-emerald-400 tabular-nums">{totalMetersWalked} m</strong>
+                  </div>
+                )}
               </div>
             </div>
           </div>
