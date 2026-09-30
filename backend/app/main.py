@@ -401,6 +401,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return uplink_sos(s, req.peer_url)
         return sync_with_peer(s, req.peer_url, req.scope, req.group_id)
 
+    apk_file = Path(__file__).resolve().parents[2] / "frontend" / "android" / "app" / "build" / "outputs" / "apk" / "debug" / "app-debug.apk"
+    if apk_file.exists():
+        @app.get("/download-apk", include_in_schema=False)
+        def download_apk():
+            return FileResponse(
+                apk_file,
+                media_type="application/vnd.android.package-archive",
+                filename="RescueMemory.apk"
+            )
+
     frontend = Path(__file__).resolve().parents[2] / "frontend" / "dist"
     if (frontend / "index.html").exists():
         @app.get("/", include_in_schema=False)
