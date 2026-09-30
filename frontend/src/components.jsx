@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, NavLink } from 'react-router-dom';
+import { Link, NavLink, useLocation } from 'react-router-dom';
 import {
   Activity,
   ChevronDown,
@@ -7,12 +7,14 @@ import {
   Cloud,
   CloudOff,
   Database,
+  HeartPulse,
   Menu,
   Moon,
   Radio,
   Settings2,
   ShieldCheck,
   Sun,
+  Users,
   Wifi,
   WifiOff,
   X
@@ -20,6 +22,15 @@ import {
 import { api, saveSetting, setting, isOnlineMode, setOnlineMode, onOnlineModeChange } from './api';
 import { useNodeStatus } from './hooks/useNodeStatus';
 export { useNodeStatus };
+
+const NAV_LINKS = [
+  { path: '/', label: 'Survivor HUD', icon: HeartPulse, desc: 'Chat, Radar & SOS', badge: 'Survivor' },
+  { path: '/volunteer', label: 'Responders', icon: Users, desc: 'Medic Field Board', badge: 'Medic' },
+  { path: '/safeplace', label: 'Safe Evacuation', icon: ShieldCheck, desc: 'Negative Vector Routing', badge: 'Route' },
+  { path: '/hq', label: 'Command HQ', icon: Radio, desc: 'Incident Ledger Relay', badge: 'Central' },
+  { path: '/command', label: 'Inspector', icon: Activity, desc: 'Qdrant Cloud & Proofs', badge: 'Dev' },
+  { path: '/about', label: 'Architecture', icon: CircleHelp, desc: 'Decentralized Specs', badge: 'Docs' },
+];
 
 export function SettingsPanel({ onClose }) {
   const [values, setValues] = useState({
@@ -213,9 +224,11 @@ export function QuietTelemetryPill({ health, sync, error }) {
 }
 
 export function Shell({ title, subtitle, children }) {
+  const location = useLocation();
   const { health, sync, error } = useNodeStatus();
   const last = sync?.last_sync || sync?.last_uplink;
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [navDrawerOpen, setNavDrawerOpen] = useState(false);
   const [theme, setTheme] = useState(() => {
     const saved = localStorage.getItem('rescue.theme') || localStorage.getItem('theme');
     return saved === 'dark' ? 'dark' : 'light';
@@ -239,12 +252,14 @@ export function Shell({ title, subtitle, children }) {
     localStorage.setItem('theme', theme);
   }, [theme]);
 
+  const isSurvivorActive = location.pathname === '/' || ['/chat', '/compass', '/find', '/map', '/radar', '/report', '/beacon'].includes(location.pathname);
+
   return (
     <div className="app-shell min-h-screen bg-[#f0f5fa] dark:bg-[#080d19] text-slate-900 dark:text-slate-100 flex flex-col pb-16 sm:pb-0">
       {/* Top Tactical Navigation Header */}
       <header className="app-header border-b border-[#dbe6f0] dark:border-cyan-500/15 bg-white/95 dark:bg-[#0b1528]/95 sticky top-0 z-40 backdrop-blur-xl shadow-xs">
         <div className="h-0.5 w-full bg-gradient-to-r from-red-500 via-cyan-400 to-emerald-400 opacity-90" />
-        <div className="max-w-7xl mx-auto px-2.5 sm:px-6 py-1.5 sm:py-2.5 flex items-center justify-between gap-2">
+        <div className="max-w-7xl mx-auto px-2 sm:px-6 py-1.5 sm:py-2 flex items-center justify-between gap-1.5 sm:gap-3">
           
           {/* Logo & Tactical Identity */}
           <Link to="/" className="flex items-center gap-1.5 sm:gap-2 font-black tracking-tight text-sm sm:text-base group shrink-0">
@@ -256,8 +271,41 @@ export function Shell({ title, subtitle, children }) {
             </span>
           </Link>
 
+          {/* Desktop Navigation Links */}
+          <nav className="hidden lg:flex items-center gap-1 bg-[#e2ecf5] dark:bg-slate-900/80 p-1 rounded-xl border border-[#cbdbe9] dark:border-slate-800 text-xs font-semibold">
+            {NAV_LINKS.map(({ path, label, icon: Icon }) => {
+              const isActive = path === '/' ? isSurvivorActive : location.pathname === path;
+              return (
+                <Link
+                  key={path}
+                  to={path}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                    isActive
+                      ? 'bg-cyan-600 text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-slate-800/60'
+                  }`}
+                >
+                  <Icon size={13} className={isActive ? 'text-white' : 'text-slate-500 dark:text-slate-400'} />
+                  <span>{label}</span>
+                </Link>
+              );
+            })}
+          </nav>
+
           {/* Right Action Bar */}
           <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+            {/* Mobile / Tablet Views Menu Trigger */}
+            <button
+              type="button"
+              title="Open Tactical Views Menu"
+              aria-label="Open Tactical Views Menu"
+              className="lg:hidden flex items-center gap-1 px-2 py-1 rounded-lg border border-[#cbdbe9] dark:border-slate-700 bg-[#e6f0f7] dark:bg-slate-800 text-slate-800 dark:text-slate-200 text-xs font-bold transition-all active:scale-95"
+              onClick={() => setNavDrawerOpen(true)}
+            >
+              <Menu size={13} />
+              <span className="text-[11px]">Views</span>
+            </button>
+
             {/* Quiet Status Pill */}
             <QuietTelemetryPill health={health} sync={sync} error={error} />
 
@@ -326,6 +374,108 @@ export function Shell({ title, subtitle, children }) {
           </div>
         </div>
       </header>
+
+      {/* Mobile Tactical Views Slide-out Drawer */}
+      {navDrawerOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex justify-start animate-in fade-in duration-150">
+          <div className="w-[85vw] max-w-sm h-full bg-white dark:bg-[#0b1626] border-r border-[#dbe6f0] dark:border-slate-800 p-4 flex flex-col shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b border-[#e2e8f0] dark:border-slate-800">
+              <div className="flex items-center gap-2 font-black text-sm">
+                <span className="h-7 w-7 rounded-lg bg-gradient-to-br from-red-500 to-rose-600 flex items-center justify-center text-white shadow-xs">
+                  <Activity size={16} />
+                </span>
+                <span className="text-slate-900 dark:text-white font-extrabold text-sm">Tactical Operations</span>
+              </div>
+              <button
+                onClick={() => setNavDrawerOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                aria-label="Close menu"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="py-2.5 text-[10.5px] font-bold text-slate-400 uppercase tracking-widest font-mono">
+              Operational Stations
+            </div>
+
+            <nav className="flex-1 space-y-2 overflow-y-auto pr-1">
+              {NAV_LINKS.map(({ path, label, icon: Icon, desc, badge }) => {
+                const isActive = path === '/' ? isSurvivorActive : location.pathname === path;
+                return (
+                  <Link
+                    key={path}
+                    to={path}
+                    onClick={() => setNavDrawerOpen(false)}
+                    className={`flex items-start gap-3 p-2.5 rounded-xl border transition-all ${
+                      isActive
+                        ? 'bg-cyan-50 dark:bg-cyan-500/10 border-cyan-400 dark:border-cyan-500/50 text-cyan-900 dark:text-cyan-300 font-bold shadow-xs'
+                        : 'border-[#e2e8f0] dark:border-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-900/60 text-slate-700 dark:text-slate-300'
+                    }`}
+                  >
+                    <div className={`p-2 rounded-lg ${isActive ? 'bg-cyan-600 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'} shrink-0 mt-0.5`}>
+                      <Icon size={15} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-xs">{label}</span>
+                        <span className="text-[9.5px] uppercase font-mono px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400">{badge}</span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 font-normal leading-tight mt-0.5">{desc}</p>
+                    </div>
+                  </Link>
+                );
+              })}
+            </nav>
+
+            <div className="pt-3 border-t border-[#e2e8f0] dark:border-slate-800 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => { setNavDrawerOpen(false); setSettingsOpen(true); }}
+                className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 hover:text-cyan-500 font-semibold"
+              >
+                <Settings2 size={13} /> Node Settings
+              </button>
+              <button
+                type="button"
+                onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 hover:text-cyan-500 font-semibold"
+              >
+                {theme === 'dark' ? <Sun size={13} /> : <Moon size={13} />} {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mobile Bottom Quick-Access Dock */}
+      <div className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-[#0b1626]/95 border-t border-[#dbe6f0] dark:border-slate-800 backdrop-blur-xl px-2 py-1 flex items-center justify-around shadow-lg">
+        {[
+          { path: '/', label: 'Survivor', icon: HeartPulse, isMatch: isSurvivorActive },
+          { path: '/volunteer', label: 'Responders', icon: Users, isMatch: location.pathname === '/volunteer' },
+          { path: '/safeplace', label: 'Evac Route', icon: ShieldCheck, isMatch: location.pathname === '/safeplace' },
+          { path: '/hq', label: 'Command HQ', icon: Radio, isMatch: location.pathname === '/hq' },
+        ].map(({ path, label, icon: Icon, isMatch }) => (
+          <Link
+            key={path}
+            to={path}
+            className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg text-[10px] font-bold transition-all ${
+              isMatch ? 'text-cyan-600 dark:text-cyan-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+            }`}
+          >
+            <Icon size={16} className={isMatch ? 'text-cyan-600 dark:text-cyan-400' : ''} />
+            <span>{label}</span>
+          </Link>
+        ))}
+        <button
+          type="button"
+          onClick={() => setNavDrawerOpen(true)}
+          className="flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg text-[10px] font-bold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+        >
+          <Menu size={16} />
+          <span>More</span>
+        </button>
+      </div>
 
       {/* Main Screen Canvas */}
       <main className="w-full max-w-7xl mx-auto px-1.5 sm:px-4 py-1.5 sm:py-4 flex-1 overflow-x-hidden">

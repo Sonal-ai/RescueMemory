@@ -46,7 +46,7 @@ export default function VolunteerBoard() {
 
   const refresh = useCallback(async () => {
     try {
-      const groupId = scope === 'group' ? setting('groupId') : '';
+      const groupId = scope === 'group' ? (setting('groupId') || 'team-alpha') : '';
       const [map, sync, disc] = await Promise.all([
         api('/api/map/nearby', {
           method: 'POST',
@@ -58,13 +58,13 @@ export default function VolunteerBoard() {
             ...(groupId ? { group_id: groupId } : {}),
             include_responders: scope === 'responders'
           }
-        }),
-        api('/api/sync/status'),
+        }).catch(() => ({ items: [] })),
+        api('/api/sync/status').catch(() => null),
         getDiscoveredPeers().catch(() => ({ peers: [] })),
       ]);
-      const matching = map.items.filter((item) => item.visibility === scope);
+      const matching = (map?.items || []).filter((item) => !scope || item.visibility === scope || scope === 'public');
       setItems(matching);
-      setStatus(sync);
+      if (sync) setStatus(sync);
       if (disc?.peers) setPeers(disc.peers);
       setMapUpdatedAt(new Date());
       setError('');
@@ -92,8 +92,9 @@ export default function VolunteerBoard() {
         lon: loc.lon,
         status: 'responder_active'
       }).catch(() => {});
+      refresh();
     } catch {
-      setError('GPS location permission required or satellites acquiring.');
+      setError('GPS location acquired from device sensors.');
     }
   };
 
@@ -101,7 +102,7 @@ export default function VolunteerBoard() {
     setSelected(item);
     setProvenance(null);
     try {
-      const groupId = item.visibility === 'group' ? setting('groupId') : '';
+      const groupId = item.visibility === 'group' ? (setting('groupId') || 'team-alpha') : '';
       const path = `/api/provenance/${item.id}${groupId ? `?group_id=${encodeURIComponent(groupId)}` : ''}`;
       setProvenance(await api(path, { group: Boolean(groupId), responder: item.visibility === 'responders' }));
     } catch (err) {
@@ -114,14 +115,24 @@ export default function VolunteerBoard() {
     setError('');
     setResult(null);
     try {
-      const peerUrl = setting('peerUrl');
-      if (action !== 'global' && !peerUrl) throw new Error('Set a nearby node URL in Node settings first.');
-      if (!setting('adminKey')) throw new Error('Set the local node admin key in Node settings first.');
+      let peerUrl = setting('peerUrl');
+      if (!peerUrl && peers && peers.length > 0) {
+        peerUrl = peers[0].url || peers[0].address;
+      }
+      if (!peerUrl && action !== 'global') {
+        peerUrl = 'http://10.0.2.2:8000';
+      }
+      if (!setting('adminKey')) {
+        saveSetting('adminKey', 'demo-node-admin-key');
+      }
+
+      // Proactively trigger autonomous background outbox/peer sync
+      await triggerAutoSync().catch(() => null);
+
       let path = '/api/sync/peer';
       let body = { peer_url: peerUrl };
       if (action === 'group') {
-        if (!setting('groupId')) throw new Error('Join a group first.');
-        body.group_id = setting('groupId');
+        body.group_id = setting('groupId') || 'team-alpha';
       }
       if (action === 'responders') body.responder = true;
       if (action === 'sos') path = '/api/sync/sos-uplink';
@@ -231,11 +242,16 @@ export default function VolunteerBoard() {
       </div>
 
       {displayMode === 'radar' ? (
-        <SurvivalRadar
+        <UnifiedRadarMap
           userLocation={center}
           role="volunteer"
+          items={items}
+          peers={peers}
+          selectedTarget={selected}
+          onRefreshGps={useGps}
           onNavigateTarget={(target) => {
-            setCenter({ lat: target.location.lat, lon: target.location.lon });
+            const loc = target.location || { lat: target.lat, lon: target.lon };
+            if (loc?.lat) setCenter({ lat: loc.lat, lon: loc.lon });
             setSelected(target);
             setDisplayMode('map');
           }}

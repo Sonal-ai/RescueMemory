@@ -592,7 +592,7 @@ export default function UnifiedRadarMap({
                   ? 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-400 border-emerald-400/40 dark:border-emerald-500/20'
                   : 'bg-amber-500/15 text-amber-800 dark:text-amber-400 border-amber-400/40 dark:border-amber-500/20'
               }`}>
-                {isCompassActive ? 'GYRO SENSOR ACTIVE' : 'CALIBRATING SENSOR...'}
+                {isCompassActive ? 'SENSOR ACTIVE' : 'CALIBRATING SENSOR...'}
               </span>
 
               <button
@@ -695,8 +695,8 @@ export default function UnifiedRadarMap({
           <div className="flex flex-col items-center justify-center shrink-0 w-full lg:w-auto">
             <div
               onClick={requestCompassPermission}
-              className="relative w-[210px] h-[210px] sm:w-[220px] sm:h-[220px] flex items-center justify-center select-none"
-              title="Hardware Gyroscope Compass Needle"
+              className="relative w-[230px] h-[230px] sm:w-[260px] sm:h-[260px] flex items-center justify-center select-none"
+              title="Live 360° Compass Navigation"
             >
               <svg
                 width={COMPASS_SIZE}
@@ -765,7 +765,7 @@ export default function UnifiedRadarMap({
                   <g
                     transform={`rotate(${needleAngle} ${COMPASS_CENTER} ${COMPASS_CENTER})`}
                     filter="url(#needleGlow)"
-                    className="transition-transform duration-200 ease-out"
+                    className={isCompassActive ? 'transition-none' : 'transition-transform duration-200 ease-out'}
                   >
                     {/* Needle Arrowhead */}
                     <polygon

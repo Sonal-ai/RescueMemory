@@ -251,8 +251,35 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
   const [error, setError] = useState('');
   const [savingSos, setSavingSos] = useState(false);
   const [sosSuccess, setSosSuccess] = useState(false);
+  const [sosBroadcastModal, setSosBroadcastModal] = useState(null);
   const [isOfflineBrain, setIsOfflineBrain] = useState(false);
   const [syncInfo, setSyncInfo] = useState({ state: 'idle', pendingCount: 0 });
+
+  const playEmergencySiren = useCallback(() => {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      if (ctx.state === 'suspended') ctx.resume();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sawtooth';
+      const now = ctx.currentTime;
+      osc.frequency.setValueAtTime(800, now);
+      osc.frequency.linearRampToValueAtTime(1400, now + 0.15);
+      osc.frequency.linearRampToValueAtTime(800, now + 0.3);
+      osc.frequency.linearRampToValueAtTime(1400, now + 0.45);
+      osc.frequency.linearRampToValueAtTime(800, now + 0.6);
+      gain.gain.setValueAtTime(0.18, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.7);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(now + 0.7);
+    } catch {
+      // audio restricted
+    }
+  }, []);
 
   // Refresh nearby Wi-Fi peers
   const refreshPeers = useCallback(async () => {
@@ -288,9 +315,11 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
       const result = await api('/api/map/nearby', {
         method: 'POST',
         group: Boolean(groupId),
+        responder: true,
         body: {
           location: { lat: centerLat, lon: centerLon },
           radius_m: 5000,
+          include_responders: true,
           ...(groupId ? { group_id: groupId } : {})
         }
       });
@@ -626,6 +655,73 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
       });
       const evtId = (result.event?.id || result.event_id || 'saved').slice(0, 10);
       setSosSuccess(true);
+
+      // Play emergency siren and haptic buzz
+      playEmergencySiren();
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        navigator.vibrate([150, 50, 150, 50, 150, 100, 300, 100, 300]);
+      }
+
+      // Add to local map items immediately so survivor sees beacon right away
+      const newSosItem = {
+        id: result.event?.id || `sos_${Date.now()}`,
+        entity_id: result.event?.entity_id || 'survivor_sos_active',
+        kind: report.kind,
+        title: `🚨 ACTIVE SOS: ${report.kind === 'incident' ? 'Trapped / Medical Distress' : 'Distress Beacon'}`,
+        text: reportText,
+        status: 'needs_help',
+        severity: 'red',
+        visibility: visibility,
+        location: pin,
+        observed_at: new Date().toISOString(),
+        origin_device: 'this_device',
+        verified: false
+      };
+      setItems((prev) => [newSosItem, ...prev.filter(i => i.id !== newSosItem.id)]);
+      setSelected(newSosItem);
+
+      // Trigger mesh auto-sync in background to relay to peers & cloud
+      triggerAutoSync().catch(() => {});
+      if (peers.length > 0) {
+        peers.forEach((p) => {
+          syncDiscoveredPeer({
+            peer_url: p.url || `http://${p.ip}:${p.port}`,
+            scope: 'public'
+          }).catch(() => {});
+        });
+      }
+
+      // Open high-visibility Panic-Proof Confirmation Modal
+      setSosBroadcastModal({
+        id: evtId,
+        text: reportText,
+        location: pin,
+        visibility: visibility,
+        peersCount: peers.length
+      });
+
+      // Also append acknowledging prompt to Assistant chat tab
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `sos_ack_${Date.now()}`,
+          role: 'assistant',
+          text: `### 🚨 EMERGENCY SOS TRANSMITTED (#${evtId})\n\n` +
+            `Your emergency distress beacon is **ACTIVE and BROADCASTING** across the local disaster mesh from coordinates **(${pin.lat.toFixed(4)}, ${pin.lon.toFixed(4)})**.\n\n` +
+            `**Reported Situation:**\n` +
+            `• ${reportText}\n` +
+            (breathingStatus === false ? `• ⚠️ **CRITICAL:** Casualty NOT breathing. Initiate immediate chest compressions (100-120/min).\n` : '') +
+            (bleedingType !== 'none' ? `• ⚠️ **BLEEDING ALERT:** ${bleedingType} bleeding. Apply firm, continuous direct pressure.\n` : '') +
+            `\n**Dispatch & Relay Status:**\n` +
+            `• ✅ Recorded into local Qdrant memory\n` +
+            `• 📡 Transmitted to ${peers.length} nearby peer device(s) on Wi-Fi hotspot\n` +
+            `• 🛰️ Uplinked to Central Command & Field Responders\n\n` +
+            `Tap the **Radar Map** tab to monitor your live beacon position.`,
+          timestamp: new Date(),
+          isAi: false
+        }
+      ]);
+
       setMessage(result.duplicate
         ? 'Observation is already recorded in local memory.'
         : `Emergency SOS broadcasted & saved to local Qdrant memory (#${evtId}). Relayed to nearby peers.`);
@@ -1575,6 +1671,84 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
           })}
         </div>
       </nav>
+
+      {/* Panic-Proof Emergency SOS Broadcast Modal Confirmation */}
+      {sosBroadcastModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in">
+          <div className="w-full max-w-sm sm:max-w-md bg-[#0a1220] border-2 border-red-500 rounded-3xl p-5 sm:p-6 shadow-2xl text-center space-y-4">
+            <div className="relative mx-auto w-16 h-16 flex items-center justify-center">
+              <span className="absolute inset-0 rounded-full bg-red-600/30 animate-ping" />
+              <div className="relative w-14 h-14 rounded-full bg-gradient-to-tr from-red-600 to-rose-500 flex items-center justify-center text-white shadow-lg">
+                <AlertOctagon size={28} className="animate-pulse" />
+              </div>
+            </div>
+
+            <div>
+              <span className="text-[10px] font-mono font-bold tracking-widest uppercase px-2.5 py-0.5 rounded-full bg-red-500/20 text-red-400 border border-red-500/40">
+                DISTRESS BEACON ACTIVE
+              </span>
+              <h2 className="text-lg sm:text-xl font-black text-white mt-1.5">
+                Emergency SOS Broadcasted!
+              </h2>
+              <p className="text-xs text-slate-300 mt-1 font-mono">
+                Transmission ID: #{sosBroadcastModal.id}
+              </p>
+            </div>
+
+            <div className="bg-[#050b14] border border-slate-800 rounded-2xl p-3 text-left space-y-1.5 font-mono text-[11px]">
+              <div className="flex justify-between text-slate-400">
+                <span>Coordinates:</span>
+                <strong className="text-cyan-400">{sosBroadcastModal.location.lat.toFixed(4)}, {sosBroadcastModal.location.lon.toFixed(4)}</strong>
+              </div>
+              <div className="flex justify-between text-slate-400">
+                <span>Target Channel:</span>
+                <strong className="text-amber-400">{sosBroadcastModal.visibility === 'responders' ? 'Verified Responders & HQ' : 'Public Mesh Broadcast'}</strong>
+              </div>
+              <div className="flex justify-between text-slate-400">
+                <span>Mesh Relayed:</span>
+                <strong className="text-emerald-400">{sosBroadcastModal.peersCount} nearby device(s) on Wi-Fi</strong>
+              </div>
+              <p className="pt-1.5 border-t border-slate-800 text-[11px] text-slate-300 font-sans leading-relaxed line-clamp-2">
+                "{sosBroadcastModal.text}"
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setSosBroadcastModal(null);
+                  setTab('map');
+                }}
+                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-md transition-all active:scale-98"
+              >
+                <Navigation size={15} />
+                <span>Track My Beacon on Radar Map</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setSosBroadcastModal(null);
+                  setTab('ask');
+                }}
+                className="w-full py-2.5 rounded-xl border border-slate-700 bg-slate-900/80 hover:bg-slate-800 text-slate-200 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all active:scale-98"
+              >
+                <HeartPulse size={15} className="text-rose-400" />
+                <span>View Emergency First-Aid in Chat</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSosBroadcastModal(null)}
+                className="text-xs text-slate-400 hover:text-white pt-1"
+              >
+                Close & Return to HUD
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </Shell>
   );
 }

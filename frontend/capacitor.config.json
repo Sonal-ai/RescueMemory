@@ -12,6 +12,9 @@
     "cleartext": true
   },
   "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    },
     "StatusBar": {
       "style": "DARK",
       "backgroundColor": "#08111d"
