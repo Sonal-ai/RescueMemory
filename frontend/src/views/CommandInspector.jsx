@@ -248,12 +248,14 @@ export default function CommandInspector() {
           </div>
           <div className="min-w-0">
             <div className="text-xl font-black text-slate-100 font-mono">
-              {guides.length || 420}
+              {guides.length || health?.guides || 0}
             </div>
             <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">
               Vector Protocols
             </p>
-            <span className="text-[9px] text-amber-400 font-medium">Fixed Medical Library</span>
+            <span className="text-[9px] text-amber-400 font-medium">
+              {(guides.length || health?.guides || 0) > 0 ? `${guides.length || health?.guides} Active in Memory` : 'Verified Protocols'}
+            </span>
           </div>
         </div>
 

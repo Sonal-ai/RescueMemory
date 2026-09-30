@@ -333,7 +333,7 @@ async function handleOfflineFallback(path, method, body) {
           mode: 'standalone_mobile_brain',
         };
       } else {
-        const ans = `### 🛡️ Nearest Survivor Status\n\n• **Casualties:** No active survivor SOS signals detected in on-device memory.\n\n**📊 Area Status Summary:**\n• 🟢 **Safe Shelters:** 3 operational (Nearest: Shelter Alpha ~420m)\n• ⚠️ **Hazards:** 1 active hazard logged (Checkpoint CP-17: Flooded entrance live wires)\n• 📶 **Active Mesh Peers:** Local Wi-Fi mesh scanning active\n\nIf you locate an injured casualty, use the **Emergency SOS** tab to log their location and needs.`;
+        const ans = `### 🛡️ Nearest Survivor Status\n\n• **Casualties:** No active survivor SOS signals detected in on-device memory.\n\n**📊 Area Status Summary:**\n• 🟢 **Safe Shelters:** 3 operational (Nearest: Shelter Alpha ~350m)\n• ⚠️ **Hazards:** 1 active hazard logged (Checkpoint CP-17: Flooded entrance live wires)\n• 📶 **Active Mesh Peers:** Local Wi-Fi mesh scanning active\n\nIf you locate an injured casualty, use the **Emergency SOS** tab to log their location and needs.`;
         return {
           query,
           answer_type: 'nearest_survivor_sos',

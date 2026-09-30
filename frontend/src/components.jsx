@@ -192,7 +192,7 @@ export function QuietTelemetryPill({ health, sync, error }) {
             </div>
             <div className="flex justify-between">
               <span className="text-slate-500 dark:text-slate-400">Indexed Protocols:</span>
-              <span className="text-cyan-700 dark:text-cyan-300">{health?.guides || 420} survival records</span>
+              <span className="text-cyan-700 dark:text-cyan-300">{health?.guides ?? (health ? 0 : 419)} survival records</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-500 dark:text-slate-400">Mesh Auto-Discovery:</span>

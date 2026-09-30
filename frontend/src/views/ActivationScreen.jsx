@@ -104,10 +104,10 @@ export default function ActivationScreen() {
           </div>
           <div className="min-w-0">
             <div className="text-lg sm:text-2xl font-black text-slate-900 dark:text-slate-100 font-mono">
-              {health?.guides || 420}
+              {health ? (health.guides ?? 0) : 419}
             </div>
             <p className="text-[10px] sm:text-[11px] text-slate-600 dark:text-slate-400 font-semibold uppercase tracking-wider mt-0.5 truncate">
-              Indexed Protocols
+              {health ? 'Signed Protocols' : 'Offline Protocols'}
             </p>
           </div>
         </div>
@@ -184,7 +184,7 @@ export default function ActivationScreen() {
                 Survivor HUD & Offline Triage
               </h3>
               <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
-                Emergency conversational AI and instant semantic search over 420+ WHO/Red Cross medical protocols. Broadcast SOS alerts with GPS coordinates completely offline.
+                Emergency conversational AI and instant semantic search over verified medical protocols. Broadcast SOS alerts with GPS coordinates completely offline.
               </p>
             </div>
             <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs text-red-600 dark:text-red-400 font-bold">
@@ -316,7 +316,7 @@ export default function ActivationScreen() {
             </div>
             <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100">1. On-Device Edge Vectors</h3>
             <p className="text-[11px] sm:text-xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
-              In-process Qdrant Edge shard runs directly inside device memory. Cosine search across 420+ protocols in under 15 milliseconds without cellular connection.
+              In-process Qdrant Edge shard runs directly inside device memory. Cosine search across verified protocols in under 15 milliseconds without cellular connection.
             </p>
           </div>
 

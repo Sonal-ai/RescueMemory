@@ -194,7 +194,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
     {
       id: 'welcome',
       role: 'assistant',
-      text: "Hello! I am your **RescueMemory Offline Assistant** (420 verified emergency protocols). How can I assist you right now?",
+      text: "Hello! I am your **RescueMemory Offline Assistant** (verified emergency protocols). How can I assist you right now?",
       timestamp: new Date(),
       isAi: false
     }

@@ -103,7 +103,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"status": "ok", "node_id": settings.node_id, "role": settings.role,
                 "engine": "qdrant-edge-py", "offline_model": True,
                 "events": getattr(s, "events_count", 0),
-                "guides": getattr(s, "guides_count", 420),
+                "guides": getattr(s, "guides_count", 0),
                 "guides_enabled": bool(settings.guide_trust_key),
                 "gemini_configured": bool(settings.gemini_api_key),
                 "central_configured": bool(settings.central_url),

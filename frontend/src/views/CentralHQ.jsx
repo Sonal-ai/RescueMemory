@@ -113,7 +113,7 @@ export default function CentralHQ() {
         <div className="bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 rounded-2xl p-2.5 sm:p-3 col-span-2 sm:col-span-1 shadow-xs">
           <div className="text-slate-500 dark:text-slate-400 text-[10px] font-mono uppercase mb-0.5 font-bold">Protocols</div>
           <div className="text-xl sm:text-2xl font-black mb-0.5 font-mono text-emerald-600 dark:text-emerald-400">
-            {health?.guides ?? 420}
+            {health?.guides ?? 0}
           </div>
           <div className="text-slate-500 text-[10px] font-mono truncate">Signed Protocols</div>
         </div>
