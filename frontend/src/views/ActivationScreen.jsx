@@ -62,42 +62,42 @@ export default function ActivationScreen() {
       {/* Live Node Telemetry Grid */}
       <div className="grid sm:grid-cols-3 gap-4 mt-6">
         <div className="stat-card">
-          <div className="p-3 rounded-2xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+          <div className="p-3 rounded-2xl bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20">
             <Database size={24} />
           </div>
           <div>
-            <div className="text-2xl sm:text-3xl font-black text-slate-100 font-mono">
+            <div className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-slate-100 font-mono">
               {health ? health.guides : '518'}
             </div>
-            <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mt-0.5">
+            <p className="text-xs text-slate-600 dark:text-slate-400 font-semibold uppercase tracking-wider mt-0.5">
               Verified Survival Protocols
             </p>
           </div>
         </div>
 
         <div className="stat-card">
-          <div className="p-3 rounded-2xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
+          <div className="p-3 rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
             <MapPin size={24} />
           </div>
           <div>
-            <div className="text-2xl sm:text-3xl font-black text-slate-100 font-mono">
+            <div className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-slate-100 font-mono">
               {health ? count : '—'}
             </div>
-            <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mt-0.5">
+            <p className="text-xs text-slate-600 dark:text-slate-400 font-semibold uppercase tracking-wider mt-0.5">
               Local Observations in Memory
             </p>
           </div>
         </div>
 
         <div className="stat-card">
-          <div className="p-3 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+          <div className="p-3 rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
             <Wifi size={24} />
           </div>
           <div>
-            <div className="text-2xl sm:text-3xl font-black text-slate-100 font-mono">
+            <div className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-slate-100 font-mono">
               {health?.central_configured ? 'Active' : 'Mesh Only'}
             </div>
-            <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mt-0.5">
+            <p className="text-xs text-slate-600 dark:text-slate-400 font-semibold uppercase tracking-wider mt-0.5">
               Central Cloud Sync Uplink
             </p>
           </div>
@@ -106,32 +106,32 @@ export default function ActivationScreen() {
 
       {/* How it Works: 3-Pillar Offline Architecture */}
       <div className="mt-8 grid md:grid-cols-3 gap-4">
-        <div className="p-5 rounded-3xl border border-slate-800 bg-[#091424] shadow-md">
-          <div className="p-2.5 rounded-2xl bg-red-500/10 text-red-400 border border-red-500/20 w-fit mb-3.5">
+        <div className="p-5 rounded-3xl border border-[#dbe6f0] dark:border-slate-800 bg-white dark:bg-[#091424] shadow-xs">
+          <div className="p-2.5 rounded-2xl bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20 w-fit mb-3.5">
             <Cpu size={20} />
           </div>
-          <h3 className="text-base font-bold text-slate-100">1. In-Process Qdrant Edge</h3>
-          <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+          <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">1. In-Process Qdrant Edge</h3>
+          <p className="text-xs text-slate-600 dark:text-slate-400 mt-2 leading-relaxed">
             Zero external servers or Docker containers required. Vector embeddings and HNSW graphs run directly inside local device memory in under 15 ms.
           </p>
         </div>
 
-        <div className="p-5 rounded-3xl border border-slate-800 bg-[#091424] shadow-md">
-          <div className="p-2.5 rounded-2xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 w-fit mb-3.5">
+        <div className="p-5 rounded-3xl border border-[#dbe6f0] dark:border-slate-800 bg-white dark:bg-[#091424] shadow-xs">
+          <div className="p-2.5 rounded-2xl bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20 w-fit mb-3.5">
             <Radio size={20} />
           </div>
-          <h3 className="text-base font-bold text-slate-100">2. UDP Peer Wi-Fi Relay</h3>
-          <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+          <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">2. UDP Peer Wi-Fi Relay</h3>
+          <p className="text-xs text-slate-600 dark:text-slate-400 mt-2 leading-relaxed">
             Automatically discovers neighboring survivor and medic nodes on local Wi-Fi hotspots, exchanging vector records and casualty statuses peer-to-peer.
           </p>
         </div>
 
-        <div className="p-5 rounded-3xl border border-slate-800 bg-[#091424] shadow-md">
-          <div className="p-2.5 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 w-fit mb-3.5">
+        <div className="p-5 rounded-3xl border border-[#dbe6f0] dark:border-slate-800 bg-white dark:bg-[#091424] shadow-xs">
+          <div className="p-2.5 rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 w-fit mb-3.5">
             <ShieldCheck size={20} />
           </div>
-          <h3 className="text-base font-bold text-slate-100">3. Cryptographic Provenance</h3>
-          <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+          <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">3. Cryptographic Provenance</h3>
+          <p className="text-xs text-slate-600 dark:text-slate-400 mt-2 leading-relaxed">
             Every disaster observation is cryptographically anchored with an origin device signature, ensuring full data integrity and zero duplicate clutter.
           </p>
         </div>
