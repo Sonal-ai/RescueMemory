@@ -113,29 +113,84 @@ class PeerDiscovery:
             }
             return dict(self._my_location)
 
+    def register_peer(
+        self,
+        node_id: str,
+        role: str = "survivor",
+        ip: str | None = None,
+        port: int = 8000,
+        lat: float | None = None,
+        lon: float | None = None,
+        status: str = "active",
+        battery: int | None = None,
+        device_name: str | None = None,
+    ) -> dict[str, Any]:
+        """Explicitly register an active peer node (from HTTP beacon/location heartbeat)."""
+        if not node_id:
+            return {}
+        now = time.time()
+        peer_data = {
+            "node_id": node_id,
+            "name": device_name or f"Node ({node_id[-4:] if len(node_id) >= 4 else node_id})",
+            "device_name": device_name or f"Node ({node_id[-4:] if len(node_id) >= 4 else node_id})",
+            "role": role or "survivor",
+            "ip": ip or "0.0.0.0",
+            "port": port,
+            "url": f"http://{ip}:{port}" if ip and ip not in ("0.0.0.0", "127.0.0.1") else None,
+            "lat": float(lat) if lat is not None else None,
+            "lon": float(lon) if lon is not None else None,
+            "status": status or "active",
+            "battery": battery,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "last_seen_epoch": now,
+        }
+        with self._lock:
+            self._discovered_peers[node_id] = peer_data
+        return peer_data
+
     def get_my_location(self) -> dict[str, Any]:
         with self._lock:
             return dict(self._my_location)
 
-    def get_peers(self) -> list[dict[str, Any]]:
-        """Return list of active discovered peers with distance relative to local node."""
+    def get_peers(
+        self,
+        caller_node_id: str | None = None,
+        caller_loc: dict[str, float] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return list of active discovered peers with distance and bearing relative to caller or local node."""
         now = time.time()
+        cutoff_ttl = max(self.peer_ttl, 180.0)
         with self._lock:
             # Purge expired peers
             stale = [
                 nid for nid, p in self._discovered_peers.items()
-                if now - p["last_seen_epoch"] > self.peer_ttl
+                if now - p["last_seen_epoch"] > cutoff_ttl
             ]
             for nid in stale:
                 del self._discovered_peers[nid]
 
-            my_loc = dict(self._my_location)
+            my_loc = caller_loc or dict(self._my_location)
             result = []
-            for p in self._discovered_peers.values():
+            for nid, p in self._discovered_peers.items():
+                if caller_node_id and nid == caller_node_id:
+                    continue  # do not return self
                 peer_copy = dict(p)
                 peer_loc = {"lat": p.get("lat"), "lon": p.get("lon")} if p.get("lat") is not None else None
                 peer_copy["distance_m"] = distance_meters(my_loc, peer_loc)
-                peer_copy["is_online"] = (now - p["last_seen_epoch"]) <= (self.broadcast_interval * 2.5)
+                if (
+                    my_loc.get("lat") is not None
+                    and my_loc.get("lon") is not None
+                    and peer_loc
+                    and peer_loc.get("lat") is not None
+                    and peer_loc.get("lon") is not None
+                ):
+                    b = calculate_bearing(my_loc["lat"], my_loc["lon"], peer_loc["lat"], peer_loc["lon"])
+                    peer_copy["bearing_deg"] = b
+                    peer_copy["cardinal"] = calculate_cardinal(b)
+                else:
+                    peer_copy["bearing_deg"] = 0
+                    peer_copy["cardinal"] = "N"
+                peer_copy["is_online"] = (now - p["last_seen_epoch"]) <= 120.0
                 peer_copy["seconds_ago"] = round(now - p["last_seen_epoch"], 1)
                 result.append(peer_copy)
 

@@ -7,7 +7,7 @@ __pycache__/
 env/
 build/
 develop-eggs/
-dist/
+/dist/
 downloads/
 eggs/
 .eggs/
@@ -44,9 +44,12 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
-dist/
 dist-ssr/
 *.local
+
+# Whitelist production frontend build for Render unified deployment
+!frontend/dist/
+!frontend/dist/**
 
 # Environment variables & secrets
 .env

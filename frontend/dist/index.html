@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/x-icon" href="./favicon.ico" />
+    <link rel="icon" type="image/png" href="./favicon.png" />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="apple-touch-icon" href="./icon-192.png" />
+    <link rel="manifest" href="./manifest.json" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#08111d" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="RescueMemory" />
+    <meta name="description" content="RescueMemory offline-first AI disaster memory and relay platform" />
+    <title>RescueMemory</title>
+    <script>
+      (function() {
+        try {
+          var t = localStorage.getItem('rescue.theme') || 'light';
+          document.documentElement.dataset.theme = t;
+          if (t === 'dark') {
+            document.documentElement.classList.add('dark');
+            document.documentElement.classList.remove('light');
+          } else {
+            document.documentElement.classList.remove('dark');
+            document.documentElement.classList.add('light');
+          }
+        } catch(e) {}
+      })();
+    </script>
+    <script type="module" crossorigin src="./assets/index-C-JTNMLt.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-CV_G3-x_.css">
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+            navigator.serviceWorker.getRegistrations().then(registrations => {
+              for (let registration of registrations) {
+                registration.unregister();
+                console.log('Unregistered development ServiceWorker:', registration.scope);
+              }
+            });
+          } else {
+            navigator.serviceWorker.register('/sw.js')
+              .then(reg => {
+                console.log('RescueMemory ServiceWorker active:', reg.scope);
+              })
+              .catch(err => {
+                console.error('ServiceWorker registration failed:', err);
+              });
+          }
+        });
+      }
+    </script>
+  </body>
+</html>

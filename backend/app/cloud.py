@@ -94,8 +94,8 @@ def check_cloud_connection(service: RescueService) -> dict:
 
 def mirror_to_qdrant_server(service: RescueService) -> dict:
     """Exchange scoped events and centrally authenticated guides with Cloud."""
-    if service.settings.role != "central" or not service.settings.qdrant_url:
-        raise ValueError("central node with QDRANT_URL required")
+    if not service.settings.qdrant_url or not service.settings.qdrant_api_key:
+        raise ValueError("QDRANT_URL and QDRANT_API_KEY required")
     client = QdrantClient(url=service.settings.qdrant_url,
                           api_key=service.settings.qdrant_api_key, timeout=30)
     result = {"events_uploaded": {}, "events_downloaded": {},

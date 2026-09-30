@@ -101,6 +101,9 @@ class DeviceLocationUpdate(BaseModel):
     lon: float = Field(ge=-180, le=180)
     status: str = Field(default="active", max_length=50)
     battery: int | None = Field(default=None, ge=0, le=100)
+    node_id: str | None = Field(default=None, max_length=100)
+    role: str | None = Field(default="survivor", max_length=50)
+    device_name: str | None = Field(default=None, max_length=100)
 
 
 class DiscoverySyncRequest(BaseModel):

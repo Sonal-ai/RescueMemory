@@ -5,10 +5,11 @@
  * between Android devices and Central Server using Qdrant Cloud.
  */
 
-export const QDRANT_CLOUD_URL = 'https://7b3cb247-fa8e-4344-841e-190094e210f6.eu-west-2-0.aws.cloud.qdrant.io';
-export const QDRANT_CLOUD_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIiwic3ViamVjdCI6ImFwaS1rZXk6NDYyYjk1NTUtODMxYS00ZWQ5LTliYTItZDMwYjJiOTg4YzNhIn0.rCrI3kO--zNQbP5QlKmKst9l9aR7r3sXYf6M4y4oyeM';
+export const QDRANT_CLOUD_URL = 'https://59916dae-f8fa-454e-9b92-96755f1251d4.us-east-1-1.aws.cloud.qdrant.io';
+export const QDRANT_CLOUD_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIiwic3ViamVjdCI6ImFwaS1rZXk6NGNmOGY1MDUtZjhhMi00ZTEzLWFhOGMtZjBlMjk0MjRmNzViIn0.Bw1GfzE8jD61Yx179dU4Oj7bMKaMzLNXZP5Z9Wj-o2E';
 
 export const PUBLIC_EVENTS_COLLECTION = 'rescue_public_events';
+export const RESPONDER_EVENTS_COLLECTION = 'rescue_responder_events';
 export const GUIDES_COLLECTION = 'rescue_approved_guides';
 
 /**
@@ -234,7 +235,7 @@ export async function queryPeerBeacons(myDeviceId, myLocation = { lat: 28.7041, 
     const points = data?.result?.points || [];
 
     const now = Date.now();
-    const activeCutoffMs = 120000; // Beacons within last 2 minutes
+    const activeCutoffMs = 300000; // Beacons within last 5 minutes
     const myLat = myLocation?.lat || 28.7041;
     const myLon = myLocation?.lon || 77.1025;
 
@@ -283,7 +284,8 @@ export async function queryPeerBeacons(myDeviceId, myLocation = { lat: 28.7041, 
 export async function pushReportsToCloud(reports = []) {
   if (!Array.isArray(reports) || reports.length === 0) return [];
   try {
-    const points = [];
+    const publicPoints = [];
+    const responderPoints = [];
     const idMap = [];
 
     for (const rep of reports) {
@@ -309,28 +311,40 @@ export async function pushReportsToCloud(reports = []) {
         observed_at: rep.observed_at || rep.created_at || new Date().toISOString(),
         created_at: rep.created_at || new Date().toISOString(),
       };
-      points.push({
+      const pt = {
         id: pointId,
         vector: { dense: vector },
         payload,
-      });
+      };
+      if (rep.visibility === 'responders') {
+        responderPoints.push(pt);
+      } else {
+        publicPoints.push(pt);
+      }
       idMap.push(rep.id);
     }
 
-    if (points.length === 0) return [];
+    if (publicPoints.length === 0 && responderPoints.length === 0) return [];
 
-    const res = await universalRequest(`${QDRANT_CLOUD_URL}/collections/${PUBLIC_EVENTS_COLLECTION}/points`, {
-      method: 'PUT',
-      headers: {
-        'api-key': QDRANT_CLOUD_KEY,
-        'Content-Type': 'application/json',
-      },
-      body: { points },
-      timeout: 5000,
-    });
+    const pushBatch = async (col, pts) => {
+      if (pts.length === 0) return true;
+      const res = await universalRequest(`${QDRANT_CLOUD_URL}/collections/${col}/points`, {
+        method: 'PUT',
+        headers: {
+          'api-key': QDRANT_CLOUD_KEY,
+          'Content-Type': 'application/json',
+        },
+        body: { points: pts },
+        timeout: 5000,
+      });
+      return res.ok;
+    };
 
-    if (res.ok) {
-      console.log(`[CloudMesh] Successfully pushed ${points.length} report(s) to Qdrant Cloud.`);
+    const res1 = await pushBatch(PUBLIC_EVENTS_COLLECTION, publicPoints);
+    const res2 = await pushBatch(RESPONDER_EVENTS_COLLECTION, responderPoints);
+
+    if (res1 || res2) {
+      console.log(`[CloudMesh] Successfully pushed ${idMap.length} report(s) to Qdrant Cloud.`);
       return idMap;
     }
     return [];

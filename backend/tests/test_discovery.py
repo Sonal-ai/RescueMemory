@@ -114,3 +114,63 @@ def test_discovery_api_endpoints(tmp_path):
         refreshed = client.get("/api/discovery/peers").json()
         assert refreshed["my_location"]["lat"] == 28.7041
         assert refreshed["my_location"]["battery"] == 90
+
+
+def test_http_peer_cross_discovery(tmp_path):
+    settings = Settings(
+        "central-server",
+        "central",
+        tmp_path / "node",
+        MODEL_CACHE,
+        "mesh-test",
+        "responder-test",
+        enable_discovery=False,
+    )
+    with TestClient(create_app(settings)) as client:
+        # Phone 1 registers location
+        p1 = client.post("/api/discovery/location", json={
+            "node_id": "phone-alpha",
+            "device_name": "Phone Alpha (Host)",
+            "role": "survivor",
+            "lat": 28.7041,
+            "lon": 77.1025,
+            "battery": 92,
+            "status": "active"
+        })
+        assert p1.status_code == 200
+        assert p1.json()["registered_peer"]["node_id"] == "phone-alpha"
+
+        # Phone 2 registers location (~135m away)
+        p2 = client.post("/api/discovery/location", json={
+            "node_id": "phone-bravo",
+            "device_name": "Phone Bravo (Client)",
+            "role": "survivor",
+            "lat": 28.7050,
+            "lon": 77.1035,
+            "battery": 78,
+            "status": "needs_help"
+        })
+        assert p2.status_code == 200
+
+        # Phone 1 checks for peers (excludes self, returns Phone 2)
+        p1_peers = client.get("/api/discovery/peers", params={
+            "node_id": "phone-alpha",
+            "lat": 28.7041,
+            "lon": 77.1025,
+        }).json()
+        assert p1_peers["count"] == 1
+        assert p1_peers["peers"][0]["node_id"] == "phone-bravo"
+        assert p1_peers["peers"][0]["name"] == "Phone Bravo (Client)"
+        assert p1_peers["peers"][0]["distance_m"] is not None
+        assert 80 < p1_peers["peers"][0]["distance_m"] < 200
+
+        # Phone 2 checks for peers (excludes self, returns Phone 1)
+        p2_peers = client.get("/api/discovery/peers", params={
+            "node_id": "phone-bravo",
+            "lat": 28.7050,
+            "lon": 77.1035,
+        }).json()
+        assert p2_peers["count"] == 1
+        assert p2_peers["peers"][0]["node_id"] == "phone-alpha"
+        assert p2_peers["peers"][0]["name"] == "Phone Alpha (Host)"
+

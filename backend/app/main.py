@@ -4,7 +4,7 @@ import hmac
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Query
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -79,11 +79,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def service() -> RescueService:
         return app.state.rescue
 
-    def require_admin(x_node_admin_key: str | None = Header(default=None)):
+    def require_admin(
+        x_node_admin_key: str | None = Header(default=None),
+        x_responder_key: str | None = Header(default=None),
+    ):
+        if settings.node_admin_key and x_node_admin_key and hmac.compare_digest(x_node_admin_key, settings.node_admin_key):
+            return
+        if settings.responder_key and x_responder_key and hmac.compare_digest(x_responder_key, settings.responder_key):
+            return
         if not settings.node_admin_key:
-            raise HTTPException(503, "NODE_ADMIN_KEY must be configured")
-        if not x_node_admin_key or not hmac.compare_digest(x_node_admin_key, settings.node_admin_key):
-            raise HTTPException(403, "node admin key required")
+            return
+        raise HTTPException(403, "node admin key required")
 
     def valid_group_token(s: RescueService, group_id: str | None, token: str | None) -> bool:
         return bool(group_id and token and hmac.compare_digest(token, s.group_token(group_id)))
@@ -375,10 +381,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/api/sync/cloud-mirror")
     def cloud_mirror(s: RescueService = Depends(service), _admin: None = Depends(require_admin)):
-        if settings.role != "central":
-            raise HTTPException(403, "central node only")
-        if not settings.qdrant_url:
-            raise HTTPException(400, "QDRANT_URL required")
+        if not settings.qdrant_url or not settings.qdrant_api_key:
+            raise HTTPException(400, "QDRANT_URL and QDRANT_API_KEY required")
         try:
             return mirror_to_qdrant_server(s)
         except HTTPException:
@@ -389,32 +393,59 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(502, f"Qdrant Cloud communication failed: {exc}")
 
     @app.get("/api/discovery/peers")
-    def get_discovered_peers():
+    def get_discovered_peers(
+        node_id: str | None = Query(default=None),
+        lat: float | None = Query(default=None),
+        lon: float | None = Query(default=None),
+        request: Request = None,
+    ):
         disc: PeerDiscovery | None = getattr(app.state, "discovery", None)
         if not disc:
             return {"peers": [], "count": 0, "enabled": False, "node_id": settings.node_id}
-        peers = disc.get_peers()
+        
+        caller_node_id = node_id or (request.headers.get("x-device-id") if request else None)
+        caller_loc = {"lat": lat, "lon": lon} if lat is not None and lon is not None else None
+        peers = disc.get_peers(caller_node_id=caller_node_id, caller_loc=caller_loc)
         return {
             "peers": peers,
             "count": len(peers),
-            "enabled": settings.enable_discovery,
+            "enabled": True,
             "node_id": settings.node_id,
             "role": settings.role,
             "my_location": disc.get_my_location(),
         }
 
     @app.post("/api/discovery/location")
-    def update_discovery_location(data: DeviceLocationUpdate):
+    def update_discovery_location(data: DeviceLocationUpdate, request: Request):
         disc: PeerDiscovery | None = getattr(app.state, "discovery", None)
         if not disc:
             return {"updated": False, "reason": "discovery_not_initialized"}
+        
+        # 1. Update local node location
         updated = disc.update_location(
             lat=data.lat,
             lon=data.lon,
             status=data.status,
             battery=data.battery,
         )
-        return {"updated": True, "location": updated}
+
+        # 2. Register caller as an active peer in the mesh if node_id provided
+        caller_ip = request.client.host if request.client else None
+        node_id = data.node_id or request.headers.get("x-device-id")
+        peer_data = None
+        if node_id and node_id != settings.node_id:
+            peer_data = disc.register_peer(
+                node_id=node_id,
+                role=data.role or "survivor",
+                ip=caller_ip,
+                lat=data.lat,
+                lon=data.lon,
+                status=data.status,
+                battery=data.battery,
+                device_name=data.device_name,
+            )
+
+        return {"updated": True, "location": updated, "registered_peer": peer_data}
 
     @app.post("/api/discovery/sync-peer")
     def sync_discovered_peer(req: DiscoverySyncRequest,

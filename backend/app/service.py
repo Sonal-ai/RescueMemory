@@ -179,7 +179,28 @@ class RescueService:
         body = request.model_dump(mode="json", exclude={"idempotency_key"})
         body["visibility"] = visibility
         body["expires_at"] = None
-        return self._event(body, request.idempotency_key)
+        result = self._event(body, request.idempotency_key)
+        self._trigger_cloud_mirror()
+        return result
+
+    def _trigger_cloud_mirror(self) -> None:
+        if not self.settings.qdrant_url or not self.settings.qdrant_api_key:
+            return
+        if getattr(self, "_mirror_in_progress", False):
+            return
+
+        def _do_mirror():
+            self._mirror_in_progress = True
+            try:
+                from .cloud import mirror_to_qdrant_server
+                mirror_to_qdrant_server(self)
+            except Exception as exc:
+                import logging
+                logging.getLogger("rescue.cloud").warning("Auto cloud-mirror notice: %s", exc)
+            finally:
+                self._mirror_in_progress = False
+
+        threading.Thread(target=_do_mirror, daemon=True).start()
 
     def chat(self, request: ChatRequest) -> dict:
         self.purge_expired()
