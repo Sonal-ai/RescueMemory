@@ -348,6 +348,24 @@ html:not(.dark) [class*="from-slate-900"] {
   background-image: none !important;
 }
 
+/* High-contrast user chat bubble in both light & dark modes */
+.user-chat-bubble,
+:root[data-theme="light"] .user-chat-bubble,
+html:not(.dark) .user-chat-bubble,
+html.dark .user-chat-bubble {
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 50%, #1d4ed8 100%) !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.25) !important;
+  box-shadow: 0 4px 14px rgba(2, 132, 199, 0.25) !important;
+}
+
+.user-chat-bubble *,
+:root[data-theme="light"] .user-chat-bubble *,
+html:not(.dark) .user-chat-bubble *,
+html.dark .user-chat-bubble * {
+  color: #ffffff !important;
+}
+
 /* High contrast text readability for assistant chat in both modes */
 :root[data-theme="light"] .chat-assistant-bubble,
 html:not(.dark) .chat-assistant-bubble {

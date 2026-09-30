@@ -66,3 +66,5 @@ Thumbs.db
 tmp/
 .tmp_pytest/
 .pytest_cache/
+*.apk
+

@@ -151,12 +151,12 @@ async function handleOfflineFallback(path, method, body) {
   await initOfflineBrain();
 
   // 1. Local Search & Emergency Guidance
-  if (path === '/api/chat') {
+  if (path === '/api/chat' || path.startsWith('/api/chat')) {
     const query = body?.text || body?.message || body?.query || '';
     const answer = await searchKnowledgeLocal(query);
     const topCard = answer.source_cards?.[0];
     const qLower = query.toLowerCase();
-    const isSosQuery = qLower.includes('walk') || qLower.includes('trapped') || qLower.includes('rubble') || qLower.includes('sos') || qLower.includes('stuck');
+    const isSosQuery = qLower.includes('walk') || qLower.includes('trapped') || qLower.includes('rubble') || qLower.includes('sos') || qLower.includes('stuck') || qLower.includes('move');
 
     return {
       query,

@@ -13,7 +13,6 @@ import {
   Settings2,
   ShieldCheck,
   Sun,
-  Users,
   Wifi,
   WifiOff,
   X
@@ -29,21 +28,8 @@ export function SettingsPanel({ onClose }) {
     groupId: setting('groupId'),
     groupToken: setting('groupToken'),
     peerUrl: setting('peerUrl'),
-    backendUrl: setting('backendUrl'),
     reporterId: setting('reporterId') || 'survivor-1',
   });
-
-  const fillDemo = () => {
-    setValues({
-      adminKey: 'demo-admin-key',
-      responderKey: 'demo-responder-key',
-      groupId: 'alpha-team',
-      groupToken: 'alpha-pass',
-      peerUrl: 'http://127.0.0.1:8002',
-      backendUrl: setting('backendUrl'),
-      reporterId: 'survivor-alpha',
-    });
-  };
 
   const save = () => {
     Object.entries(values).forEach(([key, value]) => saveSetting(key, value));
@@ -79,7 +65,6 @@ export function SettingsPanel({ onClose }) {
         <div className="grid sm:grid-cols-2 gap-4">
           {[
             ['reporterId', 'Survivor / Device Name', 'e.g. survivor-alpha'],
-            ['backendUrl', 'Backend Hub URL (Local Wi-Fi / Tunnel)', 'http://192.168.1.X:8000 or https://...ngrok-free.app'],
             ['peerUrl', 'Nearby Node Hotspot URL', 'http://192.168.43.12:8001'],
             ['groupId', 'Private Team Group ID', 'Optional team identifier'],
             ['groupToken', 'Private Group Token', 'Shared mesh passphrase'],
@@ -102,12 +87,21 @@ export function SettingsPanel({ onClose }) {
         <div className="flex flex-wrap items-center justify-between gap-3 mt-7 pt-4 border-t border-[#dbe6f0] dark:border-slate-800">
           <button
             type="button"
-            className="text-xs text-cyan-600 dark:text-cyan-400 hover:underline font-bold"
-            onClick={fillDemo}
+            className="text-xs font-mono text-cyan-600 dark:text-cyan-400 hover:underline cursor-pointer"
+            onClick={() => {
+              setValues({
+                reporterId: 'survivor-1',
+                peerUrl: 'http://127.0.0.1:8000',
+                groupId: 'camp-alpha',
+                groupToken: 'demo-mesh-shared-key',
+                adminKey: 'demo-node-admin-key',
+                responderKey: 'demo-responder-shared-key'
+              });
+            }}
           >
-            + Fill Demo Keys (Prototype)
+            ⚡ Fill Demo Keys (Prototype)
           </button>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <button className="btn-secondary text-sm" onClick={onClose}>
               Cancel
             </button>
@@ -125,22 +119,19 @@ export function QuietTelemetryPill({ health, sync, error }) {
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="relative shrink-0">
+    <div className="relative">
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1 sm:py-1.5 rounded-full border border-emerald-300 dark:border-emerald-500/30 bg-emerald-100/90 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-300 hover:bg-emerald-200/80 dark:hover:bg-emerald-950/60 text-xs font-bold transition-all active:scale-95 shadow-xs shrink-0"
+        className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-emerald-300 dark:border-emerald-500/30 bg-emerald-100/90 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-300 hover:bg-emerald-200/80 dark:hover:bg-emerald-950/60 text-xs font-bold transition-all active:scale-95 shadow-xs"
         title="Offline system status & peer telemetry"
       >
         <span className="relative flex h-2 w-2">
           <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 bg-emerald-500"></span>
           <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-600"></span>
         </span>
-        <span className="hidden md:inline font-bold">Offline Ready</span>
-        <span className="text-[10px] bg-emerald-200 dark:bg-emerald-900/60 text-emerald-950 dark:text-emerald-200 px-1.5 py-0.5 rounded font-mono font-bold">
-          {health?.guides ? `${health.guides} Guides` : 'Ready'}
-        </span>
-        <ChevronDown size={12} className={`opacity-70 transition-transform ${open ? 'rotate-180' : ''}`} />
+        <span className="hidden sm:inline font-bold">Offline Ready</span>
+        <ChevronDown size={13} className={`opacity-70 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
       {open && (
@@ -205,7 +196,6 @@ export function Shell({ title, subtitle, children }) {
   const { health, sync, error } = useNodeStatus();
   const last = sync?.last_sync || sync?.last_uplink;
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [theme, setTheme] = useState(() => {
     const saved = localStorage.getItem('rescue.theme') || localStorage.getItem('theme');
     return saved === 'dark' ? 'dark' : 'light';
@@ -229,60 +219,22 @@ export function Shell({ title, subtitle, children }) {
     localStorage.setItem('theme', theme);
   }, [theme]);
 
-  const navLinks = [
-    { to: '/', label: 'Assistant & SOS', icon: Activity },
-    { to: '/safeplace', label: 'Safe Shelters', icon: ShieldCheck },
-    { to: '/volunteer', label: 'Responders', icon: Users },
-    { to: '/hq', label: 'Command HQ', icon: Radio },
-    { to: '/about', label: 'Architecture', icon: CircleHelp },
-  ];
-
   return (
-    <div className="app-shell min-h-screen w-full max-w-full overflow-x-hidden bg-[#f0f5fa] dark:bg-[#080d19] text-slate-900 dark:text-slate-100 flex flex-col pb-16 sm:pb-0">
+    <div className="app-shell min-h-screen bg-[#f0f5fa] dark:bg-[#080d19] text-slate-900 dark:text-slate-100 flex flex-col pb-16 sm:pb-0">
       {/* Top Tactical Navigation Header */}
-      <header className="app-header w-full border-b border-[#dbe6f0] dark:border-cyan-500/15 bg-white/95 dark:bg-[#0b1528]/95 sticky top-0 z-40 backdrop-blur-xl shadow-xs">
+      <header className="app-header border-b border-[#dbe6f0] dark:border-cyan-500/15 bg-white/95 dark:bg-[#0b1528]/95 sticky top-0 z-40 backdrop-blur-xl shadow-xs">
         <div className="h-0.5 w-full bg-gradient-to-r from-red-500 via-cyan-400 to-emerald-400 opacity-90" />
-        <div className="w-full max-w-7xl mx-auto px-2.5 sm:px-6 py-2 sm:py-2.5 flex items-center justify-between gap-1.5 sm:gap-3">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2.5 flex items-center justify-between gap-3">
           
           {/* Logo & Tactical Identity */}
-          <Link to="/" className="flex items-center gap-1.5 sm:gap-2.5 font-black tracking-tight text-base sm:text-lg group shrink min-w-0">
-            <span className="h-7 w-7 sm:h-9 sm:w-9 rounded-xl bg-gradient-to-br from-red-500 via-rose-500 to-red-600 flex items-center justify-center text-white shadow-md shadow-red-500/30 group-hover:scale-105 transition-transform shrink-0">
-              <Activity size={16} className="sm:w-5 sm:h-5" />
+          <Link to="/" className="flex items-center gap-2 font-black tracking-tight text-lg group">
+            <span className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl bg-gradient-to-br from-red-500 via-rose-500 to-red-600 flex items-center justify-center text-white shadow-md shadow-red-500/25 group-hover:scale-105 transition-transform">
+              <Activity size={18} />
             </span>
-            <div className="flex flex-col min-w-0">
-              <div className="flex items-center gap-1 sm:gap-1.5 leading-none">
-                <span className="font-extrabold text-sm sm:text-lg tracking-tight text-slate-900 dark:bg-gradient-to-r dark:from-white dark:via-slate-100 dark:to-cyan-200 dark:bg-clip-text dark:text-transparent truncate">
-                  RescueMemory
-                </span>
-                <span className="text-[9px] sm:text-[10px] uppercase font-mono px-1 sm:px-1.5 py-0.5 rounded bg-cyan-100 dark:bg-cyan-950/80 text-cyan-800 dark:text-cyan-300 border border-cyan-300 dark:border-cyan-500/30 shrink-0">
-                  EDGE
-                </span>
-              </div>
-              <span className="text-[9px] sm:text-[10px] text-cyan-700 dark:text-cyan-400/80 font-mono tracking-wider font-semibold hidden md:block">
-                OFFLINE SURVIVAL MESH
-              </span>
-            </div>
+            <span className="font-extrabold text-base sm:text-lg tracking-tight text-slate-900 dark:text-white">
+              RescueMemory
+            </span>
           </Link>
-
-          {/* Tactical Role / Feature Navigation (Desktop) */}
-          <nav className="hidden lg:flex items-center gap-1 bg-[#e4eef6] dark:bg-[#07111e] p-1 rounded-2xl border border-[#cbdbe9] dark:border-slate-800 text-xs font-bold">
-            {navLinks.map(({ to, label, icon: Icon }) => (
-              <NavLink
-                key={to}
-                to={to}
-                className={({ isActive }) =>
-                  `px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 ${
-                    isActive
-                      ? 'bg-red-600 text-white shadow-xs'
-                      : 'text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white hover:bg-white/60 dark:hover:bg-slate-800/60'
-                  }`
-                }
-              >
-                <Icon size={13} />
-                <span>{label}</span>
-              </NavLink>
-            ))}
-          </nav>
 
           {/* Right Action Bar */}
           <div className="flex items-center gap-1 sm:gap-2 shrink-0">
@@ -295,7 +247,7 @@ export function Shell({ title, subtitle, children }) {
               title={online ? 'Internet Connected (Cloud AI Gemini & Sync ON). Tap to switch to Disconnected Offline Mode' : 'Offline Disaster Mode (Local Edge Memory Only). Tap to enable Internet & Cloud AI'}
               aria-label={online ? 'Disconnect Internet (Enter Offline Mode)' : 'Connect Internet (Enable Cloud AI)'}
               aria-pressed={online}
-              className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 rounded-xl border text-xs font-bold cursor-pointer transition-all active:scale-95 shrink-0 ${
+              className={`flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-xl border text-xs font-bold cursor-pointer transition-all active:scale-95 ${
                 online
                   ? 'bg-emerald-100 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-400 border-emerald-300 dark:border-emerald-500/30 hover:bg-emerald-200/60 dark:hover:bg-emerald-500/20'
                   : 'bg-amber-100 dark:bg-amber-500/10 text-amber-800 dark:text-amber-400 border-amber-300 dark:border-amber-500/30 hover:bg-amber-200/60 dark:hover:bg-amber-500/20'
@@ -320,13 +272,13 @@ export function Shell({ title, subtitle, children }) {
               )}
             </button>
 
-            {/* Dark / Light Mode Switch (Visible on sm+) */}
+            {/* Dark / Light Mode Switch */}
             <button
               type="button"
               title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
               aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
               aria-pressed={theme === 'light'}
-              className="theme-toggle-btn hidden sm:flex items-center justify-center p-1.5 sm:px-3 sm:py-1.5 rounded-xl border border-[#cbdbe9] dark:border-slate-700 bg-[#e6f0f7] dark:bg-slate-800 text-xs font-bold cursor-pointer transition-all active:scale-95 text-slate-800 dark:text-slate-200"
+              className="theme-toggle-btn flex items-center justify-center p-1.5 sm:px-3 sm:py-1.5 rounded-xl border border-[#cbdbe9] dark:border-slate-700 bg-[#e6f0f7] dark:bg-slate-800 text-xs font-bold cursor-pointer transition-all active:scale-95 text-slate-800 dark:text-slate-200"
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
             >
               {theme === 'dark' ? (
@@ -342,103 +294,47 @@ export function Shell({ title, subtitle, children }) {
               )}
             </button>
 
-            {/* Node Settings Button (Visible on sm+) */}
+            {/* Node Settings Button */}
             <button
               title="Device & Mesh Settings"
               aria-label="Device & Mesh Settings"
-              className="icon-btn hidden sm:flex p-1.5 rounded-xl text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+              className="icon-btn p-1.5 rounded-xl text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:white"
               onClick={() => setSettingsOpen(true)}
             >
               <Settings2 size={17} />
             </button>
-
-            {/* Mobile Nav Toggle */}
-            <button
-              type="button"
-              title="Toggle View Navigation"
-              aria-label="Toggle View Navigation"
-              className="lg:hidden p-1.5 rounded-xl text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors shrink-0"
-              onClick={() => setMobileNavOpen(!mobileNavOpen)}
-            >
-              {mobileNavOpen ? <X size={18} /> : <Menu size={18} />}
-            </button>
           </div>
         </div>
-
-        {/* Mobile Navigation Drawer */}
-        {mobileNavOpen && (
-          <div className="lg:hidden border-t border-[#dbe6f0] dark:border-slate-800 bg-white/95 dark:bg-[#07111e]/95 backdrop-blur-xl p-3 animate-in fade-in slide-in-from-top-2 shadow-xl space-y-3">
-            <span className="block text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400 px-1 font-bold">
-              Switch Operational Role & View:
-            </span>
-            <div className="grid grid-cols-2 gap-2">
-              {navLinks.map(({ to, label, icon: Icon }) => (
-                <NavLink
-                  key={to}
-                  to={to}
-                  onClick={() => setMobileNavOpen(false)}
-                  className={({ isActive }) =>
-                    `p-2.5 rounded-xl border text-xs font-bold flex items-center gap-2 transition-all ${
-                      isActive
-                        ? 'bg-red-600 text-white border-red-500 shadow-xs'
-                        : 'border-[#dbe6f0] dark:border-slate-800 bg-[#f8fafc] dark:bg-slate-900/60 text-slate-700 dark:text-slate-300'
-                    }`
-                  }
-                >
-                  <Icon size={15} />
-                  <span>{label}</span>
-                </NavLink>
-              ))}
-            </div>
-
-            {/* Mobile Quick Controls: Theme & Settings */}
-            <div className="pt-2 border-t border-[#e2e8f0] dark:border-slate-800 flex items-center justify-between gap-2">
-              <button
-                type="button"
-                onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-                className="flex-1 py-2 px-3 rounded-xl border border-[#cbdbe9] dark:border-slate-700 bg-[#e6f0f7] dark:bg-slate-800 text-xs font-bold flex items-center justify-center gap-1.5 text-slate-800 dark:text-slate-200"
-              >
-                {theme === 'dark' ? <Sun size={14} className="text-amber-400" /> : <Moon size={14} className="text-indigo-600" />}
-                <span>{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => { setMobileNavOpen(false); setSettingsOpen(true); }}
-                className="flex-1 py-2 px-3 rounded-xl border border-[#cbdbe9] dark:border-slate-700 bg-[#e6f0f7] dark:bg-slate-800 text-xs font-bold flex items-center justify-center gap-1.5 text-slate-800 dark:text-slate-200"
-              >
-                <Settings2 size={14} />
-                <span>Node Settings</span>
-              </button>
-            </div>
-          </div>
-        )}
       </header>
 
       {/* Main Screen Canvas */}
-      <main className="w-full max-w-7xl mx-auto px-2.5 sm:px-6 py-2.5 sm:py-6 flex-1 overflow-x-hidden">
-        {/* Calm Reassuring Header */}
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
-          {(title || subtitle) && (
-            <div>
-              <h1 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">
-                {title}
-              </h1>
-              {subtitle && (
-                <p className="text-slate-600 dark:text-slate-400 text-xs sm:text-sm mt-0.5 leading-relaxed font-medium">
-                  {subtitle}
-                </p>
-              )}
-            </div>
-          )}
+      <main className="max-w-7xl mx-auto w-full px-4 sm:px-6 py-4 sm:py-6 flex-1">
+        {/* Minimal Reassuring Header */}
+        {(title || subtitle || last) && (
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3 sm:mb-4">
+            {(title || subtitle) && (
+              <div>
+                {title && (
+                  <h1 className="text-lg sm:text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">
+                    {title}
+                  </h1>
+                )}
+                {subtitle && (
+                  <p className="hidden sm:block text-slate-600 dark:text-slate-400 text-xs sm:text-sm mt-0.5 leading-relaxed font-medium">
+                    {subtitle}
+                  </p>
+                )}
+              </div>
+            )}
 
-          {last && (
-            <div className="text-xs text-slate-700 dark:text-slate-400 bg-[#e6f0f7] dark:bg-slate-900/90 border border-[#cce0ef] dark:border-slate-800/80 rounded-xl px-3 py-1.5 flex items-center gap-2 shadow-xs font-mono font-medium">
-              <Cloud size={13} className="text-cyan-600 dark:text-cyan-400" />
-              <span>Mesh sync: {new Date(last).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-            </div>
-          )}
-        </div>
+            {last && (
+              <div className="text-[11px] sm:text-xs text-slate-700 dark:text-slate-400 bg-[#e6f0f7] dark:bg-slate-900/90 border border-[#cce0ef] dark:border-slate-800/80 rounded-xl px-2.5 py-1 flex items-center gap-1.5 shadow-xs font-mono font-medium">
+                <Cloud size={12} className="text-cyan-600 dark:text-cyan-400" />
+                <span>Synced {new Date(last).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Global Node Warning */}
         {error && (

@@ -17,8 +17,32 @@ Write-Host "`n[2/3] Syncing Capacitor Android Assets..." -ForegroundColor Yellow
 npx cap sync android
 if ($LASTEXITCODE -ne 0) { Write-Error "Capacitor sync failed"; exit 1 }
 
-# 3. Configure JDK 21 Environment & Compile APK via Gradle
+# 3. Configure Android SDK and JDK 21 Environment & Compile APK via Gradle
 Set-Location $ANDROID_DIR
+
+# Auto-detect Android SDK
+$sdkCandidates = @(
+    $env:ANDROID_HOME,
+    $env:ANDROID_SDK_ROOT,
+    (Join-Path $env:LOCALAPPDATA "Android\Sdk"),
+    (Join-Path $env:USERPROFILE "AppData\Local\Android\Sdk")
+)
+$foundSdk = $null
+foreach ($sdk in $sdkCandidates) {
+    if ($sdk -and (Test-Path $sdk)) {
+        $foundSdk = $sdk
+        $env:ANDROID_HOME = $sdk
+        $env:ANDROID_SDK_ROOT = $sdk
+        Write-Host "`nUsing Android SDK: $sdk" -ForegroundColor Cyan
+        break
+    }
+}
+$localProps = Join-Path $ANDROID_DIR "local.properties"
+if (-not (Test-Path $localProps) -and $foundSdk) {
+    $escaped = $foundSdk -replace '\\', '\\'
+    Set-Content -Path $localProps -Value "sdk.dir=$escaped"
+}
+
 $candidateJdks = @(
     (Join-Path $env:USERPROFILE ".jdk-21\jdk-21.0.12.1+1"),
     "C:\Program Files\Java\jdk-21",
