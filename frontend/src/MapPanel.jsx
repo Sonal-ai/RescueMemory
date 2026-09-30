@@ -20,20 +20,46 @@ export default function MapPanel({
   const mapRoadLine = dark ? '#4a779d' : 'var(--map-road-line)';
 
   const span = 0.11;
-  const project = (location) => ({
-    x: Math.max(16, Math.min(WIDTH - 16, WIDTH / 2 + (location.lon - center.lon) / span * WIDTH)),
-    y: Math.max(16, Math.min(HEIGHT - 16, HEIGHT / 2 - (location.lat - center.lat) / span * HEIGHT)),
-  });
 
-  const pick = (event) => {
+  const safeCenterLat = (center && !Number.isNaN(Number(center.lat))) ? Number(center.lat) : 28.7041;
+  const safeCenterLon = (center && !Number.isNaN(Number(center.lon))) ? Number(center.lon) : 77.1025;
+
+  const project = (location) => {
+    const lat = location?.lat != null ? Number(location.lat) : safeCenterLat;
+    const lon = location?.lon != null ? Number(location.lon) : safeCenterLon;
+    const validLat = Number.isNaN(lat) ? safeCenterLat : lat;
+    const validLon = Number.isNaN(lon) ? safeCenterLon : lon;
+    return {
+      x: Math.max(16, Math.min(WIDTH - 16, WIDTH / 2 + ((validLon - safeCenterLon) / span) * WIDTH)),
+      y: Math.max(16, Math.min(HEIGHT - 16, HEIGHT / 2 - ((validLat - safeCenterLat) / span) * HEIGHT)),
+    };
+  };
+
+  const handleMapClick = (event) => {
     if (!onSelect) return;
+    let clientX = event.clientX;
+    let clientY = event.clientY;
+    if ((clientX === undefined || clientX === 0) && event.changedTouches && event.changedTouches.length > 0) {
+      clientX = event.changedTouches[0].clientX;
+      clientY = event.changedTouches[0].clientY;
+    } else if ((clientX === undefined || clientX === 0) && event.touches && event.touches.length > 0) {
+      clientX = event.touches[0].clientX;
+      clientY = event.touches[0].clientY;
+    }
+    if (clientX == null || Number.isNaN(clientX)) return;
+
     const box = event.currentTarget.getBoundingClientRect();
-    const x = (event.clientX - box.left) / box.width;
-    const y = (event.clientY - box.top) / box.height;
-    onSelect({
-      lat: Number((center.lat + (0.5 - y) * span).toFixed(5)),
-      lon: Number((center.lon + (x - 0.5) * span).toFixed(5))
-    });
+    if (!box || box.width === 0 || box.height === 0) return;
+
+    const relX = (clientX - box.left) / box.width;
+    const relY = (clientY - box.top) / box.height;
+    if (Number.isNaN(relX) || Number.isNaN(relY)) return;
+
+    const newLat = Number((safeCenterLat + (0.5 - relY) * span).toFixed(5));
+    const newLon = Number((safeCenterLon + (relX - 0.5) * span).toFixed(5));
+    if (!Number.isNaN(newLat) && !Number.isNaN(newLon)) {
+      onSelect({ lat: newLat, lon: newLon });
+    }
   };
 
   const validPeers = (Array.isArray(peers) ? peers : []).filter((p) => p && p.lat != null && p.lon != null);
@@ -48,8 +74,10 @@ export default function MapPanel({
           viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
           role="img"
           aria-label="Offline coordinate grid with report markers and nearby peer devices"
-          className={`w-full h-auto min-h-[190px] sm:min-h-[280px] ${onSelect ? 'cursor-crosshair' : ''}`}
-          onClick={pick}
+          className={`w-full h-auto min-h-[190px] sm:min-h-[280px] touch-manipulation ${onSelect ? 'cursor-crosshair' : ''}`}
+          onClick={handleMapClick}
+          onPointerUp={handleMapClick}
+          style={{ touchAction: 'pan-x pan-y' }}
         >
           <defs>
             {/* Grid Pattern */}
@@ -93,15 +121,19 @@ export default function MapPanel({
             <text x="0" y="-14" textAnchor="middle" fill="#ef4444" fontSize="8" fontWeight="bold">N</text>
           </g>
 
-          {/* Safe Route Guidance Vector Line (Sample Vector Reroute) */}
-          <path
-            d="M 300 170 Q 230 140 180 100"
-            fill="none"
-            stroke="#38bdf8"
-            strokeWidth="3.5"
-            strokeDasharray="6 4"
-            opacity="0.85"
-          />
+          {/* Dynamic Vector Route Line to Selected Destination */}
+          {selected && (
+            <line
+              x1={WIDTH / 2}
+              y1={HEIGHT / 2}
+              x2={project(selected).x}
+              y2={project(selected).y}
+              stroke="#38bdf8"
+              strokeWidth="2.5"
+              strokeDasharray="6 4"
+              opacity="0.85"
+            />
+          )}
 
           {/* Local User GPS Marker (Center of Grid) */}
           <g>
@@ -128,32 +160,50 @@ export default function MapPanel({
             const isResource = item.kind === 'resource';
             const isCheckpoint = item.kind === 'checkpoint';
             const fill = isHazard ? '#ef4444' : isResource ? '#10b981' : isCheckpoint ? '#3b82f6' : '#f59e0b';
+            const isTarget = selected && (
+              (selected.id && selected.id === item.id) ||
+              (selected.lat === item.location?.lat && selected.lon === item.location?.lon)
+            );
 
             return (
               <g
-                key={item.id}
+                key={item.id || `${item.location.lat}_${item.location.lon}`}
                 onClick={(event) => {
+                  event.preventDefault();
                   event.stopPropagation();
                   onMarker?.(item);
                 }}
+                onPointerDown={(event) => {
+                  event.stopPropagation();
+                }}
                 className="cursor-pointer group"
+                style={{ pointerEvents: 'auto' }}
               >
+                {/* 28px Invisible Large Touch Target for easy finger tapping on mobile */}
+                <circle cx={point.x} cy={point.y} r="28" fill="transparent" pointerEvents="all" />
+
                 {/* Hazard Warning Ring */}
                 {isHazard && (
                   <circle cx={point.x} cy={point.y} r="20" fill="url(#hazard-stripes)" stroke="#ef4444" strokeWidth="1" strokeDasharray="3 2" />
                 )}
-                <circle cx={point.x} cy={point.y} r="12" fill={fill} opacity=".25" />
-                <circle cx={point.x} cy={point.y} r="6" fill={fill} stroke="#ffffff" strokeWidth="2" />
+                
+                {/* Target Pulsing Halo when active */}
+                {isTarget && (
+                  <circle cx={point.x} cy={point.y} r="22" fill="none" stroke="#38bdf8" strokeWidth="2" strokeDasharray="3 3" className="animate-spin" />
+                )}
+
+                <circle cx={point.x} cy={point.y} r="12" fill={fill} opacity=".35" />
+                <circle cx={point.x} cy={point.y} r="6.5" fill={fill} stroke="#ffffff" strokeWidth="2" />
                 <text
                   x={point.x}
-                  y={point.y - 10}
+                  y={point.y - 12}
                   textAnchor="middle"
                   fill="#ffffff"
-                  fontSize="9"
+                  fontSize="9.5"
                   fontWeight="bold"
-                  style={{ textShadow: '0 1px 3px rgba(0,0,0,0.95)' }}
+                  style={{ textShadow: '0 1px 4px rgba(0,0,0,0.95)' }}
                 >
-                  {item.entity_id || item.kind}
+                  {item.entity_id || item.title || item.kind}
                 </text>
               </g>
             );
@@ -170,11 +220,19 @@ export default function MapPanel({
               <g
                 key={`peer-${peer.node_id}`}
                 onClick={(e) => {
+                  e.preventDefault();
                   e.stopPropagation();
                   onSelectPeer?.(peer);
                 }}
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                }}
                 className="cursor-pointer"
+                style={{ pointerEvents: 'auto' }}
               >
+                {/* Large 28px invisible touch hit target */}
+                <circle cx={point.x} cy={point.y} r="28" fill="transparent" pointerEvents="all" />
+
                 {/* Radar pulse ripples */}
                 <circle cx={point.x} cy={point.y} r="22" fill="none" stroke={color} strokeWidth="1.5" opacity="0.35" strokeDasharray="3 3" />
                 <circle cx={point.x} cy={point.y} r="12" fill={color} opacity="0.25" />
@@ -197,13 +255,14 @@ export default function MapPanel({
             );
           })}
 
-          {/* Custom User Target Pin */}
+          {/* Custom User Target Reticle Pin */}
           {selected && (
             <g>
-              <line x1={project(selected).x - 12} y1={project(selected).y} x2={project(selected).x + 12} y2={project(selected).y} stroke="#0ea5e9" strokeWidth="2" />
-              <line x1={project(selected).x} y1={project(selected).y - 12} x2={project(selected).x} y2={project(selected).y + 12} stroke="#0ea5e9" strokeWidth="2" />
-              <circle cx={project(selected).x} cy={project(selected).y} r="10" fill="none" stroke="#0ea5e9" strokeWidth="3" />
-              <circle cx={project(selected).x} cy={project(selected).y} r="3" fill="#ffffff" />
+              <line x1={project(selected).x - 14} y1={project(selected).y} x2={project(selected).x + 14} y2={project(selected).y} stroke="#0ea5e9" strokeWidth="2.5" />
+              <line x1={project(selected).x} y1={project(selected).y - 14} x2={project(selected).x} y2={project(selected).y + 14} stroke="#0ea5e9" strokeWidth="2.5" />
+              <circle cx={project(selected).x} cy={project(selected).y} r="14" fill="none" stroke="#0ea5e9" strokeWidth="2" strokeDasharray="3 3" />
+              <circle cx={project(selected).x} cy={project(selected).y} r="7" fill="#0ea5e9" opacity="0.35" />
+              <circle cx={project(selected).x} cy={project(selected).y} r="3.5" fill="#ffffff" stroke="#0ea5e9" strokeWidth="1.5" />
             </g>
           )}
         </svg>
@@ -222,21 +281,21 @@ export default function MapPanel({
       </div>
 
       {/* Map Legend & Positioning Guide */}
-      <div className="flex flex-wrap items-center justify-between text-xs text-slate-400 mt-3 px-1 gap-2">
-        <div className="flex items-center gap-2">
-          <MapPin size={14} className="text-cyan-400 shrink-0" />
-          <span>{onSelect ? 'Tap grid to reposition pin. ' : ''}Center: {center.lat.toFixed(4)}, {center.lon.toFixed(4)}</span>
+      <div className="flex flex-wrap items-center justify-between text-xs text-slate-600 dark:text-slate-400 mt-2.5 px-1 gap-2">
+        <div className="flex items-center gap-1.5 font-medium">
+          <MapPin size={13} className="text-cyan-600 dark:text-cyan-400 shrink-0" />
+          <span>{onSelect ? 'Tap grid to reposition pin. ' : ''}Center: {safeCenterLat.toFixed(4)}, {safeCenterLon.toFixed(4)}</span>
         </div>
 
-        <div className="flex items-center gap-4 text-[11px] font-mono">
-          <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block"></span> Safe Shelter
+        <div className="flex items-center gap-3 text-[11px] font-mono">
+          <span className="flex items-center gap-1">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span> Shelter
           </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block"></span> Hazard / Danger
+          <span className="flex items-center gap-1">
+            <span className="w-2 h-2 rounded-full bg-red-500 inline-block"></span> Hazard
           </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block"></span> Peer Device
+          <span className="flex items-center gap-1">
+            <span className="w-2 h-2 rounded-full bg-amber-500 inline-block"></span> Peer
           </span>
         </div>
       </div>

@@ -22,7 +22,7 @@ import {
   Wifi,
   Zap
 } from 'lucide-react';
-import { getSurvivalRadar } from '../api';
+import { getSurvivalRadar, distM, bearingDeg, cardinalDirection } from '../api';
 import MapPanel from '../MapPanel';
 
 const COMPASS_SIZE = 300;
@@ -30,51 +30,32 @@ const COMPASS_CENTER = COMPASS_SIZE / 2;
 const COMPASS_RADIUS = 120;
 
 /**
- * Computes a 3D tilt-compensated compass heading (0-360 degrees, clockwise from North)
- * from device orientation Euler angles (alpha, beta, gamma).
- * Based on W3C DeviceOrientation Event Specification.
- * Completely eliminates erratic deflection caused by natural 30°-60° hand tilt and wrist roll.
+ * Extracts true compass azimuth (0-360 degrees clockwise from North)
+ * directly from hardware orientation sensors across Android WebView, Chrome, and iOS Safari.
  */
-function computeTiltCompensatedHeading(e) {
-  // iOS Safari CoreMotion already provides tilt-compensated hardware fused heading
+function extractCompassHeading(e) {
+  // 1. iOS Safari CoreMotion: direct hardware-fused true heading (0-360 clockwise from North)
   if (e.webkitCompassHeading !== undefined && e.webkitCompassHeading !== null) {
-    return e.webkitCompassHeading;
+    return Number(e.webkitCompassHeading);
   }
 
-  const alpha = e.alpha;
-  const beta = e.beta;
-  const gamma = e.gamma;
+  // 2. Android Chrome / W3C DeviceOrientationEvent:
+  // e.alpha is the counter-clockwise rotation in degrees around the Z-axis (0 to 360).
+  // Clockwise compass heading from North is (360 - e.alpha) % 360.
+  if (e.alpha !== null && e.alpha !== undefined && !Number.isNaN(e.alpha)) {
+    let heading = (360 - e.alpha) % 360;
 
-  if (alpha === null || alpha === undefined || Number.isNaN(alpha)) return null;
-
-  // If tilt parameters are missing or phone is flat on a table (< 8° tilt)
-  if (beta === null || gamma === null || (Math.abs(beta) < 8 && Math.abs(gamma) < 8)) {
-    return (360 - alpha) % 360;
+    // Compensate for physical screen orientation (portrait vs landscape)
+    if (typeof window !== 'undefined') {
+      const screenAngle = window.screen?.orientation?.angle ?? (window.orientation || 0);
+      if (typeof screenAngle === 'number' && !Number.isNaN(screenAngle)) {
+        heading = (heading + screenAngle) % 360;
+      }
+    }
+    return (heading + 360) % 360;
   }
 
-  // W3C Specification 3D Tilt Compensation:
-  // Converts Euler angles into the horizontal projection vector of the device's forward direction
-  const degToRad = Math.PI / 180;
-  const a = alpha * degToRad;
-  const b = beta * degToRad;
-  const g = gamma * degToRad;
-
-  const cA = Math.cos(a);
-  const sA = Math.sin(a);
-  const cB = Math.cos(b);
-  const sB = Math.sin(b);
-  const cG = Math.cos(g);
-  const sG = Math.sin(g);
-
-  // Rotation matrix components for device Y-axis (top of phone) projected onto horizontal plane:
-  const rA = -cA * sG - sA * sB * cG;
-  const rB = -sA * sG + cA * sB * cG;
-
-  let heading = Math.atan2(rA, rB);
-  if (heading < 0) {
-    heading += 2 * Math.PI;
-  }
-  return (heading * 180) / Math.PI;
+  return null;
 }
 
 export default function UnifiedRadarMap({
@@ -100,11 +81,15 @@ export default function UnifiedRadarMap({
   // Device orientation / heading state (0 = North, 90 = East, 180 = South, 270 = West)
   const [deviceHeading, setDeviceHeading] = useState(0);
   const [isCompassActive, setIsCompassActive] = useState(false);
+  const [headingMode, setHeadingMode] = useState('sensor'); // 'sensor' | 'manual'
   const [manualHeading, setManualHeading] = useState(0);
+  const [isAutoSweeping, setIsAutoSweeping] = useState(false);
   const [lastHapticTime, setLastHapticTime] = useState(0);
 
   // Audio Context Ref for offline synthetic radar/compass ping
   const audioCtxRef = useRef(null);
+  const compassDialRef = useRef(null);
+  const isDraggingCompass = useRef(false);
 
   const playChirp = useCallback((freq = 880) => {
     if (!audioEnabled) return;
@@ -130,13 +115,32 @@ export default function UnifiedRadarMap({
     }
   }, [audioEnabled]);
 
-  // Listen to Smartphone Compass / Magnetometer with 3D Tilt-Compensation & Adaptive Unit-Vector Filter
+  // Request iOS 13+ sensor permissions on first user gesture
+  const requestCompassPermission = useCallback(async () => {
+    if (
+      typeof window !== 'undefined' &&
+      typeof window.DeviceOrientationEvent !== 'undefined' &&
+      typeof window.DeviceOrientationEvent.requestPermission === 'function'
+    ) {
+      try {
+        const state = await window.DeviceOrientationEvent.requestPermission();
+        if (state === 'granted') {
+          setIsCompassActive(true);
+        }
+      } catch (err) {
+        console.warn('[Compass] Permission request error:', err);
+      }
+    }
+  }, []);
+
+  // Listen to Smartphone Compass / Magnetometer with Circular Smoothing Filter
   useEffect(() => {
     let smoothX = null;
     let smoothY = null;
     let animFrameId = null;
     let targetRawHeading = null;
     let hasAbsolute = false;
+    let sensorEventCount = 0;
 
     const updateFilter = () => {
       if (targetRawHeading !== null) {
@@ -148,23 +152,8 @@ export default function UnifiedRadarMap({
           smoothX = targetX;
           smoothY = targetY;
         } else {
-          // Angular difference between current smoothed orientation and new target
-          const currentRad = Math.atan2(smoothY, smoothX);
-          let angleDiff = Math.abs(targetRad - currentRad);
-          if (angleDiff > Math.PI) angleDiff = 2 * Math.PI - angleDiff;
-          const angleDiffDeg = (angleDiff * 180) / Math.PI;
-
-          // Adaptive dynamic damping (mimics Google Maps / Apple Compass):
-          // - Minor hand tremors (< 3°): strong damping (0.06) to eliminate twitching
-          // - Walking / subtle movement (3°-12°): balanced damping (0.15)
-          // - Deliberate turn (> 12°): fast snappy response (0.38)
-          let alphaFactor = 0.06;
-          if (angleDiffDeg > 12) {
-            alphaFactor = 0.38;
-          } else if (angleDiffDeg > 3.5) {
-            alphaFactor = 0.15;
-          }
-
+          // Circular unit vector smoothing: alpha factor 0.28 gives immediate snappy response with zero jitter
+          const alphaFactor = 0.28;
           smoothX = smoothX + (targetX - smoothX) * alphaFactor;
           smoothY = smoothY + (targetY - smoothY) * alphaFactor;
         }
@@ -178,39 +167,32 @@ export default function UnifiedRadarMap({
           }
           return prev;
         });
-        setIsCompassActive(true);
+
+        sensorEventCount++;
+        if (sensorEventCount >= 2) {
+          setIsCompassActive(true);
+        }
       }
       animFrameId = requestAnimationFrame(updateFilter);
     };
 
     const handleAbsoluteOrientation = (e) => {
-      if (e.alpha !== null && e.alpha !== undefined) {
+      const h = extractCompassHeading(e);
+      if (h !== null) {
         hasAbsolute = true;
-        const h = computeTiltCompensatedHeading(e);
-        if (h !== null && !Number.isNaN(h)) {
-          targetRawHeading = h;
-        }
+        targetRawHeading = h;
       }
     };
 
     const handleStandardOrientation = (e) => {
-      // If absolute orientation is available, ignore non-absolute events to avoid sensor oscillation
       if (hasAbsolute) return;
-
-      if (e.webkitCompassHeading !== undefined && e.webkitCompassHeading !== null) {
-        targetRawHeading = e.webkitCompassHeading;
-        return;
-      }
-
-      if (e.alpha !== null && e.alpha !== undefined) {
-        const h = computeTiltCompensatedHeading(e);
-        if (h !== null && !Number.isNaN(h)) {
-          targetRawHeading = h;
-        }
+      const h = extractCompassHeading(e);
+      if (h !== null) {
+        targetRawHeading = h;
       }
     };
 
-    if (typeof window !== 'undefined' && window.DeviceOrientationEvent) {
+    if (typeof window !== 'undefined') {
       window.addEventListener('deviceorientationabsolute', handleAbsoluteOrientation, true);
       window.addEventListener('deviceorientation', handleStandardOrientation, true);
       animFrameId = requestAnimationFrame(updateFilter);
@@ -224,6 +206,53 @@ export default function UnifiedRadarMap({
       if (animFrameId) cancelAnimationFrame(animFrameId);
     };
   }, []);
+
+  // Continuous auto-sweep rotation demo loop
+  useEffect(() => {
+    if (!isAutoSweeping) return;
+    const interval = setInterval(() => {
+      setManualHeading((prev) => (prev + 2) % 360);
+    }, 40);
+    return () => clearInterval(interval);
+  }, [isAutoSweeping]);
+
+  // Touch & Pointer Dragging around the Compass Bezel
+  const getAngleFromPointer = (e) => {
+    if (!compassDialRef.current) return null;
+    const rect = compassDialRef.current.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    if (clientX === undefined || clientY === undefined || Number.isNaN(clientX) || Number.isNaN(clientY)) return null;
+    const dx = clientX - centerX;
+    const dy = clientY - centerY;
+    // 0 deg is North (top, dy < 0)
+    const deg = (Math.atan2(dx, -dy) * 180) / Math.PI;
+    return (Math.round(deg) + 360) % 360;
+  };
+
+  const handlePointerDownDial = (e) => {
+    isDraggingCompass.current = true;
+    setHeadingMode('manual');
+    setIsAutoSweeping(false);
+    const angle = getAngleFromPointer(e);
+    if (angle !== null) {
+      setManualHeading(angle);
+    }
+  };
+
+  const handlePointerMoveDial = (e) => {
+    if (!isDraggingCompass.current) return;
+    const angle = getAngleFromPointer(e);
+    if (angle !== null) {
+      setManualHeading(angle);
+    }
+  };
+
+  const handlePointerUpDial = () => {
+    isDraggingCompass.current = false;
+  };
 
   // Fetch Radar Signals from Qdrant Edge Memory
   const locLat = userLocation?.lat ?? 28.7041;
@@ -272,41 +301,52 @@ export default function UnifiedRadarMap({
     }
   }, [selectedTarget]);
 
-  // Build unified destinations list for dropdown:
-  // Combines casualties, safe shelters, water stations, and checkpoints
+  // Build unified destinations list with live relative geodesics
   const destinationOptions = useMemo(() => {
     const list = [...radarItems];
+    const uLat = userLocation?.lat ?? 28.7041;
+    const uLon = userLocation?.lon ?? 77.1025;
+
+    // Check if user is near Delhi operations zone (< 50 km) or remote/testing emulator
+    const isNearDelhi = distM(uLat, uLon, 28.7041, 77.1025) < 50000;
 
     // If external target passed (e.g. from SafePlace reroute or casualty), inject it at the top
     if (selectedTarget) {
       const targetId = selectedTarget.id || selectedTarget.entity_id || 'selected_target';
       if (!list.some((item) => item.id === targetId)) {
+        const tLoc = selectedTarget.location || (selectedTarget.lat != null && selectedTarget.lon != null ? { lat: selectedTarget.lat, lon: selectedTarget.lon } : null) || { lat: uLat + 0.005, lon: uLon - 0.004 };
+        const d = Math.round(distM(uLat, uLon, tLoc.lat, tLoc.lon));
+        const b = bearingDeg(uLat, uLon, tLoc.lat, tLoc.lon);
         list.unshift({
           id: targetId,
           name: selectedTarget.name || selectedTarget.title || 'Selected Facility',
           category: selectedTarget.category || (selectedTarget.kind === 'incident' ? 'casualty' : selectedTarget.kind === 'hazard' ? 'hazard' : 'shelter'),
-          distance_m: selectedTarget.dist_m || selectedTarget.distance_m || 500,
-          bearing_deg: selectedTarget.bearing_deg || 315,
-          cardinal: selectedTarget.cardinal || 'NW',
-          walk_time_min: selectedTarget.walk_min || selectedTarget.walk_time_min || 7,
-          location: selectedTarget.location || { lat: selectedTarget.lat ?? 28.712, lon: selectedTarget.lon ?? 77.098 },
+          distance_m: d,
+          bearing_deg: b,
+          cardinal: cardinalDirection(b),
+          walk_time_min: Math.max(1, Math.round(d / 75)),
+          location: tLoc,
           triage_level: selectedTarget.status === 'Operational' ? 'safe_green' : (selectedTarget.severity === 'red' ? 'immediate_red' : 'hazard_warning'),
           text: selectedTarget.text || (Array.isArray(selectedTarget.facilities) ? selectedTarget.facilities.join(', ') : 'Rerouted safe location')
         });
       }
     }
 
-    // Baseline safe shelters if not already in radar
+    // Baseline facilities: realistically positioned near userLocation
     const baseline = [
+      {
+        id: 'priority_casualty',
+        name: 'Urgent Casualty (Fracture & Trauma SOS)',
+        category: 'casualty',
+        location: isNearDelhi ? { lat: 28.7085, lon: 77.1002 } : { lat: uLat + 0.0035, lon: uLon - 0.0022 },
+        triage_level: 'immediate_red',
+        text: 'Survivor unable to walk unassisted, severe fracture requiring splinting & rapid evacuation.'
+      },
       {
         id: 'shelter_alpha',
         name: 'Shelter Alpha (Central High - Safe Haven)',
         category: 'shelter',
-        distance_m: 850,
-        bearing_deg: 320,
-        cardinal: 'NW',
-        walk_time_min: 11,
-        location: { lat: 28.712, lon: 77.098 },
+        location: isNearDelhi ? { lat: 28.7120, lon: 77.0980 } : { lat: uLat + 0.0062, lon: uLon - 0.0048 },
         triage_level: 'safe_green',
         text: 'Verified safe high-ground shelter with food, emergency surgery & power generator.'
       },
@@ -314,11 +354,7 @@ export default function UnifiedRadarMap({
         id: 'water_point_4',
         name: 'Clean Water Depot (North Gate Tanker 4)',
         category: 'resource',
-        distance_m: 540,
-        bearing_deg: 45,
-        cardinal: 'NE',
-        walk_time_min: 7,
-        location: { lat: 28.706, lon: 77.108 },
+        location: isNearDelhi ? { lat: 28.7060, lon: 77.1080 } : { lat: uLat + 0.0028, lon: uLon + 0.0041 },
         triage_level: 'safe_green',
         text: 'Drinkable water distribution depot guarded by emergency relief corps.'
       },
@@ -326,15 +362,21 @@ export default function UnifiedRadarMap({
         id: 'cp_17',
         name: 'Checkpoint CP-17 (North Bridge)',
         category: 'hazard',
-        distance_m: 350,
-        bearing_deg: 90,
-        cardinal: 'E',
-        walk_time_min: 5,
-        location: { lat: 28.7041, lon: 77.1025 },
+        location: isNearDelhi ? { lat: 28.7041, lon: 77.1065 } : { lat: uLat + 0.0005, lon: uLon + 0.0032 },
         triage_level: 'hazard_warning',
         text: 'Caution: Submerged entrance & downed live wires. Exercise caution.'
       }
-    ];
+    ].map((item) => {
+      const d = Math.round(distM(uLat, uLon, item.location.lat, item.location.lon));
+      const b = bearingDeg(uLat, uLon, item.location.lat, item.location.lon);
+      return {
+        ...item,
+        distance_m: d,
+        bearing_deg: b,
+        cardinal: cardinalDirection(b),
+        walk_time_min: Math.max(1, Math.round(d / 75))
+      };
+    });
 
     baseline.forEach((b) => {
       if (!list.some((item) => item.id === b.id)) {
@@ -343,7 +385,7 @@ export default function UnifiedRadarMap({
     });
 
     return list;
-  }, [radarItems, selectedTarget]);
+  }, [radarItems, selectedTarget, userLocation]);
 
   // Compute Active Target for Compass Pointer
   const activeTarget = useMemo(() => {
@@ -369,11 +411,37 @@ export default function UnifiedRadarMap({
     }
   }, [activeTarget, selectedTargetId]);
 
-  // Current heading to use: device magnetometer if active, else manual slider
-  const currentHeading = isCompassActive ? deviceHeading : manualHeading;
+  // Current heading to use: device magnetometer if sensor active, else manual dial
+  const currentHeading = headingMode === 'sensor' && isCompassActive ? deviceHeading : manualHeading;
+
+  // Real-time geodesic metrics between userLocation and activeTarget.location
+  const liveTargetMetrics = useMemo(() => {
+    if (!activeTarget) {
+      return { bearing: 0, distance: 0, cardinal: 'N' };
+    }
+    const tLoc = activeTarget.location || (activeTarget.lat != null && activeTarget.lon != null ? { lat: activeTarget.lat, lon: activeTarget.lon } : null);
+    const uLat = userLocation?.lat;
+    const uLon = userLocation?.lon;
+
+    if (!tLoc || tLoc.lat == null || tLoc.lon == null || uLat == null || uLon == null) {
+      return {
+        bearing: activeTarget.bearing_deg ?? 0,
+        distance: activeTarget.distance_m ?? 0,
+        cardinal: activeTarget.cardinal || 'N'
+      };
+    }
+
+    const d = Math.round(distM(uLat, uLon, tLoc.lat, tLoc.lon));
+    const b = bearingDeg(uLat, uLon, tLoc.lat, tLoc.lon);
+    const c = cardinalDirection(b);
+    return { bearing: b, distance: d, cardinal: c };
+  }, [activeTarget, userLocation]);
+
+  const targetBearing = liveTargetMetrics.bearing;
+  const targetDistance = liveTargetMetrics.distance;
+  const targetCardinal = liveTargetMetrics.cardinal;
 
   // Relative Bearing: Difference between device heading and target bearing
-  const targetBearing = activeTarget?.bearing_deg ?? 0;
   const relativeAngle = ((targetBearing - currentHeading + 360) % 360);
 
   // Maintain continuous smooth needle rotation (prevents 360° flip spins)
@@ -390,9 +458,9 @@ export default function UnifiedRadarMap({
   const angularError = Math.abs(((relativeAngle + 180) % 360) - 180);
 
   useEffect(() => {
-    if (!isAligned && angularError <= 8) {
+    if (!isAligned && angularError <= 10) {
       setIsAligned(true);
-    } else if (isAligned && angularError >= 13) {
+    } else if (isAligned && angularError >= 15) {
       setIsAligned(false);
     }
   }, [angularError, isAligned]);
@@ -405,7 +473,7 @@ export default function UnifiedRadarMap({
     if (isAligned && activeTarget && typeof navigator !== 'undefined' && navigator.vibrate) {
       const now = Date.now();
       if (now - lastHapticTime > 3000) {
-        navigator.vibrate([35, 45, 35]);
+        navigator.vibrate([40, 50, 40]);
         setLastHapticTime(now);
       }
     }
@@ -515,6 +583,34 @@ export default function UnifiedRadarMap({
           </div>
         </div>
 
+        {/* Quick Facility Target Chips */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 mt-2 no-scrollbar">
+          {destinationOptions.slice(0, 5).map((dest) => {
+            const isSelected = selectedTargetId === dest.id;
+            const isCas = dest.category === 'casualty';
+            const isShelter = dest.category === 'shelter';
+            return (
+              <button
+                key={dest.id}
+                type="button"
+                onClick={() => handleSelectDestination(dest.id)}
+                className={`text-[10.5px] px-2.5 py-1 rounded-lg border font-bold shrink-0 flex items-center gap-1 transition-all ${
+                  isSelected
+                    ? 'bg-cyan-600 text-white border-cyan-500 shadow-xs ring-1 ring-cyan-400'
+                    : isCas
+                    ? 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 border-red-200 dark:border-red-900/60 hover:border-red-400'
+                    : isShelter
+                    ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-900/60 hover:border-emerald-400'
+                    : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-[#cbdbe9] dark:border-slate-800 hover:border-cyan-500'
+                }`}
+              >
+                <span>{isCas ? '🆘' : isShelter ? '🏥' : dest.category === 'resource' ? '💧' : '📍'}</span>
+                <span className="truncate max-w-[130px]">{dest.name.split('(')[0].trim()}</span>
+              </button>
+            );
+          })}
+        </div>
+
         {/* Collapsible Secondary Controls Drawer */}
         {showSettings && (
           <div className="mt-2 pt-2 border-t border-[#dbe6f0] dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-2 animate-in fade-in">
@@ -524,7 +620,7 @@ export default function UnifiedRadarMap({
                   ? 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-400 border-emerald-400/40 dark:border-emerald-500/20'
                   : 'bg-amber-500/15 text-amber-800 dark:text-amber-400 border-amber-400/40 dark:border-amber-500/20'
               }`}>
-                {isCompassActive ? 'GYRO ACTIVE' : 'NORTH REF'}
+                {isCompassActive ? 'SENSOR ACTIVE' : 'TOUCH SIMULATOR'}
               </span>
 
               <button
@@ -544,7 +640,7 @@ export default function UnifiedRadarMap({
 
             {activeTarget && (
               <span className="text-[10px] font-mono text-cyan-800 dark:text-cyan-400 font-bold ml-auto">
-                Locked: {activeTarget.name} ({activeTarget.distance_m}m · {activeTarget.cardinal})
+                Locked: {activeTarget.name} ({targetDistance}m · {targetCardinal})
               </span>
             )}
           </div>
@@ -591,11 +687,23 @@ export default function UnifiedRadarMap({
             selected={activeTarget?.location || userLocation}
             onSelect={onSelectLocation}
             onMarker={(item) => {
+              if (!item) return;
               const matched = destinationOptions.find(
-                (d) => d.id === item.id || d.name === item.entity_id || d.name.includes(item.entity_id || '')
+                (d) => d.id === item.id || d.name === item.entity_id || d.name?.includes(item.entity_id || '')
               );
               if (matched) {
                 handleSelectDestination(matched.id);
+              } else {
+                const newTarget = {
+                  id: item.id || item.entity_id || `marker_${Date.now()}`,
+                  name: item.title || item.name || item.entity_id || 'Tapped Map Marker',
+                  category: item.kind === 'incident' ? 'casualty' : item.kind === 'hazard' ? 'hazard' : 'resource',
+                  location: item.location || { lat: item.lat, lon: item.lon },
+                  text: item.text || item.summary || 'Selected map location'
+                };
+                setSelectedTargetId(newTarget.id);
+                playChirp(newTarget.category === 'casualty' ? 1200 : 800);
+                if (onNavigateTarget) onNavigateTarget(newTarget);
               }
             }}
           />
@@ -603,7 +711,7 @@ export default function UnifiedRadarMap({
           {/* Compass Rose Mini Watermark overlay on map */}
           <div className="absolute top-2.5 right-2.5 bg-slate-900/80 backdrop-blur-md border border-slate-700/60 rounded-lg px-2 py-0.5 text-[10px] font-mono text-cyan-300 font-bold flex items-center gap-1 shadow-sm">
             <Compass size={11} className="text-cyan-400" />
-            <span>N {String(currentHeading).padStart(3, '0')}°</span>
+            <span>N {String(Math.round(currentHeading)).padStart(3, '0')}°</span>
           </div>
         </div>
       </div>
@@ -611,9 +719,18 @@ export default function UnifiedRadarMap({
       {/* JUST BELOW THE MAP: Working 360° Compass Pointer & Live Azimuth Dial */}
       <div className="bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 rounded-2xl p-3 sm:p-4 shadow-xs">
         <div className="flex flex-col lg:flex-row items-center justify-between gap-4">
-          {/* Compass SVG Housing */}
+          {/* Compass SVG Housing & Interactive Bezel */}
           <div className="flex flex-col items-center justify-center shrink-0 w-full lg:w-auto">
-            <div className="relative w-[260px] h-[260px] sm:w-[300px] sm:h-[300px] flex items-center justify-center">
+            <div
+              ref={compassDialRef}
+              onPointerDown={handlePointerDownDial}
+              onPointerMove={handlePointerMoveDial}
+              onPointerUp={handlePointerUpDial}
+              onPointerLeave={handlePointerUpDial}
+              onClick={requestCompassPermission}
+              className="relative w-[260px] h-[260px] sm:w-[300px] sm:h-[300px] flex items-center justify-center cursor-grab active:cursor-grabbing touch-none select-none"
+              title="Touch and drag to rotate compass, or move phone to use live gyroscope"
+            >
               <svg
                 width={COMPASS_SIZE}
                 height={COMPASS_SIZE}
@@ -681,7 +798,7 @@ export default function UnifiedRadarMap({
                   <g
                     transform={`rotate(${needleAngle} ${COMPASS_CENTER} ${COMPASS_CENTER})`}
                     filter="url(#needleGlow)"
-                    className={isCompassActive ? 'transition-none' : 'transition-transform duration-300 ease-out'}
+                    className={isCompassActive && headingMode === 'sensor' ? 'transition-none' : 'transition-transform duration-300 ease-out'}
                   >
                     {/* Needle Arrowhead */}
                     <polygon
@@ -734,7 +851,7 @@ export default function UnifiedRadarMap({
                   fontWeight="900"
                   fontFamily="monospace"
                 >
-                  {activeTarget ? `${activeTarget.distance_m}m` : '0m'}
+                  {activeTarget ? `${targetDistance}m` : '0m'}
                 </text>
                 <text
                   x={COMPASS_CENTER}
@@ -745,34 +862,115 @@ export default function UnifiedRadarMap({
                   fontWeight="bold"
                   fontFamily="monospace"
                 >
-                  {activeTarget?.cardinal || 'N'}
+                  {targetCardinal}
                 </text>
               </svg>
             </div>
 
-            {/* Desktop Manual Heading Slider (Shown when no gyroscope detected) */}
-            {!isCompassActive && (
-              <div className="mt-3 w-full max-w-[280px] bg-[#f0f5fa] dark:bg-slate-900/60 p-2.5 rounded-2xl border border-[#dbe6f0] dark:border-slate-800 text-center">
-                <div className="flex items-center justify-between text-[11px] font-mono text-slate-500 dark:text-slate-400 mb-1">
-                  <span>Simulate Facing Angle:</span>
-                  <strong className="text-cyan-600 dark:text-cyan-400">{manualHeading}°</strong>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="359"
-                  value={manualHeading}
-                  onChange={(e) => setManualHeading(Number(e.target.value))}
-                  className="w-full accent-cyan-500 cursor-pointer"
-                />
-                <div className="flex justify-between text-[10px] font-mono text-slate-400 mt-0.5">
-                  <span>0° N</span>
-                  <span>90° E</span>
-                  <span>180° S</span>
-                  <span>270° W</span>
-                </div>
+            {/* Compass Control Toolbar: Quick Turns, Target Lock, Auto Sweep */}
+            <div className="mt-3 w-full max-w-[320px] flex flex-col gap-2">
+              <div className="grid grid-cols-4 gap-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHeadingMode('manual');
+                    setIsAutoSweeping(false);
+                    setManualHeading((prev) => (prev - 45 + 360) % 360);
+                  }}
+                  className="py-1 px-1.5 rounded-lg border border-[#cbdbe9] dark:border-slate-800 bg-[#f0f5fa] dark:bg-slate-900 text-slate-800 dark:text-slate-200 text-[11px] font-mono font-bold hover:border-cyan-500 transition-all active:scale-95"
+                  title="Turn left 45 degrees"
+                >
+                  -45°
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHeadingMode('manual');
+                    setIsAutoSweeping(false);
+                    setManualHeading(0);
+                  }}
+                  className="py-1 px-1.5 rounded-lg border border-[#cbdbe9] dark:border-slate-800 bg-[#f0f5fa] dark:bg-slate-900 text-slate-800 dark:text-slate-200 text-[11px] font-mono font-bold hover:border-cyan-500 transition-all active:scale-95"
+                  title="Face North (0 degrees)"
+                >
+                  0° N
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHeadingMode('manual');
+                    setIsAutoSweeping(false);
+                    setManualHeading((prev) => (prev + 45) % 360);
+                  }}
+                  className="py-1 px-1.5 rounded-lg border border-[#cbdbe9] dark:border-slate-800 bg-[#f0f5fa] dark:bg-slate-900 text-slate-800 dark:text-slate-200 text-[11px] font-mono font-bold hover:border-cyan-500 transition-all active:scale-95"
+                  title="Turn right 45 degrees"
+                >
+                  +45°
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHeadingMode('manual');
+                    setIsAutoSweeping(false);
+                    setManualHeading(targetBearing);
+                    playChirp(1200);
+                    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+                      navigator.vibrate([40, 50, 40]);
+                    }
+                  }}
+                  className="py-1 px-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold flex items-center justify-center gap-0.5 transition-all shadow-xs active:scale-95"
+                  title="Instantly face locked destination azimuth"
+                >
+                  <Crosshair size={11} />
+                  <span>Align</span>
+                </button>
               </div>
-            )}
+
+              {/* Secondary Demo Tools: Mode Switcher & Auto Sweep */}
+              <div className="flex items-center justify-between gap-1.5 bg-[#f0f5fa] dark:bg-slate-900/80 p-1.5 rounded-xl border border-[#cbdbe9] dark:border-slate-800 text-[11px] font-mono">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsAutoSweeping(false);
+                    setHeadingMode((prev) => (prev === 'sensor' ? 'manual' : 'sensor'));
+                    if (headingMode === 'manual') {
+                      requestCompassPermission();
+                    }
+                  }}
+                  className={`px-2 py-0.5 rounded-lg font-bold transition-all ${
+                    headingMode === 'sensor' && isCompassActive
+                      ? 'bg-emerald-500 text-slate-950 font-black shadow-xs'
+                      : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                  }`}
+                  title="Switch between live gyroscope sensor and manual touch drag"
+                >
+                  {headingMode === 'sensor' && isCompassActive ? '📱 Gyro Live' : '✋ Touch Mode'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHeadingMode('manual');
+                    setIsAutoSweeping((prev) => !prev);
+                  }}
+                  className={`px-2 py-0.5 rounded-lg font-bold flex items-center gap-1 transition-all ${
+                    isAutoSweeping
+                      ? 'bg-amber-500 text-slate-950 font-black animate-pulse'
+                      : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-[#cbdbe9] dark:border-slate-700'
+                  }`}
+                  title="Run continuous 360-degree rotation demo"
+                >
+                  <RotateCw size={11} className={isAutoSweeping ? 'animate-spin' : ''} />
+                  <span>{isAutoSweeping ? 'Sweeping...' : 'Auto-Sweep'}</span>
+                </button>
+
+                <span className="text-[10px] text-cyan-600 dark:text-cyan-400 font-bold ml-auto tabular-nums">
+                  {Math.round(currentHeading)}°
+                </span>
+              </div>
+            </div>
           </div>
 
           {/* Locked Target Navigation Telemetry & Alignment Guide */}
@@ -840,7 +1038,7 @@ export default function UnifiedRadarMap({
                         {activeTarget.category === 'casualty' ? 'PRIORITY CASUALTY' : 'SAFE DESTINATION'}
                       </span>
                       <span className="text-[11px] font-mono font-bold text-slate-700 dark:text-slate-300">
-                        Azimuth {String(activeTarget.bearing_deg).padStart(3, '0')}° ({activeTarget.cardinal})
+                        Azimuth {String(targetBearing).padStart(3, '0')}° ({targetCardinal})
                       </span>
                     </div>
                     <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white truncate mt-0.5">
@@ -853,15 +1051,15 @@ export default function UnifiedRadarMap({
                 <div className="grid grid-cols-3 gap-1.5 bg-[#f8fafc] dark:bg-slate-950/80 p-2 rounded-lg border border-[#dbe6f0] dark:border-slate-800 text-center font-mono text-[11px] mb-2">
                   <div>
                     <span className="text-[9px] text-slate-500 uppercase block font-medium">Distance</span>
-                    <strong className="text-xs font-black text-slate-900 dark:text-cyan-400">{activeTarget.distance_m} m</strong>
+                    <strong className="text-xs font-black text-slate-900 dark:text-cyan-400">{targetDistance} m</strong>
                   </div>
                   <div>
                     <span className="text-[9px] text-slate-500 uppercase block font-medium">Bearing</span>
-                    <strong className="text-xs font-black text-slate-900 dark:text-cyan-400">{activeTarget.bearing_deg}° {activeTarget.cardinal}</strong>
+                    <strong className="text-xs font-black text-slate-900 dark:text-cyan-400">{targetBearing}° {targetCardinal}</strong>
                   </div>
                   <div>
                     <span className="text-[9px] text-slate-500 uppercase block font-medium">Walk</span>
-                    <strong className="text-xs font-black text-slate-900 dark:text-cyan-400">~{activeTarget.walk_time_min || 5} min</strong>
+                    <strong className="text-xs font-black text-slate-900 dark:text-cyan-400">~{Math.max(1, Math.round(targetDistance / 75))} min</strong>
                   </div>
                 </div>
 

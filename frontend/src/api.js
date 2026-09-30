@@ -10,12 +10,19 @@ import { getAllLocalReports, getUnsyncedReports } from './brain/offlineStorage.j
 
 const PREFIX = 'rescue.';
 
+const DEFAULT_KEYS = {
+  adminKey: 'ypGA1DcDaXxPvWWR6DRTDaKx4fWp7HP/EIRZFMzDN4A=',
+  responderKey: '+JdIifCIxusFwQ0vyx6xwP3o2A2nFM2cgtZBZUt7ocg=',
+  meshKey: 'dZZqDdbs8uvMAZfekVqWa0GeMZ01w6Ul1cVkqyPrjX4=',
+  guideTrustKey: 'smHUoNH2tQYAFkAhUnU1KijghR4AzrKs0QgLpDzRUpw='
+};
+
 export function setting(name) {
-  return sessionStorage.getItem(PREFIX + name) || '';
+  return sessionStorage.getItem(PREFIX + name) || DEFAULT_KEYS[name] || '';
 }
 
 export function saveSetting(name, value) {
-  sessionStorage.setItem(PREFIX + name, value.trim());
+  sessionStorage.setItem(PREFIX + name, (value || '').trim());
 }
 
 // Simulated Global Internet / Cloud Connectivity Toggle

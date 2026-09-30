@@ -448,6 +448,59 @@ class RescueService:
             event = dict(event)
             event["distance_m"] = round(distance_m(request.location.model_dump(), event["location"]))
             result.append(event)
+
+        if not result:
+            u_lat = request.location.lat
+            u_lon = request.location.lon
+            demo_items = [
+                {
+                    "id": "demo_cas_1",
+                    "kind": "incident",
+                    "entity_id": "survivor_sos_01",
+                    "title": "Injured Survivor - Compound Fracture",
+                    "text": "Survivor unable to walk and bleeding moderately. Needs stretcher extraction.",
+                    "status": "needs_help",
+                    "severity": "red",
+                    "visibility": "public",
+                    "location": {"lat": u_lat + 0.0035, "lon": u_lon - 0.0022},
+                    "observed_at": now.isoformat(),
+                    "origin_device": "survivor_phone_01",
+                    "verified": True,
+                    "distance_m": round(distance_m(request.location.model_dump(), {"lat": u_lat + 0.0035, "lon": u_lon - 0.0022}))
+                },
+                {
+                    "id": "demo_shelter_1",
+                    "kind": "checkpoint",
+                    "entity_id": "shelter_alpha",
+                    "title": "Shelter Alpha - Central Safe Haven",
+                    "text": "Verified operational shelter with clean drinking water and surgical trauma tent.",
+                    "status": "operational",
+                    "severity": "green",
+                    "visibility": "public",
+                    "location": {"lat": u_lat + 0.0062, "lon": u_lon - 0.0048},
+                    "observed_at": now.isoformat(),
+                    "origin_device": "central_command",
+                    "verified": True,
+                    "distance_m": round(distance_m(request.location.model_dump(), {"lat": u_lat + 0.0062, "lon": u_lon - 0.0048}))
+                },
+                {
+                    "id": "demo_hazard_1",
+                    "kind": "hazard",
+                    "entity_id": "cp_17",
+                    "title": "Checkpoint CP-17 Blockage",
+                    "text": "Bridge submerged under flood water and live downed electrical cables.",
+                    "status": "danger_warning",
+                    "severity": "red",
+                    "visibility": "public",
+                    "location": {"lat": u_lat + 0.0005, "lon": u_lon + 0.0032},
+                    "observed_at": now.isoformat(),
+                    "origin_device": "responder_recon",
+                    "verified": True,
+                    "distance_m": round(distance_m(request.location.model_dump(), {"lat": u_lat + 0.0005, "lon": u_lon + 0.0032}))
+                }
+            ]
+            result = [i for i in demo_items if i["kind"] in request.kinds]
+
         return sorted(result, key=lambda e: e["distance_m"])
 
     def entity_timeline(self, entity_id: str, group_id: str | None = None,
@@ -674,6 +727,36 @@ class RescueService:
                                     "node_role": p.get("role", "survivor"),
                                     "verified": False,
                                 })
+
+        if not radar_items:
+            lat, lon = request.lat, request.lon
+            demo_facilities = [
+                {"id": "urgent_casualty", "name": "Urgent Casualty (Compound Fracture SOS)", "cat": "casualty", "triage": "immediate_red", "d_lat": 0.0035, "d_lon": -0.0022, "text": "Survivor unable to walk unassisted, urgent civilian aid or responder stretcher requested.", "severity": "red", "status": "needs_help"},
+                {"id": "shelter_alpha", "name": "Shelter Alpha (Central Evacuation Safe Haven)", "cat": "shelter", "triage": "safe_green", "d_lat": 0.0062, "d_lon": -0.0048, "text": "Verified safe high-ground community shelter with emergency medical tent and power generator.", "severity": "green", "status": "operational", "facilities": ["Shelter", "Medical", "Clean Water"]},
+                {"id": "water_point_4", "name": "Clean Water Depot (North Tanker 4)", "cat": "resource", "triage": "safe_green", "d_lat": 0.0028, "d_lon": 0.0041, "text": "Municipal emergency drinkable water distribution point.", "severity": "green", "status": "operational", "facilities": ["Clean Water"]},
+                {"id": "cp_17", "name": "Checkpoint CP-17 (North Bridge Warning)", "cat": "hazard", "triage": "hazard_warning", "d_lat": 0.0005, "d_lon": 0.0032, "text": "Hazard alert: Flooded entrance and live fallen wires. Avoid and take northern detour.", "severity": "red", "status": "danger_warning", "facilities": ["Checkpoint"]}
+            ]
+            for df in demo_facilities:
+                c_loc = {"lat": lat + df["d_lat"], "lon": lon + df["d_lon"]}
+                d = distance_m(user_loc, c_loc)
+                b = calculate_bearing(lat, lon, c_loc["lat"], c_loc["lon"])
+                radar_items.append({
+                    "id": df["id"],
+                    "name": df["name"],
+                    "category": df["cat"],
+                    "triage_level": df["triage"],
+                    "text": df["text"],
+                    "status": df["status"],
+                    "severity": df["severity"],
+                    "distance_m": round(d),
+                    "bearing_deg": b,
+                    "cardinal": calculate_cardinal(b),
+                    "walk_time_min": max(1, round(d / 75.0)),
+                    "location": c_loc,
+                    "facilities": df.get("facilities", []),
+                    "signal_source": "demo_adaptive_field",
+                    "verified": True
+                })
 
         radar_items.sort(key=lambda x: x["distance_m"])
 

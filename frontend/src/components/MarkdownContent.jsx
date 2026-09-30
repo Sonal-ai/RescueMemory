@@ -72,9 +72,9 @@ export default function MarkdownContent({ content, className = '' }) {
   const flushList = () => {
     if (currentList.length > 0) {
       elements.push(
-        <ul key={`list-${elementIndex++}`} className="space-y-1.5 my-2">
+        <ul key={`list-${elementIndex++}`} className="space-y-1 my-1">
           {currentList.map((item, idx) => (
-            <li key={idx} className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-200 leading-relaxed">
+            <li key={idx} className="flex items-start gap-1.5 text-xs text-slate-700 dark:text-slate-200 leading-snug">
               <span className="text-red-500 dark:text-red-400 font-bold shrink-0 mt-0.5">•</span>
               <span className="flex-1">{parseInline(item)}</span>
             </li>
@@ -120,10 +120,10 @@ export default function MarkdownContent({ content, className = '' }) {
       elements.push(
         <div
           key={`warn-${elementIndex++}`}
-          className="my-3 p-3.5 rounded-xl border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200 text-xs sm:text-sm font-medium flex items-start gap-2.5 shadow-sm"
+          className="my-1.5 p-2 rounded-lg border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200 text-[11px] font-medium flex items-start gap-2 shadow-xs"
         >
-          <TriangleAlert size={18} className="text-amber-500 shrink-0 mt-0.5" />
-          <div className="flex-1 leading-relaxed">
+          <TriangleAlert size={14} className="text-amber-500 shrink-0 mt-0.5" />
+          <div className="flex-1 leading-snug">
             {parseInline(trimmed.replace(/^⚠️\s*/, ''))}
           </div>
         </div>
@@ -134,7 +134,7 @@ export default function MarkdownContent({ content, className = '' }) {
     // 3. Headings: ### Heading, or **Bold Heading:** on single line
     if (trimmed.startsWith('### ')) {
       elements.push(
-        <h4 key={`h3-${elementIndex++}`} className="text-base font-extrabold text-slate-900 dark:text-slate-100 mt-4 mb-1.5 flex items-center gap-1.5">
+        <h4 key={`h3-${elementIndex++}`} className="text-xs sm:text-[13px] font-extrabold text-slate-900 dark:text-slate-100 mt-2 mb-1 flex items-center gap-1.5">
           {parseInline(trimmed.replace(/^###\s+/, ''))}
         </h4>
       );
@@ -143,7 +143,7 @@ export default function MarkdownContent({ content, className = '' }) {
 
     if (trimmed.startsWith('## ')) {
       elements.push(
-        <h3 key={`h2-${elementIndex++}`} className="text-lg font-black text-slate-900 dark:text-slate-100 mt-4 mb-2">
+        <h3 key={`h2-${elementIndex++}`} className="text-xs sm:text-sm font-black text-slate-900 dark:text-slate-100 mt-2 mb-1">
           {parseInline(trimmed.replace(/^##\s+/, ''))}
         </h3>
       );
@@ -153,7 +153,7 @@ export default function MarkdownContent({ content, className = '' }) {
     // Check if whole line is **Heading text**
     if (/^\*\*[^*]+\*\*$/.test(trimmed) || /^\*\*[^*]+:\*\*$/.test(trimmed)) {
       elements.push(
-        <h4 key={`bh-${elementIndex++}`} className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 mt-3.5 mb-1.5 flex items-center gap-1.5">
+        <h4 key={`bh-${elementIndex++}`} className="text-xs sm:text-[12.5px] font-bold text-slate-900 dark:text-slate-100 mt-2 mb-1 flex items-center gap-1.5">
           <span className="w-1.5 h-1.5 rounded-full bg-red-500 inline-block" />
           <span>{trimmed.replace(/\*\*/g, '')}</span>
         </h4>
@@ -163,7 +163,7 @@ export default function MarkdownContent({ content, className = '' }) {
 
     // 4. Regular paragraph
     elements.push(
-      <p key={`p-${elementIndex++}`} className="text-sm text-slate-700 dark:text-slate-200 leading-relaxed mb-2.5">
+      <p key={`p-${elementIndex++}`} className="text-xs text-slate-700 dark:text-slate-200 leading-snug mb-1.5">
         {parseInline(trimmed)}
       </p>
     );
@@ -171,5 +171,5 @@ export default function MarkdownContent({ content, className = '' }) {
 
   flushList();
 
-  return <div className={`space-y-1 ${className}`}>{elements}</div>;
+  return <div className={`space-y-0.5 ${className}`}>{elements}</div>;
 }

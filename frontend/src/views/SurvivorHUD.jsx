@@ -199,7 +199,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
     {
       id: 'welcome',
       role: 'assistant',
-      text: "Hello! I am your **RescueMemory Offline Emergency Assistant**.\n\nI run 100% locally on this device with **420 verified clinical guidelines** and offline sensor memory. How can I help you right now?",
+      text: "Hello! I am your **RescueMemory Offline Assistant** (420 verified emergency protocols). How can I assist you right now?",
       timestamp: new Date(),
       isAi: false
     }
@@ -623,7 +623,10 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
           reporter_id: setting('reporterId') || 'survivor-1',
           location: pin,
           entity_id: report.entity_id?.trim() || null,
-          group_id: visibility === 'group' ? groupId : null
+          group_id: visibility === 'group' ? groupId : null,
+          materials: selectedMaterials,
+          breathing: breathingStatus,
+          bleeding_type: bleedingType
         }
       });
       const evtId = (result.event?.id || result.event_id || 'saved').slice(0, 10);
@@ -808,12 +811,12 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                     <div
                       className={`transition-all ${
                         isUser
-                          ? 'user-chat-bubble max-w-[88%] sm:max-w-[72%] rounded-xl p-2 sm:p-2.5 shadow-sm bg-gradient-to-r from-sky-600 via-cyan-600 to-blue-600 text-white rounded-tr-xs ml-auto ring-1 ring-white/20'
-                          : 'chat-assistant-bubble max-w-[94%] sm:max-w-[82%] rounded-xl p-2 sm:p-3 shadow-xs bg-white dark:bg-gradient-to-b dark:from-[#0d172b] dark:to-[#081120] border border-[#d3e3f0] dark:border-cyan-500/15 text-slate-900 dark:text-slate-100 rounded-tl-xs'
+                          ? 'user-chat-bubble max-w-[88%] sm:max-w-[72%] rounded-xl px-2.5 py-1.5 shadow-xs bg-gradient-to-r from-sky-600 via-cyan-600 to-blue-600 text-white rounded-tr-xs ml-auto ring-1 ring-white/20'
+                          : 'chat-assistant-bubble max-w-[94%] sm:max-w-[82%] rounded-xl px-2.5 py-2 shadow-xs bg-white dark:bg-gradient-to-b dark:from-[#0d172b] dark:to-[#081120] border border-[#d3e3f0] dark:border-cyan-500/15 text-slate-900 dark:text-slate-100 rounded-tl-xs'
                       }`}
                     >
                       {/* Header meta */}
-                      <div className="flex items-center justify-between gap-2 mb-1 text-[10px] opacity-90">
+                      <div className="flex items-center justify-between gap-2 mb-1 text-[9.5px] opacity-90">
                         <span className={`font-semibold flex items-center gap-1 ${isUser ? 'text-white' : 'text-slate-600 dark:text-slate-400'}`}>
                           {isUser ? (
                             'You'
@@ -825,7 +828,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                           ) : (
                             <>
                               <span className="h-1.5 w-1.5 rounded-full bg-amber-500"></span>
-                              <span className="text-amber-600 dark:text-amber-400 font-bold">RescueMemory Edge RAG (Offline)</span>
+                              <span className="text-amber-600 dark:text-amber-400 font-bold">RescueMemory Edge RAG</span>
                             </>
                           )}
                         </span>
@@ -835,9 +838,9 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                       </div>
 
                       {/* Message Body with rich Markdown parsing */}
-                      <div className={isUser ? 'text-xs text-white font-medium whitespace-pre-wrap' : 'text-xs sm:text-[13px] text-slate-900 dark:text-slate-100'}>
+                      <div className={isUser ? 'text-[11.5px] text-white font-medium whitespace-pre-wrap leading-snug' : 'text-[11.5px] leading-snug text-slate-900 dark:text-slate-100'}>
                         {isUser ? (
-                          <span className="text-white font-semibold text-[12px] sm:text-xs leading-relaxed block">{msg.text}</span>
+                          <span className="text-white font-medium text-[11.5px] leading-snug block">{msg.text}</span>
                         ) : (
                           <MarkdownContent content={msg.text} />
                         )}
@@ -1066,158 +1069,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
               )}
             </div>
 
-            {/* Collapsible Clinical Triage & Improvised Materials Bar */}
-            <div className="border-t border-[#cfe1f0] dark:border-slate-800 bg-[#e3eef7] dark:bg-[#0b1626] shrink-0">
-              <div className="px-2.5 sm:px-3 py-1 sm:py-1.5 flex items-center justify-between">
-                <button
-                  type="button"
-                  onClick={() => setTriageOpen(!triageOpen)}
-                  className="flex items-center gap-1 text-[11px] font-bold text-red-700 dark:text-rose-400 hover:text-red-900 transition-colors"
-                >
-                  <HeartPulse size={13} className="animate-pulse text-red-600" />
-                  <span>Clinical Casualty Triage & Materials</span>
-                  <ChevronDown size={12} className={`transition-transform duration-200 ${triageOpen ? 'rotate-180' : ''}`} />
-                </button>
-                <div className="flex items-center gap-1.5">
-                  {selectedMaterials.length > 0 && (
-                    <span className="text-[9px] font-mono px-1.5 py-0.2 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 font-bold">
-                      {selectedMaterials.length} Mat{selectedMaterials.length > 1 ? 's' : ''} Active
-                    </span>
-                  )}
-                  {bleedingType === 'spurting' && (
-                    <span className="text-[9px] font-mono px-1.5 py-0.2 rounded-full bg-red-600 text-white font-bold animate-pulse">
-                      ARTERIAL BLEED
-                    </span>
-                  )}
-                  {!breathingStatus && (
-                    <span className="text-[9px] font-mono px-1.5 py-0.2 rounded-full bg-red-600 text-white font-bold animate-pulse">
-                      CPR NEEDED
-                    </span>
-                  )}
-                </div>
-              </div>
 
-              {triageOpen && (
-                <div className="px-2.5 sm:px-4 py-2 border-t border-[#cfe1f0] dark:border-slate-800 bg-[#edf5fc] dark:bg-[#07111e] space-y-2 animate-in fade-in">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {/* Breathing state */}
-                    <div>
-                      <span className="block text-[9px] uppercase font-bold text-slate-700 dark:text-slate-400 mb-0.5 tracking-wider">
-                        1. Casualty Breathing:
-                      </span>
-                      <div className="grid grid-cols-2 gap-1">
-                        <button
-                          type="button"
-                          onClick={() => setBreathingStatus(true)}
-                          className={`py-1 px-2 rounded-md border text-[10px] font-bold transition-all ${
-                            breathingStatus
-                              ? 'bg-emerald-600 text-white border-emerald-500 shadow-xs'
-                              : 'bg-white dark:bg-slate-900 border-[#cbdbe9] dark:border-slate-800 text-slate-700 dark:text-slate-300'
-                          }`}
-                        >
-                          Breathing Normally
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setBreathingStatus(false);
-                            setText("Unresponsive casualty not breathing in rubble, need immediate CPR");
-                          }}
-                          className={`py-1 px-2 rounded-md border text-[10px] font-bold transition-all ${
-                            !breathingStatus
-                              ? 'bg-red-600 text-white border-red-500 shadow-xs'
-                              : 'bg-white dark:bg-slate-900 border-[#cbdbe9] dark:border-slate-800 text-red-700 dark:text-red-400'
-                          }`}
-                        >
-                          NOT Breathing (CPR)
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Bleeding status */}
-                    <div>
-                      <span className="block text-[9px] uppercase font-bold text-slate-700 dark:text-slate-400 mb-0.5 tracking-wider">
-                        2. Bleeding Severity:
-                      </span>
-                      <div className="grid grid-cols-3 gap-1">
-                        {[
-                          ['none', 'No Bleed'],
-                          ['venous', 'Venous'],
-                          ['spurting', 'Spurting']
-                        ].map(([val, lbl]) => (
-                          <button
-                            key={val}
-                            type="button"
-                            onClick={() => {
-                              setBleedingType(val);
-                              if (val === 'spurting' && !text.includes('spurting')) {
-                                setText("Severe arterial bleeding from leg, blood spurting under pressure");
-                              }
-                            }}
-                            className={`py-1 px-1 rounded-md border text-[10px] font-bold transition-all ${
-                              bleedingType === val
-                                ? val === 'spurting'
-                                ? 'bg-red-600 text-white border-red-500 shadow-xs'
-                                : val === 'venous'
-                                ? 'bg-amber-600 text-white border-amber-500 shadow-xs'
-                                : 'bg-emerald-600 text-white border-emerald-500 shadow-xs'
-                                : 'bg-white dark:bg-slate-900 border-[#cbdbe9] dark:border-slate-800 text-slate-700 dark:text-slate-300'
-                            }`}
-                          >
-                            {lbl}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Improvised Materials selection */}
-                  <div>
-                    <span className="block text-[9px] uppercase font-bold text-slate-700 dark:text-slate-400 mb-0.5 tracking-wider">
-                      3. Improvised Materials on Hand:
-                    </span>
-                    <div className="flex flex-wrap gap-1">
-                      {[
-                        ['stick', 'Stick / Splint'],
-                        ['cloth', 'Cloth / Shirt'],
-                        ['belt', 'Belt / Strap'],
-                        ['water', 'Clean Water'],
-                        ['plastic', 'Plastic Bag']
-                      ].map(([id, label]) => {
-                        const isSelected = selectedMaterials.includes(id);
-                        return (
-                          <button
-                            key={id}
-                            type="button"
-                            onClick={() => {
-                              setSelectedMaterials((prev) =>
-                                isSelected ? prev.filter((m) => m !== id) : [...prev, id]
-                              );
-                            }}
-                            className={`text-[10px] py-0.5 px-2 rounded-md border font-bold transition-all ${
-                              isSelected
-                                ? 'bg-cyan-600 text-white border-cyan-500 shadow-xs'
-                                : 'bg-white dark:bg-slate-900 border-[#cbdbe9] dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-cyan-400'
-                            }`}
-                          >
-                            {isSelected ? '✓ ' : '+ '}{label}
-                          </button>
-                        );
-                      })}
-                      {selectedMaterials.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => setSelectedMaterials([])}
-                          className="text-[9px] text-slate-500 hover:text-red-600 underline font-semibold ml-1 self-center"
-                        >
-                          Clear
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
 
             {/* Bottom Minimal Input Box */}
             <div className="p-1.5 sm:p-2 border-t border-[#cfe1f0] dark:border-slate-800 bg-[#e3eef7] dark:bg-[#0b1626] shrink-0">
@@ -1368,6 +1220,158 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                   minLength={3}
                   placeholder="Describe emergency situation or specific injuries..."
                 />
+              </div>
+
+              {/* Clinical Casualty Triage & Materials Assessment */}
+              <div className="rounded-xl border border-red-200 dark:border-red-900/60 bg-[#edf5fc] dark:bg-[#07111e] p-2.5 sm:p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 text-[11px] font-bold text-red-700 dark:text-rose-400">
+                    <HeartPulse size={13} className="animate-pulse text-red-600" />
+                    <span>Clinical Casualty Triage & Materials</span>
+                  </span>
+                  <div className="flex items-center gap-1">
+                    {selectedMaterials.length > 0 && (
+                      <span className="text-[9px] font-mono px-1.5 py-0.2 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 font-bold">
+                        {selectedMaterials.length} Mat{selectedMaterials.length > 1 ? 's' : ''}
+                      </span>
+                    )}
+                    {bleedingType === 'spurting' && (
+                      <span className="text-[9px] font-mono px-1.5 py-0.2 rounded-full bg-red-600 text-white font-bold animate-pulse">
+                        ARTERIAL
+                      </span>
+                    )}
+                    {!breathingStatus && (
+                      <span className="text-[9px] font-mono px-1.5 py-0.2 rounded-full bg-red-600 text-white font-bold animate-pulse">
+                        CPR NEEDED
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {/* Breathing state */}
+                  <div>
+                    <span className="block text-[9px] uppercase font-bold text-slate-700 dark:text-slate-400 mb-0.5 tracking-wider">
+                      1. Casualty Breathing:
+                    </span>
+                    <div className="grid grid-cols-2 gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setBreathingStatus(true)}
+                        className={`py-1 px-1.5 rounded-lg border text-[10px] font-bold transition-all ${
+                          breathingStatus
+                            ? 'bg-emerald-600 text-white border-emerald-500 shadow-xs'
+                            : 'bg-white dark:bg-slate-900 border-[#cbdbe9] dark:border-slate-800 text-slate-700 dark:text-slate-300'
+                        }`}
+                      >
+                        Breathing Normally
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBreathingStatus(false);
+                          if (!report.text.includes('CPR')) {
+                            setReport((prev) => ({
+                              ...prev,
+                              text: `${prev.text} [CRITICAL: Casualty NOT breathing, immediate CPR needed]`.trim()
+                            }));
+                          }
+                        }}
+                        className={`py-1 px-1.5 rounded-lg border text-[10px] font-bold transition-all ${
+                          !breathingStatus
+                            ? 'bg-red-600 text-white border-red-500 shadow-xs'
+                            : 'bg-white dark:bg-slate-900 border-[#cbdbe9] dark:border-slate-800 text-red-700 dark:text-red-400'
+                        }`}
+                      >
+                        NOT Breathing (CPR)
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Bleeding status */}
+                  <div>
+                    <span className="block text-[9px] uppercase font-bold text-slate-700 dark:text-slate-400 mb-0.5 tracking-wider">
+                      2. Bleeding Severity:
+                    </span>
+                    <div className="grid grid-cols-3 gap-1">
+                      {[
+                        ['none', 'No Bleed'],
+                        ['venous', 'Venous'],
+                        ['spurting', 'Spurting']
+                      ].map(([val, lbl]) => (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => {
+                            setBleedingType(val);
+                            if (val === 'spurting' && !report.text.includes('spurting')) {
+                              setReport((prev) => ({
+                                ...prev,
+                                text: `${prev.text} [CRITICAL: Severe arterial spurting bleeding]`.trim()
+                              }));
+                            }
+                          }}
+                          className={`py-1 px-1 rounded-lg border text-[10px] font-bold transition-all ${
+                            bleedingType === val
+                              ? val === 'spurting'
+                                ? 'bg-red-600 text-white border-red-500 shadow-xs'
+                                : val === 'venous'
+                                ? 'bg-amber-600 text-white border-amber-500 shadow-xs'
+                                : 'bg-emerald-600 text-white border-emerald-500 shadow-xs'
+                              : 'bg-white dark:bg-slate-900 border-[#cbdbe9] dark:border-slate-800 text-slate-700 dark:text-slate-300'
+                          }`}
+                        >
+                          {lbl}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Improvised Materials selection */}
+                <div>
+                  <span className="block text-[9px] uppercase font-bold text-slate-700 dark:text-slate-400 mb-0.5 tracking-wider">
+                    3. Improvised Materials Available:
+                  </span>
+                  <div className="flex flex-wrap gap-1">
+                    {[
+                      ['stick', 'Stick / Splint'],
+                      ['cloth', 'Cloth / Shirt'],
+                      ['belt', 'Belt / Strap'],
+                      ['water', 'Clean Water'],
+                      ['plastic', 'Plastic Bag']
+                    ].map(([id, label]) => {
+                      const isSelected = selectedMaterials.includes(id);
+                      return (
+                        <button
+                          key={id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedMaterials((prev) =>
+                              isSelected ? prev.filter((m) => m !== id) : [...prev, id]
+                            );
+                          }}
+                          className={`text-[10px] py-0.5 px-2 rounded-lg border font-bold transition-all ${
+                            isSelected
+                              ? 'bg-cyan-600 text-white border-cyan-500 shadow-xs'
+                              : 'bg-white dark:bg-slate-900 border-[#cbdbe9] dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-cyan-400'
+                          }`}
+                        >
+                          {isSelected ? '✓ ' : '+ '}{label}
+                        </button>
+                      );
+                    })}
+                    {selectedMaterials.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedMaterials([])}
+                        className="text-[9px] text-slate-500 hover:text-red-600 underline font-semibold ml-1 self-center"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
 
               {/* Real-time GPS Location Status Badge */}
