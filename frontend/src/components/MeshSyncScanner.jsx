@@ -588,7 +588,7 @@ export default function MeshSyncScanner({
         >
           <div className="flex items-center gap-2">
             <Smartphone size={15} className="text-cyan-500" />
-            <span>How to connect 2 to 5 phones via Hotspot (हॉटस्पॉट गाइड)</span>
+            <span>How to connect 2 to 5 phones via Hotspot</span>
           </div>
           {showHotspotGuide ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         </button>
@@ -596,12 +596,12 @@ export default function MeshSyncScanner({
         {showHotspotGuide && (
           <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-800 text-xs sm:text-[13px] space-y-2.5 text-slate-600 dark:text-slate-300">
             <div className="p-2.5 rounded-xl bg-cyan-50 dark:bg-cyan-950/30 border border-cyan-200 dark:border-cyan-900/50">
-              <p className="font-bold text-cyan-900 dark:text-cyan-200 mb-1">Step 1: Host Phone (हॉटस्पॉट ऑन करें)</p>
+              <p className="font-bold text-cyan-900 dark:text-cyan-200 mb-1">Step 1: Host Phone (Enable Hotspot)</p>
               <p>Turn ON <strong>Personal Hotspot</strong> on Mobile 1. (Mobile data on or off — mesh will bridge all phones).</p>
             </div>
 
             <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/50">
-              <p className="font-bold text-emerald-900 dark:text-emerald-200 mb-1">Step 2: Client Phones (वाई-फाई कनेक्ट करें)</p>
+              <p className="font-bold text-emerald-900 dark:text-emerald-200 mb-1">Step 2: Client Phones (Connect to Wi-Fi)</p>
               <p>Turn ON Wi-Fi on Mobile 2, 3, 4 and connect them to Mobile 1's Hotspot network.</p>
             </div>
 
