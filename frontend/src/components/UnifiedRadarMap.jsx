@@ -765,7 +765,7 @@ export default function UnifiedRadarMap({
                   <g
                     transform={`rotate(${needleAngle} ${COMPASS_CENTER} ${COMPASS_CENTER})`}
                     filter="url(#needleGlow)"
-                    className={isCompassActive ? 'transition-none' : 'transition-transform duration-200 ease-out'}
+                    className="transition-transform duration-200 ease-out"
                   >
                     {/* Needle Arrowhead */}
                     <polygon
