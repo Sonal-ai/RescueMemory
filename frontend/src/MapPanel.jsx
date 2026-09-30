@@ -74,7 +74,7 @@ export default function MapPanel({
           viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
           role="img"
           aria-label="Offline coordinate grid with report markers and nearby peer devices"
-          className={`w-full h-auto min-h-[190px] sm:min-h-[280px] touch-manipulation ${onSelect ? 'cursor-crosshair' : ''}`}
+          className={`w-full h-auto max-h-[340px] touch-manipulation ${onSelect ? 'cursor-crosshair' : ''}`}
           onClick={handleMapClick}
           onPointerUp={handleMapClick}
           style={{ touchAction: 'pan-x pan-y' }}

@@ -619,374 +619,331 @@ export default function UnifiedRadarMap({
         )}
       </div>
 
-      {/* TOP VIEW: Interactive Tactical Map */}
-      <div className="bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 rounded-2xl p-3 sm:p-4 shadow-xs text-slate-900 dark:text-slate-100">
-        {/* Map Filter Pills */}
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
-          <div className="flex flex-wrap gap-1.5">
-            {[
-              ['all', 'All Points'],
-              ['sos', 'SOS Casualties'],
-              ['hazard', 'Hazards'],
-              ['resource', 'Safe Resources']
-            ].map(([f, label]) => (
-              <button
-                key={f}
-                type="button"
-                onClick={() => setMapFilter(f)}
-                className={`text-xs sm:text-[13px] px-2.5 py-1 rounded-lg border font-bold transition-all ${
-                  mapFilter === f
-                    ? 'bg-slate-900 text-white dark:bg-cyan-500 dark:text-slate-950 border-transparent shadow-xs'
-                    : 'border-[#cbdbe9] dark:border-slate-800 bg-[#e6f0f7] dark:bg-slate-900 text-slate-700 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-[#d9e8f4]'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
+      {/* TACTICAL TWO-COLUMN GRID: MAP (LEFT) & COMPASS/TELEMETRY (RIGHT) */}
+      <div className="grid lg:grid-cols-12 gap-3 sm:gap-4 items-stretch">
+        {/* LEFT COLUMN: Interactive Tactical Map */}
+        <div className="lg:col-span-7 bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 rounded-2xl p-3 sm:p-4 shadow-xs text-slate-900 dark:text-slate-100 flex flex-col justify-between">
+          {/* Map Filter Pills */}
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                ['all', 'All Points'],
+                ['sos', 'SOS Casualties'],
+                ['hazard', 'Hazards'],
+                ['resource', 'Safe Resources']
+              ].map(([f, label]) => (
+                <button
+                  key={f}
+                  type="button"
+                  onClick={() => setMapFilter(f)}
+                  className={`text-xs px-2.5 py-1 rounded-lg border font-bold transition-all cursor-pointer ${
+                    mapFilter === f
+                      ? 'bg-slate-900 text-white dark:bg-cyan-500 dark:text-slate-950 border-transparent shadow-xs'
+                      : 'border-[#cbdbe9] dark:border-slate-800 bg-[#e6f0f7] dark:bg-slate-900 text-slate-700 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-[#d9e8f4]'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div className="text-xs text-slate-500 dark:text-slate-400 font-mono font-medium">
+              {filteredMapItems.length} locations
+            </div>
           </div>
 
-          <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-            {filteredMapItems.length} locations
+          {/* Map Canvas */}
+          <div className="relative rounded-xl overflow-hidden border border-[#e8e4db] dark:border-slate-800 bg-[#091927] flex items-center justify-center">
+            <MapPanel
+              center={userLocation}
+              items={filteredMapItems}
+              peers={peers}
+              selected={activeTarget?.location || userLocation}
+              onSelect={onSelectLocation}
+              onMarker={(item) => {
+                if (!item) return;
+                const matched = destinationOptions.find(
+                  (d) => d.id === item.id || d.name === item.entity_id || d.name?.includes(item.entity_id || '')
+                );
+                if (matched) {
+                  handleSelectDestination(matched.id);
+                } else {
+                  const newTarget = {
+                    id: item.id || item.entity_id || `marker_${Date.now()}`,
+                    name: item.title || item.name || item.entity_id || 'Tapped Map Marker',
+                    category: item.kind === 'incident' ? 'casualty' : item.kind === 'hazard' ? 'hazard' : item.kind === 'resource' ? 'resource' : 'shelter',
+                    location: item.location || { lat: item.lat, lon: item.lon },
+                    text: item.text || item.summary || item.description || 'Selected map location'
+                  };
+                  setSelectedTargetId(newTarget.id);
+                  playChirp(newTarget.category === 'casualty' ? 1200 : 800);
+                  if (onNavigateTarget) onNavigateTarget(newTarget);
+                }
+              }}
+            />
+
+            {/* Compass Rose Mini Watermark overlay on map */}
+            <div className="absolute top-2.5 right-2.5 bg-slate-900/85 backdrop-blur-md border border-slate-700/60 rounded-lg px-2 py-0.5 text-[11px] font-mono text-cyan-300 font-bold flex items-center gap-1 shadow-sm">
+              <Compass size={12} className="text-cyan-400" />
+              <span>N {String(Math.round(currentHeading)).padStart(3, '0')}°</span>
+            </div>
           </div>
         </div>
 
-        {/* Map Canvas */}
-        <div className="relative rounded-xl overflow-hidden border border-[#e8e4db] dark:border-slate-800">
-          <MapPanel
-            center={userLocation}
-            items={filteredMapItems}
-            peers={peers}
-            selected={activeTarget?.location || userLocation}
-            onSelect={onSelectLocation}
-            onMarker={(item) => {
-              if (!item) return;
-              const matched = destinationOptions.find(
-                (d) => d.id === item.id || d.name === item.entity_id || d.name?.includes(item.entity_id || '')
-              );
-              if (matched) {
-                handleSelectDestination(matched.id);
-              } else {
-                const newTarget = {
-                  id: item.id || item.entity_id || `marker_${Date.now()}`,
-                  name: item.title || item.name || item.entity_id || 'Tapped Map Marker',
-                  category: item.kind === 'incident' ? 'casualty' : item.kind === 'hazard' ? 'hazard' : item.kind === 'resource' ? 'resource' : 'shelter',
-                  location: item.location || { lat: item.lat, lon: item.lon },
-                  text: item.text || item.summary || item.description || 'Selected map location'
-                };
-                setSelectedTargetId(newTarget.id);
-                playChirp(newTarget.category === 'casualty' ? 1200 : 800);
-                if (onNavigateTarget) onNavigateTarget(newTarget);
-              }
-            }}
-          />
-
-          {/* Compass Rose Mini Watermark overlay on map */}
-          <div className="absolute top-2.5 right-2.5 bg-slate-900/85 backdrop-blur-md border border-slate-700/60 rounded-lg px-2.5 py-1 text-xs font-mono text-cyan-300 font-bold flex items-center gap-1.5 shadow-sm">
-            <Compass size={13} className="text-cyan-400" />
-            <span>N {String(Math.round(currentHeading)).padStart(3, '0')}°</span>
-          </div>
-        </div>
-      </div>
-
-      {/* COMPASS POINTER & PROMINENT TARGET SITUATION CARD */}
-      <div className="bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 rounded-2xl p-3 sm:p-4 shadow-xs">
-        <div className="flex flex-col lg:flex-row items-center lg:items-start justify-between gap-4">
-          {/* Compass SVG Dial */}
-          <div className="flex flex-col items-center justify-center shrink-0 w-full lg:w-auto">
-            <div
-              onClick={requestCompassPermission}
-              className="relative w-[230px] h-[230px] sm:w-[260px] sm:h-[260px] flex items-center justify-center select-none"
-              title="Live 360° Compass Navigation"
-            >
-              <svg
-                width={COMPASS_SIZE}
-                height={COMPASS_SIZE}
-                viewBox={`0 0 ${COMPASS_SIZE} ${COMPASS_SIZE}`}
-                className="select-none drop-shadow-xl"
-              >
-                <defs>
-                  {/* Outer ring gradient */}
-                  <linearGradient id="compassRing" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <stop offset="0%" stopColor="#0284c7" />
-                    <stop offset="100%" stopColor="#0f172a" />
-                  </linearGradient>
-
-                  {/* Glow filter */}
-                  <filter id="needleGlow" x="-30%" y="-30%" width="160%" height="160%">
-                    <feGaussianBlur stdDeviation="3" result="blur" />
-                    <feMerge>
-                      <feMergeNode in="blur" />
-                      <feMergeNode in="SourceGraphic" />
-                    </feMerge>
-                  </filter>
-                </defs>
-
-                {/* Outer Azimuth Bezel */}
-                <circle cx={COMPASS_CENTER} cy={COMPASS_CENTER} r={COMPASS_RADIUS + 16} fill="#091424" stroke="#334155" strokeWidth="2" />
-                <circle cx={COMPASS_CENTER} cy={COMPASS_CENTER} r={COMPASS_RADIUS + 11} fill="#030712" stroke="#0e7490" strokeWidth="1" strokeDasharray="3 3" />
-                <circle cx={COMPASS_CENTER} cy={COMPASS_CENTER} r={COMPASS_RADIUS} fill="#060e1a" stroke="#1e293b" strokeWidth="1.5" />
-
-                {/* 360-degree tick marks */}
-                {Array.from({ length: 36 }).map((_, i) => {
-                  const deg = i * 10;
-                  const isMajor = deg % 30 === 0;
-                  const isCardinal = deg % 90 === 0;
-                  const tickLen = isCardinal ? 11 : isMajor ? 7 : 3.5;
-                  const rad = (deg * Math.PI) / 180;
-                  const x1 = COMPASS_CENTER + (COMPASS_RADIUS - 2) * Math.sin(rad);
-                  const y1 = COMPASS_CENTER - (COMPASS_RADIUS - 2) * Math.cos(rad);
-                  const x2 = COMPASS_CENTER + (COMPASS_RADIUS - 2 - tickLen) * Math.sin(rad);
-                  const y2 = COMPASS_CENTER - (COMPASS_RADIUS - 2 - tickLen) * Math.cos(rad);
-                  return (
-                    <line
-                      key={deg}
-                      x1={x1}
-                      y1={y1}
-                      x2={x2}
-                      y2={y2}
-                      stroke={isCardinal ? '#ef4444' : isMajor ? '#38bdf8' : '#334155'}
-                      strokeWidth={isCardinal ? 2 : isMajor ? 1.5 : 0.75}
-                    />
-                  );
-                })}
-
-                {/* Cardinal Points */}
-                <text x={COMPASS_CENTER} y={COMPASS_CENTER - COMPASS_RADIUS + 15} textAnchor="middle" fill="#ef4444" fontSize="13" fontWeight="900" fontFamily="monospace">N</text>
-                <text x={COMPASS_CENTER + COMPASS_RADIUS - 13} y={COMPASS_CENTER + 4} textAnchor="middle" fill="#38bdf8" fontSize="11" fontWeight="bold" fontFamily="monospace">E</text>
-                <text x={COMPASS_CENTER} y={COMPASS_CENTER + COMPASS_RADIUS - 6} textAnchor="middle" fill="#38bdf8" fontSize="11" fontWeight="bold" fontFamily="monospace">S</text>
-                <text x={COMPASS_CENTER - COMPASS_RADIUS + 13} y={COMPASS_CENTER + 4} textAnchor="middle" fill="#38bdf8" fontSize="11" fontWeight="bold" fontFamily="monospace">W</text>
-
-                {/* Crosshairs */}
-                <line x1={COMPASS_CENTER - 20} y1={COMPASS_CENTER} x2={COMPASS_CENTER + 20} y2={COMPASS_CENTER} stroke="#0e7490" strokeWidth="0.8" opacity="0.3" />
-                <line x1={COMPASS_CENTER} y1={COMPASS_CENTER - 20} x2={COMPASS_CENTER} y2={COMPASS_CENTER + 20} stroke="#0e7490" strokeWidth="0.8" opacity="0.3" />
-
-                {/* DYNAMIC COMPASS NEEDLE POINTING TO LOCKED DESTINATION (SMOOTH DAMPED ROTATION) */}
-                {activeTarget && (
-                  <g
-                    transform={`rotate(${needleAngle} ${COMPASS_CENTER} ${COMPASS_CENTER})`}
-                    filter="url(#needleGlow)"
-                    className="transition-transform duration-200 ease-out"
-                  >
-                    {/* Needle Arrowhead */}
-                    <polygon
-                      points={`${COMPASS_CENTER},${COMPASS_CENTER - COMPASS_RADIUS + 12} ${COMPASS_CENTER - 9},${COMPASS_CENTER - 14} ${COMPASS_CENTER},${COMPASS_CENTER - 7} ${COMPASS_CENTER + 9},${COMPASS_CENTER - 14}`}
-                      fill={isAligned ? '#10b981' : activeTarget.category === 'resource' ? '#06b6d4' : '#ef4444'}
-                      stroke="#ffffff"
-                      strokeWidth="1.5"
-                    />
-
-                    {/* Needle Shaft Line */}
-                    <line
-                      x1={COMPASS_CENTER}
-                      y1={COMPASS_CENTER}
-                      x2={COMPASS_CENTER}
-                      y2={COMPASS_CENTER - COMPASS_RADIUS + 12}
-                      stroke={isAligned ? '#10b981' : activeTarget.category === 'resource' ? '#06b6d4' : '#ef4444'}
-                      strokeWidth="3.5"
-                      strokeLinecap="round"
-                    />
-
-                    {/* Counterbalance tail */}
-                    <polygon
-                      points={`${COMPASS_CENTER},${COMPASS_CENTER + 24} ${COMPASS_CENTER - 5},${COMPASS_CENTER + 10} ${COMPASS_CENTER + 5},${COMPASS_CENTER + 10}`}
-                      fill="#475569"
-                    />
-
-                    {/* Reticle ring at tip */}
-                    <circle
-                      cx={COMPASS_CENTER}
-                      cy={COMPASS_CENTER - COMPASS_RADIUS + 12}
-                      r="5.5"
-                      fill="none"
-                      stroke={isAligned ? '#10b981' : activeTarget.category === 'resource' ? '#06b6d4' : '#ef4444'}
-                      strokeWidth="2"
-                      className={isAligned ? 'animate-pulse' : ''}
-                    />
-                  </g>
-                )}
-
-                {/* Center Hub Display */}
-                <circle cx={COMPASS_CENTER} cy={COMPASS_CENTER} r="28" fill="#091424" stroke="#1e293b" strokeWidth="2" />
-                <circle cx={COMPASS_CENTER} cy={COMPASS_CENTER} r="24" fill="#030712" />
-
-                <text
-                  x={COMPASS_CENTER}
-                  y={COMPASS_CENTER - 2}
-                  textAnchor="middle"
-                  fill="#ffffff"
-                  fontSize="12"
-                  fontWeight="900"
-                  fontFamily="monospace"
-                >
-                  {activeTarget ? `${targetDistance}m` : '0m'}
-                </text>
-                <text
-                  x={COMPASS_CENTER}
-                  y={COMPASS_CENTER + 11}
-                  textAnchor="middle"
-                  fill={isAligned ? '#10b981' : '#38bdf8'}
-                  fontSize="9"
-                  fontWeight="bold"
-                  fontFamily="monospace"
-                >
-                  {targetCardinal}
-                </text>
-              </svg>
-            </div>
-
-            {/* Compass Heading Status Indicator */}
-            <div className="mt-1 text-center font-mono text-[11px] text-slate-500 dark:text-slate-400">
-              <span>Heading: </span>
-              <strong className="text-cyan-600 dark:text-cyan-400">{Math.round(currentHeading)}° {cardinalDirection(currentHeading)}</strong>
-            </div>
-          </div>
-
-          {/* Locked Target Navigation Telemetry, Alignment Guide & Full Situation Details */}
-          <div className="flex-1 min-w-0 w-full flex flex-col gap-2.5">
-            {/* Live Alignment Action Banner */}
-            <div className="w-full font-mono h-[38px] min-h-[38px] flex items-center justify-center">
-              {isAligned ? (
-                <div className="w-full h-full rounded-xl bg-emerald-500/10 border border-emerald-500/40 text-emerald-800 dark:text-emerald-300 font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-xs animate-pulse px-3">
-                  <CheckCircle2 size={16} className="text-emerald-500 shrink-0" />
-                  <span className="truncate">ON TARGET · PROCEED STRAIGHT</span>
-                </div>
-              ) : turnRightAngle > 0 ? (
-                <div className="w-full h-full rounded-xl bg-amber-500/10 border border-amber-500/40 text-amber-900 dark:text-amber-300 font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 px-3">
-                  <ArrowRight size={16} className="text-amber-600 shrink-0" />
-                  <span className="truncate tabular-nums">TURN RIGHT {Math.round(turnRightAngle)}° TO ALIGN</span>
-                </div>
-              ) : (
-                <div className="w-full h-full rounded-xl bg-amber-500/10 border border-amber-500/40 text-amber-900 dark:text-amber-300 font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 px-3">
-                  <ArrowLeft size={16} className="text-amber-600 shrink-0" />
-                  <span className="truncate tabular-nums">TURN LEFT {Math.round(turnLeftAngle)}° TO ALIGN</span>
-                </div>
-              )}
-            </div>
-
-            {/* Target Card Details */}
-            {activeTarget ? (
-              <div
-                className={`p-3.5 sm:p-4 rounded-xl border transition-all shadow-xs ${
-                  activeTarget.category === 'casualty'
-                    ? 'bg-red-50/90 dark:bg-red-950/30 border-red-300 dark:border-red-500/70'
-                    : activeTarget.category === 'resource'
-                    ? 'bg-sky-50/90 dark:bg-sky-950/30 border-sky-300 dark:border-sky-500/70'
-                    : activeTarget.category === 'shelter'
-                    ? 'bg-emerald-50/90 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-500/70'
-                    : 'bg-[#f0f5fa] dark:bg-slate-900/60 border-[#dbe6f0] dark:border-slate-700'
-                }`}
-              >
-                <div className="flex items-start gap-2.5 mb-2.5">
-                  <div
-                    className={`p-2 rounded-xl shrink-0 shadow-xs ${
-                      activeTarget.category === 'casualty'
-                        ? 'bg-red-600 text-white'
-                        : activeTarget.category === 'resource'
-                        ? 'bg-sky-600 text-white'
-                        : activeTarget.category === 'shelter'
-                        ? 'bg-emerald-600 text-white'
-                        : 'bg-amber-600 text-white'
-                    }`}
-                  >
-                    {activeTarget.category === 'casualty' ? (
-                      <HeartPulse size={18} className="animate-pulse" />
-                    ) : activeTarget.category === 'resource' ? (
-                      <Droplets size={18} />
-                    ) : activeTarget.category === 'shelter' ? (
-                      <ShieldCheck size={18} />
-                    ) : (
-                      <AlertOctagon size={18} />
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span
-                        className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full ${
-                          activeTarget.category === 'casualty'
-                            ? 'bg-red-600 text-white animate-pulse'
-                            : activeTarget.category === 'resource'
-                            ? 'bg-sky-600 text-white'
-                            : activeTarget.category === 'shelter'
-                            ? 'bg-emerald-600 text-white'
-                            : 'bg-amber-600 text-white'
-                        }`}
-                      >
-                        {activeTarget.category === 'casualty'
-                          ? '🆘 PRIORITY CASUALTY / SOS'
-                          : activeTarget.category === 'resource'
-                          ? '💧 FRESH WATER / RESOURCE'
-                          : activeTarget.category === 'shelter'
-                          ? '🏥 SAFE SHELTER'
-                          : '⚠️ HAZARD ALERT'}
-                      </span>
-                      <span className="text-xs font-mono font-bold text-slate-700 dark:text-slate-300">
-                        Azimuth {String(targetBearing).padStart(3, '0')}° ({targetCardinal})
-                      </span>
-                    </div>
-                    <h3 className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white truncate mt-1">
-                      {activeTarget.name}
-                    </h3>
-                  </div>
-                </div>
-
-                {/* Metrics Matrix */}
-                <div className="grid grid-cols-3 gap-2 bg-[#f8fafc] dark:bg-slate-950/80 p-2.5 rounded-xl border border-[#dbe6f0] dark:border-slate-800 text-center font-mono mb-2.5">
-                  <div>
-                    <span className="text-[10px] text-slate-500 uppercase block font-semibold">Distance</span>
-                    <strong className="text-sm font-black text-slate-900 dark:text-cyan-400">{targetDistance} m</strong>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-slate-500 uppercase block font-semibold">Bearing</span>
-                    <strong className="text-sm font-black text-slate-900 dark:text-cyan-400">{targetBearing}° {targetCardinal}</strong>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-slate-500 uppercase block font-semibold">Walk Time</span>
-                    <strong className="text-sm font-black text-slate-900 dark:text-cyan-400">~{Math.max(1, Math.round(targetDistance / 75))} min</strong>
-                  </div>
-                </div>
-
-                {/* Dedicated Situation Text / SOS Emergency Message Box */}
-                <div className="bg-white/90 dark:bg-slate-950/80 p-2.5 sm:p-3 rounded-xl border border-[#dbe6f0] dark:border-slate-800/90 shadow-2xs mb-2.5">
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1 flex items-center gap-1">
-                    <span>Emergency Situation & Details:</span>
-                  </div>
-                  <p className="text-[13px] sm:text-sm text-slate-900 dark:text-slate-100 leading-relaxed font-medium">
-                    {targetDescription}
-                  </p>
-                </div>
-
-                {/* 1-Tap Action Buttons */}
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (onNavigateTarget && activeTarget.location) {
-                        onNavigateTarget(activeTarget);
-                      }
-                      playChirp(1000);
-                    }}
-                    className="flex-1 py-2 px-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-98 cursor-pointer"
-                  >
-                    <Navigation size={15} />
-                    <span>Center Map on Target</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => playChirp(activeTarget.category === 'casualty' ? 1400 : 900)}
-                    className="py-2 px-3.5 rounded-xl border border-[#cbdbe9] dark:border-slate-700 hover:border-cyan-500 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-all active:scale-98 cursor-pointer"
-                  >
-                    <Volume2 size={15} className="text-cyan-600 dark:text-cyan-400" />
-                    <span>Ping</span>
-                  </button>
-                </div>
+        {/* RIGHT COLUMN: Compass Navigation & Target Situation Card */}
+        <div className="lg:col-span-5 bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 rounded-2xl p-3 sm:p-4 shadow-xs flex flex-col justify-between gap-3">
+          {/* Live Alignment Action Banner */}
+          <div className="w-full font-mono h-[34px] min-h-[34px] flex items-center justify-center">
+            {isAligned ? (
+              <div className="w-full h-full rounded-xl bg-emerald-500/10 border border-emerald-500/40 text-emerald-800 dark:text-emerald-300 font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs animate-pulse px-3">
+                <CheckCircle2 size={15} className="text-emerald-500 shrink-0" />
+                <span className="truncate">ON TARGET · PROCEED STRAIGHT</span>
+              </div>
+            ) : turnRightAngle > 0 ? (
+              <div className="w-full h-full rounded-xl bg-amber-500/10 border border-amber-500/40 text-amber-900 dark:text-amber-300 font-bold text-xs flex items-center justify-center gap-1.5 px-3">
+                <ArrowRight size={15} className="text-amber-600 shrink-0" />
+                <span className="truncate tabular-nums">TURN RIGHT {Math.round(turnRightAngle)}° TO ALIGN</span>
               </div>
             ) : (
-              <div className="p-4 rounded-xl border border-dashed border-[#cbdbe9] dark:border-slate-800 text-center text-xs text-slate-500 dark:text-slate-400">
-                Select a target destination from the dropdown above to point the compass and view tactical telemetry.
+              <div className="w-full h-full rounded-xl bg-amber-500/10 border border-amber-500/40 text-amber-900 dark:text-amber-300 font-bold text-xs flex items-center justify-center gap-1.5 px-3">
+                <ArrowLeft size={15} className="text-amber-600 shrink-0" />
+                <span className="truncate tabular-nums">TURN LEFT {Math.round(turnLeftAngle)}° TO ALIGN</span>
               </div>
             )}
           </div>
+
+          {/* Compass Dial & Telemetry Row */}
+          <div className="flex items-center justify-between gap-3 py-0.5">
+            {/* Compass SVG Dial */}
+            <div className="flex flex-col items-center justify-center shrink-0">
+              <div
+                onClick={requestCompassPermission}
+                className="relative w-[150px] h-[150px] flex items-center justify-center select-none cursor-pointer"
+                title="Live 360° Compass Navigation"
+              >
+                <svg
+                  width={150}
+                  height={150}
+                  viewBox={`0 0 ${COMPASS_SIZE} ${COMPASS_SIZE}`}
+                  className="select-none drop-shadow-md"
+                >
+                  <defs>
+                    <linearGradient id="compassRing" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#0284c7" />
+                      <stop offset="100%" stopColor="#0f172a" />
+                    </linearGradient>
+                    <filter id="needleGlow" x="-30%" y="-30%" width="160%" height="160%">
+                      <feGaussianBlur stdDeviation="3" result="blur" />
+                      <feMerge>
+                        <feMergeNode in="blur" />
+                        <feMergeNode in="SourceGraphic" />
+                      </feMerge>
+                    </filter>
+                  </defs>
+
+                  <circle cx={COMPASS_CENTER} cy={COMPASS_CENTER} r={COMPASS_RADIUS + 16} fill="#091424" stroke="#334155" strokeWidth="2" />
+                  <circle cx={COMPASS_CENTER} cy={COMPASS_CENTER} r={COMPASS_RADIUS + 11} fill="#030712" stroke="#0e7490" strokeWidth="1" strokeDasharray="3 3" />
+                  <circle cx={COMPASS_CENTER} cy={COMPASS_CENTER} r={COMPASS_RADIUS} fill="#060e1a" stroke="#1e293b" strokeWidth="1.5" />
+
+                  {Array.from({ length: 36 }).map((_, i) => {
+                    const deg = i * 10;
+                    const isMajor = deg % 30 === 0;
+                    const isCardinal = deg % 90 === 0;
+                    const tickLen = isCardinal ? 11 : isMajor ? 7 : 3.5;
+                    const rad = (deg * Math.PI) / 180;
+                    const x1 = COMPASS_CENTER + (COMPASS_RADIUS - 2) * Math.sin(rad);
+                    const y1 = COMPASS_CENTER - (COMPASS_RADIUS - 2) * Math.cos(rad);
+                    const x2 = COMPASS_CENTER + (COMPASS_RADIUS - 2 - tickLen) * Math.sin(rad);
+                    const y2 = COMPASS_CENTER - (COMPASS_RADIUS - 2 - tickLen) * Math.cos(rad);
+                    return (
+                      <line
+                        key={deg}
+                        x1={x1}
+                        y1={y1}
+                        x2={x2}
+                        y2={y2}
+                        stroke={isCardinal ? '#ef4444' : isMajor ? '#38bdf8' : '#334155'}
+                        strokeWidth={isCardinal ? 2 : isMajor ? 1.5 : 0.75}
+                      />
+                    );
+                  })}
+
+                  <text x={COMPASS_CENTER} y={COMPASS_CENTER - COMPASS_RADIUS + 15} textAnchor="middle" fill="#ef4444" fontSize="13" fontWeight="900" fontFamily="monospace">N</text>
+                  <text x={COMPASS_CENTER + COMPASS_RADIUS - 13} y={COMPASS_CENTER + 4} textAnchor="middle" fill="#38bdf8" fontSize="11" fontWeight="bold" fontFamily="monospace">E</text>
+                  <text x={COMPASS_CENTER} y={COMPASS_CENTER + COMPASS_RADIUS - 6} textAnchor="middle" fill="#38bdf8" fontSize="11" fontWeight="bold" fontFamily="monospace">S</text>
+                  <text x={COMPASS_CENTER - COMPASS_RADIUS + 13} y={COMPASS_CENTER + 4} textAnchor="middle" fill="#38bdf8" fontSize="11" fontWeight="bold" fontFamily="monospace">W</text>
+
+                  <line x1={COMPASS_CENTER - 20} y1={COMPASS_CENTER} x2={COMPASS_CENTER + 20} y2={COMPASS_CENTER} stroke="#0e7490" strokeWidth="0.8" opacity="0.3" />
+                  <line x1={COMPASS_CENTER} y1={COMPASS_CENTER - 20} x2={COMPASS_CENTER} y2={COMPASS_CENTER + 20} stroke="#0e7490" strokeWidth="0.8" opacity="0.3" />
+
+                  {activeTarget && (
+                    <g
+                      transform={`rotate(${needleAngle} ${COMPASS_CENTER} ${COMPASS_CENTER})`}
+                      filter="url(#needleGlow)"
+                      className="transition-transform duration-200 ease-out"
+                    >
+                      <polygon
+                        points={`${COMPASS_CENTER},${COMPASS_CENTER - COMPASS_RADIUS + 12} ${COMPASS_CENTER - 9},${COMPASS_CENTER - 14} ${COMPASS_CENTER},${COMPASS_CENTER - 7} ${COMPASS_CENTER + 9},${COMPASS_CENTER - 14}`}
+                        fill={isAligned ? '#10b981' : activeTarget.category === 'resource' ? '#06b6d4' : '#ef4444'}
+                        stroke="#ffffff"
+                        strokeWidth="1.5"
+                      />
+                      <line
+                        x1={COMPASS_CENTER}
+                        y1={COMPASS_CENTER}
+                        x2={COMPASS_CENTER}
+                        y2={COMPASS_CENTER - COMPASS_RADIUS + 12}
+                        stroke={isAligned ? '#10b981' : activeTarget.category === 'resource' ? '#06b6d4' : '#ef4444'}
+                        strokeWidth="3.5"
+                        strokeLinecap="round"
+                      />
+                      <polygon
+                        points={`${COMPASS_CENTER},${COMPASS_CENTER + 24} ${COMPASS_CENTER - 5},${COMPASS_CENTER + 10} ${COMPASS_CENTER + 5},${COMPASS_CENTER + 10}`}
+                        fill="#475569"
+                      />
+                      <circle
+                        cx={COMPASS_CENTER}
+                        cy={COMPASS_CENTER - COMPASS_RADIUS + 12}
+                        r="5.5"
+                        fill="none"
+                        stroke={isAligned ? '#10b981' : activeTarget.category === 'resource' ? '#06b6d4' : '#ef4444'}
+                        strokeWidth="2"
+                        className={isAligned ? 'animate-pulse' : ''}
+                      />
+                    </g>
+                  )}
+
+                  <circle cx={COMPASS_CENTER} cy={COMPASS_CENTER} r="26" fill="#091424" stroke="#1e293b" strokeWidth="2" />
+                  <circle cx={COMPASS_CENTER} cy={COMPASS_CENTER} r="22" fill="#030712" />
+
+                  <text
+                    x={COMPASS_CENTER}
+                    y={COMPASS_CENTER - 2}
+                    textAnchor="middle"
+                    fill="#ffffff"
+                    fontSize="11"
+                    fontWeight="900"
+                    fontFamily="monospace"
+                  >
+                    {activeTarget ? `${targetDistance}m` : '0m'}
+                  </text>
+                  <text
+                    x={COMPASS_CENTER}
+                    y={COMPASS_CENTER + 10}
+                    textAnchor="middle"
+                    fill={isAligned ? '#10b981' : '#38bdf8'}
+                    fontSize="8.5"
+                    fontWeight="bold"
+                    fontFamily="monospace"
+                  >
+                    {targetCardinal}
+                  </text>
+                </svg>
+              </div>
+
+              <div className="mt-0.5 text-center font-mono text-[10px] text-slate-500 dark:text-slate-400">
+                <span>Heading: </span>
+                <strong className="text-cyan-600 dark:text-cyan-400">{Math.round(currentHeading)}° {cardinalDirection(currentHeading)}</strong>
+              </div>
+            </div>
+
+            {/* Metrics Matrix */}
+            <div className="flex-1 flex flex-col gap-1.5 min-w-0 font-mono">
+              <div className="grid grid-cols-2 gap-1.5 text-center">
+                <div className="bg-[#f8fafc] dark:bg-slate-950/80 p-2 rounded-xl border border-[#dbe6f0] dark:border-slate-800">
+                  <span className="text-[9px] text-slate-500 uppercase block font-semibold">Distance</span>
+                  <strong className="text-xs sm:text-sm font-black text-slate-900 dark:text-cyan-400">{targetDistance} m</strong>
+                </div>
+                <div className="bg-[#f8fafc] dark:bg-slate-950/80 p-2 rounded-xl border border-[#dbe6f0] dark:border-slate-800">
+                  <span className="text-[9px] text-slate-500 uppercase block font-semibold">Azimuth</span>
+                  <strong className="text-xs sm:text-sm font-black text-slate-900 dark:text-cyan-400">{targetBearing}° {targetCardinal}</strong>
+                </div>
+              </div>
+
+              <div className="bg-[#f8fafc] dark:bg-slate-950/80 p-1.5 rounded-xl border border-[#dbe6f0] dark:border-slate-800 text-center">
+                <span className="text-[9px] text-slate-500 uppercase block font-semibold">Est. Walk Time</span>
+                <strong className="text-xs sm:text-sm font-black text-slate-900 dark:text-cyan-400">~{Math.max(1, Math.round(targetDistance / 75))} min</strong>
+              </div>
+            </div>
+          </div>
+
+          {/* Target Card Details */}
+          {activeTarget ? (
+            <div
+              className={`p-2.5 sm:p-3 rounded-xl border transition-all shadow-xs ${
+                activeTarget.category === 'casualty'
+                  ? 'bg-red-50/90 dark:bg-red-950/30 border-red-300 dark:border-red-500/70'
+                  : activeTarget.category === 'resource'
+                  ? 'bg-sky-50/90 dark:bg-sky-950/30 border-sky-300 dark:border-sky-500/70'
+                  : activeTarget.category === 'shelter'
+                  ? 'bg-emerald-50/90 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-500/70'
+                  : 'bg-[#f0f5fa] dark:bg-slate-900/60 border-[#dbe6f0] dark:border-slate-700'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-1 mb-1">
+                <span
+                  className={`text-[9.5px] font-extrabold uppercase px-2 py-0.5 rounded-full ${
+                    activeTarget.category === 'casualty'
+                      ? 'bg-red-600 text-white animate-pulse'
+                      : activeTarget.category === 'resource'
+                      ? 'bg-sky-600 text-white'
+                      : activeTarget.category === 'shelter'
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-amber-600 text-white'
+                  }`}
+                >
+                  {activeTarget.category === 'casualty'
+                    ? '🆘 PRIORITY CASUALTY / SOS'
+                    : activeTarget.category === 'resource'
+                    ? '💧 SAFE RESOURCE'
+                    : activeTarget.category === 'shelter'
+                    ? '🏥 SAFE SHELTER'
+                    : '⚠️ HAZARD ALERT'}
+                </span>
+                <span className="text-[11px] font-mono font-bold text-slate-600 dark:text-slate-400">
+                  {targetBearing}° ({targetCardinal})
+                </span>
+              </div>
+
+              <h3 className="text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white truncate">
+                {activeTarget.name}
+              </h3>
+
+              <p className="text-[11px] sm:text-xs text-slate-800 dark:text-slate-200 leading-snug line-clamp-2 mt-1">
+                {targetDescription}
+              </p>
+
+              {/* 1-Tap Action Buttons */}
+              <div className="flex gap-2 mt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onNavigateTarget && activeTarget.location) {
+                      onNavigateTarget(activeTarget);
+                    }
+                    playChirp(1000);
+                  }}
+                  className="flex-1 py-1.5 px-2.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center justify-center gap-1 shadow-xs transition-all active:scale-98 cursor-pointer"
+                >
+                  <Navigation size={13} />
+                  <span>Center Target</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => playChirp(activeTarget.category === 'casualty' ? 1400 : 900)}
+                  className="py-1.5 px-3 rounded-lg border border-[#cbdbe9] dark:border-slate-700 hover:border-cyan-500 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 font-bold text-xs flex items-center justify-center gap-1 transition-all active:scale-98 cursor-pointer"
+                >
+                  <Volume2 size={13} className="text-cyan-600 dark:text-cyan-400" />
+                  <span>Ping</span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="p-3 rounded-xl border border-dashed border-[#cbdbe9] dark:border-slate-800 text-center text-xs text-slate-500 dark:text-slate-400">
+              Select a target destination from the dropdown above to point the compass and view tactical telemetry.
+            </div>
+          )}
         </div>
       </div>
     </div>
