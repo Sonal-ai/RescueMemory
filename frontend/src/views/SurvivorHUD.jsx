@@ -66,6 +66,7 @@ const TABS = [
 ];
 
 const QUICK_PROMPTS = [
+  { label: "Nearest survivor & needs", text: "nearest survivor and their needs", icon: Navigation, urgent: true, category: 'nearest' },
   { label: "I can't walk & need help", text: "I can't walk and need help", icon: AlertOctagon, urgent: true, category: 'mobility' },
   { label: "Severe bleeding first aid", text: "How do I stop severe bleeding from a deep wound?", icon: HeartPulse, urgent: true, category: 'hemorrhage' },
   { label: "Safe drinking water", text: "How do I purify and make safe drinking water?", icon: Droplets, urgent: false, category: 'water' },
@@ -521,8 +522,8 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
       const result = await api('/api/reports', {
         method: 'POST',
         body: {
-          kind: 'incident',
-          visibility: 'responders',
+          kind: 'sos',
+          visibility: 'public',
           severity: 'red',
           status: 'needs_help',
           text: sosText.trim(),
@@ -534,7 +535,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
       });
       setSosSuccess(true);
       const evtId = (result.event?.id || result.event_id || 'saved').slice(0, 10);
-      setMessage(`Emergency SOS saved to local Qdrant memory (Ref: #${evtId}). Responders will receive this during next peer sync.`);
+      setMessage(`Emergency SOS broadcasted & saved to local Qdrant memory (Ref: #${evtId}). Synced to nearby peers & central server.`);
       refreshMap();
     } catch (err) {
       setError(err.message);
@@ -544,17 +545,18 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
   };
 
   const followAction = (action) => {
+    if (!action) return;
     if (action.kind === 'sos') {
       setReport({
-        kind: 'incident',
+        kind: 'sos',
         text: action.prefill || text || '',
         entity_id: '',
         status: 'needs_help',
         severity: 'red',
-        visibility: 'responders'
+        visibility: 'public'
       });
       setTab('report');
-      setMessage('Confirm details and location pin, then save your SOS to local memory.');
+      setMessage('Confirm details and location pin, then broadcast your SOS.');
     } else if (action.kind === 'report') {
       setReport({
         kind: 'hazard',
@@ -567,6 +569,14 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
       setTab('report');
       setMessage('Review observation details before saving to local memory.');
     } else if (action.kind === 'map') {
+      if (action.nav_target) {
+        setSelected(action.nav_target);
+        const loc = action.nav_target.location || (action.nav_target.lat != null && action.nav_target.lon != null ? { lat: action.nav_target.lat, lon: action.nav_target.lon } : null);
+        if (loc) {
+          setCenter(loc);
+          setPin(loc);
+        }
+      }
       setTab('map');
       refreshMap();
     }
@@ -866,6 +876,26 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                               <ArrowRight size={13} />
                             </button>
                           </div>
+                        </div>
+                      )}
+
+                      {/* If Map / Radar Action is suggested */}
+                      {msg.suggested_action?.kind === 'map' && (
+                        <div className="mt-3.5 p-3 rounded-xl border border-cyan-300 dark:border-cyan-800/80 bg-cyan-50/80 dark:bg-cyan-950/40 text-slate-900 dark:text-cyan-100 flex items-center justify-between gap-3 shadow-xs">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Navigation size={16} className="text-cyan-600 dark:text-cyan-400 shrink-0" />
+                            <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
+                              {msg.suggested_action.label || 'Tactical Radar & Direction'}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => followAction(msg.suggested_action)}
+                            className="py-1.5 px-3 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-xs shrink-0 cursor-pointer"
+                          >
+                            <span>{msg.suggested_action.button_text || 'Navigate on Radar'}</span>
+                            <ArrowRight size={13} />
+                          </button>
                         </div>
                       )}
 

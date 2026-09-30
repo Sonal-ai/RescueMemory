@@ -44,7 +44,7 @@ def card_terms(card: dict) -> set[str]:
                                 for field in ("title", "keywords", "summary")))
 
 
-from .offline_rag import clinical_assess, resource_adaptive_rerank, synthesize_offline_rag
+from .offline_rag import clinical_assess, extract_survivor_needs, resource_adaptive_rerank, synthesize_offline_rag
 
 
 def local_response(
@@ -201,6 +201,105 @@ class RescueService:
             presence = self._event(body)
         else:
             presence = None
+
+        q_lower = request.text.lower()
+        nearest_patterns = (
+            "nearest survivor", "nearest surviver", "nearest casualty", "survivor needs", "surviver needs",
+            "who needs help", "who is the nearest", "anyone injured", "casualty status",
+            "nearest injured", "nearest sos", "active casualties", "nearby casualties",
+            "nearby survivor", "nearby surviver", "nearest victim", "who is injured",
+            "find casualty", "find survivor", "find surviver"
+        )
+        is_nearest_query = any(p in q_lower for p in nearest_patterns) or (
+            ("nearest" in q_lower or "nearby" in q_lower) and
+            ("survivor" in q_lower or "surviver" in q_lower or "casualty" in q_lower or "injured" in q_lower or "victim" in q_lower or "needs" in q_lower)
+        )
+
+        if is_nearest_query:
+            user_loc = {"lat": request.location.lat, "lon": request.location.lon} if request.location else {"lat": 28.7041, "lon": 77.1025}
+            radar_req = SurvivalRadarRequest(
+                lat=user_loc["lat"],
+                lon=user_loc["lon"],
+                radius_m=5000.0,
+                filter_category="all",
+                include_responders=True,
+            )
+            radar_data = self.survival_radar(radar_req)
+            summary = radar_data.get("summary", {})
+            nearest = summary.get("nearest_casualty")
+            total_casualties = summary.get("total_casualties", 0)
+            urgent_casualties = summary.get("urgent_casualties", 0)
+            operational_shelters = summary.get("operational_shelters", 0)
+            nearest_shelter = summary.get("nearest_shelter")
+            hazards = [it for it in radar_data.get("radar_items", []) if it.get("category") == "hazard"]
+            peers = [it for it in radar_data.get("radar_items", []) if it.get("category") == "peer"]
+
+            if nearest:
+                c_text = nearest.get("text", "")
+                details = extract_survivor_needs(c_text)
+                c_id = (nearest.get("entity_id") or nearest.get("id") or "casualty")[:10]
+                priority_label = "IMMEDIATE (Red Triage)" if nearest.get("triage_level") == "immediate_red" else "DELAYED (Yellow Triage)"
+                bearing_str = f"Bearing {round(nearest.get('bearing_deg', 0))}°"
+                shelter_info = nearest_shelter["name"] if nearest_shelter else "None in range"
+
+                local_answer = (
+                    f"### 🚨 Nearest Survivor Emergency SOS\n\n"
+                    f"📍 **Location:** {nearest['distance_m']}m {nearest['cardinal']} ({bearing_str}, ~{nearest['walk_time_min']} min walk)\n"
+                    f"🚨 **Triage Priority:** {priority_label}\n"
+                    f"👤 **Casualty Ref:** #{c_id}\n\n"
+                    f"**Critical Condition & Needs:**\n"
+                    f"• **Reported Condition:** {', '.join(details['conditions'])}\n"
+                    f"• **Required Needs:** {', '.join(details['needs'])}\n\n"
+                    f"**Recommended Immediate Actions:**\n" +
+                    "\n".join(f"• {act}" for act in details["actions"]) +
+                    f"\n\n---\n"
+                    f"**📊 Area Status Summary:**\n"
+                    f"• 🔴 **Casualties:** {total_casualties} registered ({urgent_casualties} urgent red)\n"
+                    f"• ⚠️ **Hazards:** {len(hazards)} active hazard{'s' if len(hazards) != 1 else ''} logged\n"
+                    f"• 🟢 **Safe Shelters:** {operational_shelters} operational (Nearest: {shelter_info})"
+                )
+                suggested_action = {
+                    "kind": "map",
+                    "label": "Navigate to Survivor",
+                    "button_text": f"Navigate to Survivor ({nearest['distance_m']}m {nearest['cardinal']})",
+                    "target_tab": "map",
+                    "urgency": "critical",
+                    "nav_target": nearest,
+                    "target_location": nearest.get("location"),
+                    "intent": "nearest_survivor",
+                }
+            else:
+                shelter_info = nearest_shelter["name"] if nearest_shelter else "None in range"
+                local_answer = (
+                    f"### 🛡️ Nearest Survivor Status\n\n"
+                    f"• **Casualties:** No active survivor SOS signals detected within range (5.0 km radius).\n\n"
+                    f"**📊 Area Status Summary:**\n"
+                    f"• 🟢 **Safe Shelters:** {operational_shelters} operational (Nearest: {shelter_info})\n"
+                    f"• ⚠️ **Hazards:** {len(hazards)} active hazard{'s' if len(hazards) != 1 else ''} reported\n"
+                    f"• 📶 **Mesh Peers:** {len(peers)} local peer device{'s' if len(peers) != 1 else ''} discovered\n\n"
+                    f"If you locate an injured casualty, use the **Emergency SOS** tab to log their location and needs."
+                )
+                suggested_action = {
+                    "kind": "map",
+                    "label": "Open Radar Map",
+                    "button_text": "Open Radar Map",
+                    "target_tab": "map",
+                    "urgency": "normal",
+                    "intent": "radar_map",
+                }
+
+            return {
+                "answer_type": "nearest_survivor_sos",
+                "cards": [],
+                "memory_hits": [nearest] if nearest else [],
+                "ai_answer": None,
+                "ai_status": "local_radar",
+                "local_answer": local_answer,
+                "suggested_action": suggested_action,
+                "presence_event": presence["event"]["id"] if presence else None,
+                "location_shared": bool(presence),
+            }
+
         cards = self.memory.search("reference", request.text, limit=5)
         public_filter = Filter(must=[FieldCondition(key="visibility", match=MatchValue("public"))])
         memory_hits = self.memory.search("events", request.text, limit=5, filter_=public_filter)
@@ -410,7 +509,7 @@ class RescueService:
             severity = event.get("severity", "yellow")
             status = event.get("status", "active")
 
-            is_casualty = kind in {"incident", "presence"} or any(w in text.lower() for w in ["injured", "cannot walk", "cant walk", "bleeding", "trapped", "broken", "unconscious"])
+            is_casualty = kind in {"incident", "presence", "sos"} or any(w in text.lower() for w in ["injured", "cannot walk", "cant walk", "bleeding", "trapped", "broken", "unconscious"])
             is_hazard = kind == "hazard" or status in {"danger", "flooded", "blocked"}
             is_resource = kind == "resource" or "water" in text.lower()
             is_shelter = kind == "checkpoint" and not is_hazard

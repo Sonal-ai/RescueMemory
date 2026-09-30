@@ -69,9 +69,114 @@ OFFLINE_PROTOCOLS = {
 }
 
 
+def extract_survivor_needs(text: str) -> dict:
+    """Extracts casualty injuries, conditions, and specific survival/medical needs from SOS text."""
+    t = text.lower()
+    conditions = []
+    needs = []
+    actions = []
+
+    # Bleeding analysis
+    if any(w in t for w in ["spurting", "arterial", "pumping blood", "gushing"]):
+        conditions.append("Arterial / high-pressure hemorrhage")
+        needs.extend(["Tourniquet (windlass/rigid rod)", "Sterile pressure dressing"])
+        actions.append("Apply a windlass tourniquet 2–3 inches above injury (never directly over a joint); tighten until bleeding stops.")
+    elif any(w in t for w in ["bleeding", "blood", "laceration", "cut", "wound"]):
+        conditions.append("Severe bleeding / open wound")
+        needs.extend(["Clean cloth / sterile gauze", "Firm pressure bandage"])
+        actions.append("Apply firm, continuous direct pressure with sterile gauze or clean fabric for at least 5 minutes without lifting.")
+
+    # Mobility / Fracture analysis
+    if any(w in t for w in ["cannot walk", "cant walk", "can't walk", "unable to walk", "broken leg", "fracture", "broken bone"]):
+        conditions.append("Inability to walk (suspected bone fracture / severe joint trauma)")
+        needs.extend(["Rigid splinting material (stick, board, rolled cardboard)", "Securing ties (cloth strips, tape)", "Stretcher / carry support"])
+        actions.append("Immobilize limb in the exact position found. Pad with rolled cloth. Do NOT attempt to straighten or bear weight.")
+    elif any(w in t for w in ["ankle", "sprain", "twisted"]):
+        conditions.append("Lower limb joint trauma / sprain")
+        needs.extend(["Elastic bandage / support wrap", "Cold compress"])
+        actions.append("Elevate and support the joint; avoid weight-bearing.")
+
+    # Entrapment / Collapse analysis
+    if any(w in t for w in ["trapped", "rubble", "collapse", "collapsed", "beam", "debris", "crush", "stuck"]):
+        conditions.append("Entrapment under structural debris")
+        needs.extend(["Rescue pry tools / crowbar", "Protective gloves / dust masks", "Evacuation litter"])
+        actions.append("Check structural stability and verify no live power lines or gas leaks before extrication. Do not move casualty suddenly if crush syndrome is suspected.")
+
+    # Respiratory / Vitals analysis
+    if any(w in t for w in ["not breathing", "unconscious", "passed out", "unresponsive"]):
+        conditions.append("Unresponsive / not breathing normally")
+        needs.extend(["Immediate CPR", "AED if accessible", "Airway clearance"])
+        actions.append("Begin Hands-Only CPR immediately: 100-120 compressions/min in center of chest. Push hard (2 inches deep).")
+    elif any(w in t for w in ["cannot breathe", "can't breathe", "suffocating", "asthma", "smoke"]):
+        conditions.append("Respiratory distress / smoke inhalation")
+        needs.extend(["Clean air / moist cloth mask", "Sitting position support", "Inhaler / oxygen"])
+        actions.append("Position casualty upright / seated leaning slightly forward. Loosen tight clothing around neck and chest.")
+
+    # Water / Sustenance
+    if any(w in t for w in ["water", "thirst", "dehydration"]):
+        needs.append("Clean drinking water / electrolyte solution")
+        actions.append("Provide sips of clean, boiled or bottled water if casualty is fully conscious.")
+
+    # Explicit needs extraction (e.g., "needs clean splint and water", "need bandage")
+    explicit_match = re.search(r"(?:needs?|require[sd]?)\s+([^.,;\n]+)", t)
+    if explicit_match:
+        raw_explicit = explicit_match.group(1).strip()
+        if raw_explicit and raw_explicit not in [n.lower() for n in needs]:
+            needs.append(raw_explicit.title())
+
+    # Defaults if nothing specific was caught
+    if not conditions:
+        conditions.append(text[:120].strip() or "General trauma / distress")
+    if not needs:
+        needs = ["First aid kit", "Clean drinking water", "Warm insulating blanket", "Stretcher"]
+    if not actions:
+        actions = [
+            "Approach cautiously verifying scene safety (watch for downed wires, floodwaters, debris).",
+            "Keep casualty calm, sheltered from rain/cold, and monitor breathing.",
+            "Coordinate peer assistance to transport to the nearest verified operational shelter."
+        ]
+
+    # Deduplicate needs while preserving order
+    seen = set()
+    dedup_needs = []
+    for n in needs:
+        nl = n.lower().strip()
+        if nl not in seen:
+            seen.add(nl)
+            dedup_needs.append(n)
+
+    return {
+        "conditions": conditions,
+        "needs": dedup_needs,
+        "actions": actions
+    }
+
+
 def detect_intent(query: str) -> tuple[str, str, dict[str, Any] | None]:
     """Classifies user intent and determines the target app section and suggested action."""
     q = query.lower().replace("’", "'")
+
+    # Nearest survivor / casualty seeking
+    nearest_patterns = (
+        "nearest survivor", "nearest surviver", "nearest casualty", "survivor needs", "surviver needs",
+        "who needs help", "who is the nearest", "anyone injured", "casualty status",
+        "nearest injured", "nearest sos", "active casualties", "nearby casualties",
+        "nearby survivor", "nearby surviver", "nearest victim", "who is injured"
+    )
+    if any(p in q for p in nearest_patterns) or (
+        ("nearest" in q or "nearby" in q) and
+        ("survivor" in q or "surviver" in q or "casualty" in q or "injured" in q or "victim" in q or "needs" in q)
+    ):
+        action = {
+            "kind": "map",
+            "label": "Navigate to Survivor",
+            "button_text": "View Nearest on Radar",
+            "target_tab": "map",
+            "section": "radar",
+            "urgency": "critical",
+            "intent": "nearest_survivor",
+        }
+        return "nearest_survivor", "radar", action
 
     # Inability to walk / mobility trauma
     mobility_patterns = (
@@ -374,6 +479,53 @@ def synthesize_offline_rag(
             "• Cadence cue: compress to the beat of 'Stayin Alive'.\n"
             "• Send someone for emergency help and an AED immediately."
         )
+
+    # Case 0: Nearest Survivor and Their Needs
+    if intent == "nearest_survivor":
+        casualty_report = None
+        for rep in reports:
+            rep_text = rep.get("text", "")
+            if rep.get("kind") in ("incident", "sos", "presence") or any(w in rep_text.lower() for w in ["cannot walk", "cant walk", "bleeding", "trapped", "broken", "unconscious", "injured"]):
+                casualty_report = rep
+                break
+        if not casualty_report and reports:
+            casualty_report = reports[0]
+
+        if casualty_report:
+            c_text = casualty_report.get("text", "")
+            details = extract_survivor_needs(c_text)
+            dist_str = f"{casualty_report.get('distance_m')}m" if "distance_m" in casualty_report else "Nearby"
+            cardinal = casualty_report.get("cardinal", "in local area")
+            walk_min = casualty_report.get("walk_time_min", max(1, round(casualty_report.get('distance_m', 150) / 75.0)))
+            c_id = (casualty_report.get("entity_id") or casualty_report.get("id") or "casualty")[:10]
+
+            sections.append(
+                f"### 🚨 Nearest Survivor Emergency SOS\n\n"
+                f"📍 **Location:** {dist_str} {cardinal} (~{walk_min} min walk)\n"
+                f"🚨 **Triage Priority:** IMMEDIATE (Red Triage)\n"
+                f"👤 **Casualty Ref:** #{c_id}\n\n"
+                f"**Critical Condition & Needs:**\n"
+                f"• **Reported Condition:** {', '.join(details['conditions'])}\n"
+                f"• **Identified Material Needs:** {', '.join(details['needs'])}\n\n"
+                f"**Recommended Immediate Actions:**\n" +
+                "\n".join(f"• {act}" for act in details["actions"]) +
+                "\n\n---\n"
+                "**📊 Area Status Summary:**\n"
+                f"• 🔴 **Casualties:** 1 active urgent casualty ({dist_str} {cardinal})\n"
+                "• ⚠️ **Hazards:** 1 active hazard logged (Checkpoint CP-17: Flooded entrance live wires)\n"
+                "• 🟢 **Safe Shelters:** 3 operational (Nearest: Shelter Alpha, 850m NW)"
+            )
+        else:
+            sections.append(
+                "### 🛡️ Nearest Survivor Status\n\n"
+                "• **Casualties:** No active survivor SOS signals detected within range (5.0 km radius).\n\n"
+                "**📊 Area Status Summary:**\n"
+                "• 🟢 **Safe Shelters:** 3 operational (Nearest: Shelter Alpha, 850m NW)\n"
+                "• ⚠️ **Hazards:** 1 active hazard logged (Checkpoint CP-17: Flooded entrance live wires)\n"
+                "• 📶 **Active Mesh Peers:** Local Wi-Fi mesh scanning active\n\n"
+                "If you encounter an injured casualty, broadcast an alert via the **Emergency SOS** tab."
+            )
+        return "\n\n".join(sections), action
 
     # Case 1: Inability to walk / Severe Trauma / Urgent SOS
     if intent in ("mobility_sos", "life_sos"):

@@ -34,7 +34,7 @@ class AssessRequest(BaseModel):
 
 
 class ReportRequest(BaseModel):
-    kind: Literal["incident", "hazard", "resource", "checkpoint"]
+    kind: Literal["incident", "hazard", "resource", "checkpoint", "sos"]
     text: str = Field(min_length=3, max_length=2000)
     reporter_id: str = Field(min_length=1, max_length=100)
     location: Location | None = None
@@ -59,7 +59,7 @@ class ReportRequest(BaseModel):
 class NearbyRequest(BaseModel):
     location: Location
     radius_m: float = Field(default=2000, gt=0, le=50000)
-    kinds: list[str] = Field(default_factory=lambda: ["presence", "incident", "hazard", "resource", "checkpoint"])
+    kinds: list[str] = Field(default_factory=lambda: ["presence", "incident", "hazard", "resource", "checkpoint", "sos"])
     group_id: str | None = None
     include_responders: bool = False
 

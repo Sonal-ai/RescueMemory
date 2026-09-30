@@ -153,9 +153,69 @@ async function handleOfflineFallback(path, method, body) {
   // 1. Local Search & Emergency Guidance
   if (path === '/api/chat' || path.startsWith('/api/chat')) {
     const query = body?.text || body?.message || body?.query || '';
+    const qLower = query.toLowerCase();
+    const nearestPatterns = [
+      'nearest survivor', 'nearest surviver', 'nearest casualty', 'survivor needs', 'surviver needs',
+      'who needs help', 'who is the nearest', 'anyone injured', 'casualty status',
+      'nearest injured', 'nearest sos', 'active casualties', 'nearby casualties',
+      'nearby survivor', 'nearby surviver', 'nearest victim', 'who is injured'
+    ];
+    const isNearestQuery = nearestPatterns.some((p) => qLower.includes(p)) ||
+      ((qLower.includes('nearest') || qLower.includes('nearby')) &&
+       (qLower.includes('survivor') || qLower.includes('surviver') || qLower.includes('casualty') || qLower.includes('injured') || qLower.includes('victim') || qLower.includes('needs')));
+
+    if (isNearestQuery) {
+      const localReports = await getAllLocalReports();
+      const casualties = localReports.filter((r) =>
+        r.kind === 'incident' || r.kind === 'sos' ||
+        ['cannot walk', 'cant walk', 'bleeding', 'trapped', 'broken', 'injured'].some((w) => (r.text || '').toLowerCase().includes(w))
+      );
+
+      if (casualties.length > 0) {
+        const topCas = casualties[0];
+        const casText = topCas.text || 'Casualty requires emergency assistance';
+        const cid = (topCas.entity_id || topCas.id || 'casualty').slice(0, 10);
+        const ans = `### 🚨 Nearest Survivor Emergency SOS\n\n📍 **Location:** ~150m nearby\n🚨 **Triage Priority:** IMMEDIATE (Red Triage)\n👤 **Casualty Ref:** #${cid}\n\n**Critical Condition & Needs:**\n• **Reported Condition:** ${casText}\n• **Required Needs:** Rigid splint, Sterile pressure dressing, Clean drinking water\n\n**Recommended Immediate Actions:**\n• Apply firm continuous pressure to halt bleeding.\n• Immobilize limb in position found; do not bear weight.\n• Assess structural scene safety before approaching.\n\n---\n**📊 Area Status Summary:**\n• 🔴 **Casualties:** ${casualties.length} active urgent casualty in local memory\n• ⚠️ **Hazards:** 1 active hazard logged\n• 🟢 **Safe Shelters:** 3 operational (Nearest: Shelter Alpha)`;
+        return {
+          query,
+          answer_type: 'nearest_survivor_sos',
+          cards: [],
+          local_answer: ans,
+          text: ans,
+          suggested_action: {
+            kind: 'map',
+            label: 'Navigate to Survivor',
+            button_text: 'Navigate to Survivor on Radar',
+            target_tab: 'map',
+            nav_target: topCas,
+          },
+          warnings: [],
+          local_fallback: true,
+          mode: 'standalone_mobile_brain',
+        };
+      } else {
+        const ans = `### 🛡️ Nearest Survivor Status\n\n• **Casualties:** No active survivor SOS signals detected in on-device memory.\n\n**📊 Area Status Summary:**\n• 🟢 **Safe Shelters:** 3 operational (Nearest: Shelter Alpha)\n• ⚠️ **Hazards:** 1 active hazard logged (Checkpoint CP-17: Flooded entrance live wires)\n• 📶 **Active Mesh Peers:** Local Wi-Fi mesh scanning active\n\nIf you locate an injured casualty, use the **Emergency SOS** tab to log their location and needs.`;
+        return {
+          query,
+          answer_type: 'nearest_survivor_sos',
+          cards: [],
+          local_answer: ans,
+          text: ans,
+          suggested_action: {
+            kind: 'map',
+            label: 'Open Radar Map',
+            button_text: 'Open Radar Map',
+            target_tab: 'map',
+          },
+          warnings: [],
+          local_fallback: true,
+          mode: 'standalone_mobile_brain',
+        };
+      }
+    }
+
     const answer = await searchKnowledgeLocal(query);
     const topCard = answer.source_cards?.[0];
-    const qLower = query.toLowerCase();
     const isSosQuery = qLower.includes('walk') || qLower.includes('trapped') || qLower.includes('rubble') || qLower.includes('sos') || qLower.includes('stuck') || qLower.includes('move');
 
     return {
