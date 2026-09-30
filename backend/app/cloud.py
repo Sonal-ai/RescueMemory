@@ -72,12 +72,26 @@ def check_cloud_connection(service: RescueService) -> dict:
     client = QdrantClient(url=service.settings.qdrant_url,
                           api_key=service.settings.qdrant_api_key, timeout=10)
     try:
-        collections = [c.name for c in client.get_collections().collections]
+        raw_collections = client.get_collections().collections
+        collections = [c.name for c in raw_collections]
+        shards = {}
+        total_points = 0
+        for name in collections:
+            try:
+                info = client.get_collection(name)
+                pts = info.points_count or 0
+                shards[name] = pts
+                total_points += pts
+            except Exception:
+                shards[name] = 0
+
         return {
             "connected": True,
             "configured": True,
             "url": service.settings.qdrant_url,
             "collections": collections,
+            "shards": shards,
+            "total_points": total_points,
             "event_collections_found": [c for c in EVENT_COLLECTIONS.values() if c in collections],
             "guides_collection_found": GUIDES_COLLECTION in collections,
         }
@@ -94,8 +108,8 @@ def check_cloud_connection(service: RescueService) -> dict:
 
 def mirror_to_qdrant_server(service: RescueService) -> dict:
     """Exchange scoped events and centrally authenticated guides with Cloud."""
-    if not service.settings.qdrant_url or not service.settings.qdrant_api_key:
-        raise ValueError("QDRANT_URL and QDRANT_API_KEY required")
+    if not service.settings.qdrant_url:
+        raise ValueError("QDRANT_URL required")
     client = QdrantClient(url=service.settings.qdrant_url,
                           api_key=service.settings.qdrant_api_key, timeout=30)
     result = {"events_uploaded": {}, "events_downloaded": {},
@@ -162,6 +176,19 @@ def mirror_to_qdrant_server(service: RescueService) -> dict:
             _upsert_new(client, GUIDES_COLLECTION, to_upload, service,
                         lambda item: f"{item['title']} {item['keywords']} {item['summary']}")
             result["guides_uploaded"] = len(to_upload)
+
+        shards = {}
+        total_points = 0
+        for name in list(EVENT_COLLECTIONS.values()) + [GUIDES_COLLECTION]:
+            try:
+                info = client.get_collection(name)
+                pts = info.points_count or 0
+                shards[name] = pts
+                total_points += pts
+            except Exception:
+                pass
+        result["shards"] = shards
+        result["total_points"] = total_points
         return result
     finally:
         client.close()

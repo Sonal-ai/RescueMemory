@@ -172,16 +172,18 @@ def detect_intent(query: str) -> tuple[str, str, dict[str, Any] | None]:
     """Classifies user intent and determines the target app section and suggested action."""
     q = query.lower().replace("’", "'")
 
-    # Nearest survivor / casualty seeking
+    # Nearest survivor / casualty seeking & Emergency SOS lookup
     nearest_patterns = (
         "nearest survivor", "nearest surviver", "nearest casualty", "survivor needs", "surviver needs",
         "who needs help", "who is the nearest", "anyone injured", "casualty status",
         "nearest injured", "nearest sos", "active casualties", "nearby casualties",
-        "nearby survivor", "nearby surviver", "nearest victim", "who is injured"
+        "nearby survivor", "nearby surviver", "nearest victim", "who is injured",
+        "find casualty", "find survivor", "find surviver", "sos near me", "nearby sos",
+        "active sos", "any sos", "who called sos", "sos signals"
     )
     if any(p in q for p in nearest_patterns) or (
-        ("nearest" in q or "nearby" in q) and
-        ("survivor" in q or "surviver" in q or "casualty" in q or "injured" in q or "victim" in q or "needs" in q)
+        ("nearest" in q or "nearby" in q or "active" in q or "find" in q) and
+        ("survivor" in q or "surviver" in q or "casualty" in q or "injured" in q or "victim" in q or "sos" in q or "needs" in q)
     ):
         action = {
             "kind": "map",
@@ -193,6 +195,72 @@ def detect_intent(query: str) -> tuple[str, str, dict[str, Any] | None]:
             "intent": "nearest_survivor",
         }
         return "nearest_survivor", "radar", action
+
+    # Shelter & evacuation location seeking
+    shelter_patterns = (
+        "safe shelter", "nearest shelter", "shelter near me", "where is shelter",
+        "find shelter", "evacuation checkpoint", "safe place", "safe zone", "refuge",
+        "camp alpha", "evacuate", "nearest safe shelter", "closest shelter", "where to go",
+        "where can i shelter", "shelter guidance", "where is the nearest safe shelter", "north gate"
+    )
+    if any(p in q for p in shelter_patterns) or (
+        ("shelter" in q or "evacuation" in q or "refuge" in q) and
+        ("near" in q or "where" in q or "safe" in q or "closest" in q or "find" in q or "reach" in q or "to go" in q or "checkpoint" in q)
+    ):
+        action = {
+            "kind": "map",
+            "label": "Navigate to Safe Shelter",
+            "button_text": "Navigate to Shelter on Radar",
+            "target_tab": "map",
+            "section": "nearby_map",
+            "urgency": "normal",
+            "intent": "shelter_search",
+            "nav_target": {
+                "id": "shelter_alpha",
+                "name": "Shelter Alpha (Central Evacuation Safe Haven)",
+                "category": "shelter",
+                "distance_m": 450,
+                "cardinal": "NW",
+                "bearing_deg": 315,
+                "walk_time_min": 6,
+                "status": "operational",
+                "facilities": ["Shelter", "Medical Triage", "Clean Water", "Power"]
+            }
+        }
+        return "shelter_search", "nearby_map", action
+
+    # Safe drinking water & emergency purification
+    water_patterns = (
+        "safe drinking water", "clean water", "drinking water", "water near me",
+        "purify water", "safe water", "purify and make safe drinking water",
+        "how do i purify water", "potable water", "water point", "water tanker",
+        "water purification", "make water safe", "clean drinking water", "water north gate"
+    )
+    if any(p in q for p in water_patterns) or (
+        ("water" in q or "drink" in q) and
+        ("safe" in q or "purify" in q or "clean" in q or "near" in q or "where" in q or "potable" in q or "boil" in q or "tanker" in q or "station" in q)
+    ):
+        action = {
+            "kind": "map",
+            "label": "Locate Water Station on Radar",
+            "button_text": "Navigate to Water Station on Radar",
+            "target_tab": "map",
+            "section": "nearby_map",
+            "urgency": "normal",
+            "intent": "water_safety",
+            "nav_target": {
+                "id": "water_tanker_4",
+                "name": "Water Tanker 4 (North Gate Purification Station)",
+                "category": "resource",
+                "distance_m": 230,
+                "cardinal": "ENE",
+                "bearing_deg": 65,
+                "walk_time_min": 3,
+                "status": "operational",
+                "facilities": ["Clean Water", "Purification Tablets"]
+            }
+        }
+        return "water_safety", "nearby_map", action
 
     # Inability to walk / mobility trauma
     mobility_patterns = (
@@ -245,20 +313,6 @@ def detect_intent(query: str) -> tuple[str, str, dict[str, Any] | None]:
             }
         }
         return "life_sos", "urgent_sos", action
-
-    # Shelter & evacuation location seeking
-    shelter_patterns = ("where is shelter", "find shelter", "evacuation", "safe zone", "refuge", "camp alpha", "north gate")
-    if any(p in q for p in shelter_patterns):
-        action = {
-            "kind": "map",
-            "label": "Open nearby map",
-            "button_text": "View Shelters on Map",
-            "target_tab": "map",
-            "section": "nearby_map",
-            "urgency": "normal",
-            "intent": "shelter_search",
-        }
-        return "shelter_search", "nearby_map", action
 
     # General map / location seeking
     map_patterns = ("nearby", "where", "location", "find", "how far", "directions")
@@ -539,8 +593,98 @@ def synthesize_offline_rag(
                 "• 🟢 **Safe Shelters:** 3 operational (Nearest: Shelter Alpha, 850m NW)\n"
                 "• ⚠️ **Hazards:** 1 active hazard logged (Checkpoint CP-17: Flooded entrance live wires)\n"
                 "• 📶 **Active Mesh Peers:** Local Wi-Fi mesh scanning active\n\n"
-                "If you encounter an injured casualty, broadcast an alert via the **Emergency SOS** tab."
+                "**Need Emergency Assistance?** If you are injured, trapped, or immobilized, tap below to broadcast an Emergency SOS to all nearby responders immediately."
             )
+            action = {
+                "kind": "sos",
+                "label": "Broadcast Emergency SOS",
+                "button_text": "1-Tap Broadcast Emergency SOS",
+                "target_tab": "report",
+                "section": "urgent_sos",
+                "urgency": "critical",
+                "intent": "life_sos",
+                "auto_report": {
+                    "kind": "sos",
+                    "severity": "red",
+                    "visibility": "public",
+                    "status": "needs_help",
+                    "text": "Urgent Emergency SOS: Survivor in need of emergency assistance."
+                }
+            }
+        return "\n\n".join(sections), action
+
+    # Case 0B: Shelter & Safe Evacuation
+    if intent == "shelter_search":
+        shelter_rep = None
+        for rep in reports:
+            if rep.get("kind") == "checkpoint" or "shelter" in rep.get("text", "").lower() or "shelter" in rep.get("id", "").lower() or rep.get("category") == "shelter":
+                shelter_rep = rep
+                break
+
+        s_name = (shelter_rep.get("name") or shelter_rep.get("title") or "Shelter Alpha (Central Evacuation Safe Haven)") if shelter_rep else "Shelter Alpha (Central Evacuation Safe Haven)"
+        s_dist = f"{shelter_rep.get('distance_m')}m" if shelter_rep and "distance_m" in shelter_rep else "~450m"
+        s_card = shelter_rep.get("cardinal", "NW") if shelter_rep else "NW"
+        s_walk = shelter_rep.get("walk_time_min", 6) if shelter_rep else 6
+
+        if shelter_rep:
+            action["nav_target"] = shelter_rep
+            action["button_text"] = f"Navigate to {s_name} ({s_dist} {s_card})"
+
+        sections.append(
+            f"### 🏥 Nearest Verified Safe Shelter\n\n"
+            f"📍 **Location:** {s_name} ({s_dist} {s_card}, ~{s_walk} min walk)\n"
+            f"🛡️ **Operational Status:** Active High-Ground Safe Haven\n"
+            f"🏥 **Available Facilities:** Emergency Shelter, Medical Triage, Potable Water, Power\n\n"
+            f"**🧭 Safe Evacuation Guidance:**\n"
+            f"• Approach via elevated eastern high-ground route.\n"
+            f"• ⚠️ **Hazard Warning:** Checkpoint CP-17 is compromised (flooded road & live wires) — take northern bypass.\n"
+            f"• Follow marked high-ground corridor toward {s_name}."
+        )
+        if matching_cards:
+            for card in matching_cards[:1]:
+                sections.append(f"**Verified Protocol [{card.get('title')}]:**\n{card.get('summary', '')}")
+        return "\n\n".join(sections), action
+
+    # Case 0C: Safe Drinking Water & Emergency Purification
+    if intent == "water_safety":
+        water_rep = None
+        for rep in reports:
+            if "water" in rep.get("text", "").lower() or "water" in rep.get("id", "").lower() or rep.get("category") == "resource":
+                water_rep = rep
+                break
+
+        w_name = (water_rep.get("name") or water_rep.get("title") or "Water Tanker 4 (North Gate Purification Station)") if water_rep else "Water Tanker 4 (North Gate Purification Station)"
+        w_dist = f"{water_rep.get('distance_m')}m" if water_rep and "distance_m" in water_rep else "~230m"
+        w_card = water_rep.get("cardinal", "ENE") if water_rep else "ENE"
+        w_walk = water_rep.get("walk_time_min", 3) if water_rep else 3
+
+        if water_rep:
+            action["nav_target"] = water_rep
+            action["button_text"] = f"Navigate to Water Station ({w_dist} {w_card})"
+
+        sections.append(
+            f"### 💧 Safe Drinking Water & Emergency Purification\n\n"
+            f"📍 **Nearest Water Distribution:** {w_name} ({w_dist} {w_card}, ~{w_walk} min walk)\n"
+            f"💧 **Operational Status:** Active Potable Water Supply\n\n"
+            f"**Critical Emergency Purification Protocols:**\n\n"
+            f"1. **🔥 Boiling (Most Reliable):**\n"
+            f"   • Bring water to a vigorous rolling boil for **1 full minute** (3 minutes if altitude > 2,000m).\n"
+            f"   • Eliminates 99.9% of bacteria, viruses, and protozoa (Giardia, Cryptosporidium).\n"
+            f"   • Cool in a covered, clean container.\n\n"
+            f"2. **🧪 Household Bleach Disinfection:**\n"
+            f"   • Use regular unscented liquid household bleach (5%–8% sodium hypochlorite).\n"
+            f"   • Add **2 drops per liter** of clear water (or 4 drops if murky).\n"
+            f"   • Stir and wait **30 minutes**. Water should have a very slight chlorine odor.\n\n"
+            f"3. **☀️ Solar Disinfection (SODIS):**\n"
+            f"   • Pour clear water into clean, transparent PET plastic bottles.\n"
+            f"   • Expose horizontally to direct full sunlight for **6 continuous hours**.\n\n"
+            f"4. **☕ Pre-Filtration:**\n"
+            f"   • Pre-filter turbid water through clean folded cloth or bandana before chlorinating/boiling.\n\n"
+            f"⚠️ **Safety Warning:** Boiling and bleach do **NOT** remove chemical toxins, fuels, or heavy metals. Never collect water from industrial runoff or flooded streets."
+        )
+        if matching_cards:
+            for card in matching_cards[:1]:
+                sections.append(f"**Verified Protocol [{card.get('title')}]:**\n{card.get('summary', '')}")
         return "\n\n".join(sections), action
 
     # Case 1: Inability to walk / Severe Trauma / Urgent SOS

@@ -280,12 +280,35 @@ async function handleOfflineFallback(path, method, body) {
       'nearest survivor', 'nearest surviver', 'nearest casualty', 'survivor needs', 'surviver needs',
       'who needs help', 'who is the nearest', 'anyone injured', 'casualty status',
       'nearest injured', 'nearest sos', 'active casualties', 'nearby casualties',
-      'nearby survivor', 'nearby surviver', 'nearest victim', 'who is injured'
+      'nearby survivor', 'nearby surviver', 'nearest victim', 'who is injured',
+      'find casualty', 'find survivor', 'find surviver', 'sos near me', 'nearby sos',
+      'active sos', 'any sos', 'who called sos', 'sos signals'
     ];
     const isNearestQuery = nearestPatterns.some((p) => qLower.includes(p)) ||
-      ((qLower.includes('nearest') || qLower.includes('nearby')) &&
-       (qLower.includes('survivor') || qLower.includes('surviver') || qLower.includes('casualty') || qLower.includes('injured') || qLower.includes('victim') || qLower.includes('needs')));
+      ((qLower.includes('nearest') || qLower.includes('nearby') || qLower.includes('active') || qLower.includes('find')) &&
+       (qLower.includes('survivor') || qLower.includes('surviver') || qLower.includes('casualty') || qLower.includes('injured') || qLower.includes('victim') || qLower.includes('sos') || qLower.includes('needs')));
 
+    const shelterPatterns = [
+      'safe shelter', 'nearest shelter', 'shelter near me', 'where is shelter',
+      'find shelter', 'evacuation checkpoint', 'safe place', 'safe zone', 'refuge',
+      'camp alpha', 'evacuate', 'nearest safe shelter', 'closest shelter', 'where to go',
+      'where can i shelter', 'shelter guidance', 'where is the nearest safe shelter'
+    ];
+    const isShelterQuery = shelterPatterns.some((p) => qLower.includes(p)) ||
+      ((qLower.includes('shelter') || qLower.includes('evacuation') || qLower.includes('refuge')) &&
+       (qLower.includes('near') || qLower.includes('where') || qLower.includes('safe') || qLower.includes('closest') || qLower.includes('find') || qLower.includes('checkpoint')));
+
+    const waterPatterns = [
+      'safe drinking water', 'clean water', 'drinking water', 'water near me',
+      'purify water', 'safe water', 'purify and make safe drinking water',
+      'how do i purify water', 'potable water', 'water point', 'water tanker',
+      'water purification', 'make water safe', 'clean drinking water'
+    ];
+    const isWaterQuery = waterPatterns.some((p) => qLower.includes(p)) ||
+      ((qLower.includes('water') || qLower.includes('drink')) &&
+       (qLower.includes('safe') || qLower.includes('purify') || qLower.includes('clean') || qLower.includes('near') || qLower.includes('where') || qLower.includes('potable') || qLower.includes('boil') || qLower.includes('tanker')));
+
+    // 1A. Nearest Survivor / Emergency SOS Handler
     if (isNearestQuery) {
       const localReports = await getAllLocalReports();
       const casualties = localReports.filter((r) =>
@@ -333,7 +356,7 @@ async function handleOfflineFallback(path, method, body) {
           mode: 'standalone_mobile_brain',
         };
       } else {
-        const ans = `### 🛡️ Nearest Survivor Status\n\n• **Casualties:** No active survivor SOS signals detected in on-device memory.\n\n**📊 Area Status Summary:**\n• 🟢 **Safe Shelters:** 3 operational (Nearest: Shelter Alpha ~350m)\n• ⚠️ **Hazards:** 1 active hazard logged (Checkpoint CP-17: Flooded entrance live wires)\n• 📶 **Active Mesh Peers:** Local Wi-Fi mesh scanning active\n\nIf you locate an injured casualty, use the **Emergency SOS** tab to log their location and needs.`;
+        const ans = `### 🛡️ Nearest Survivor Status\n\n• **Casualties:** No active survivor SOS signals detected in on-device memory.\n\n**📊 Area Status Summary:**\n• 🟢 **Safe Shelters:** 3 operational (Nearest: Shelter Alpha ~350m)\n• ⚠️ **Hazards:** 1 active hazard logged (Checkpoint CP-17: Flooded entrance live wires)\n• 📶 **Active Mesh Peers:** Local Wi-Fi mesh scanning active\n\n**Need Emergency Assistance?** If you are injured, trapped, or immobilized, tap below to broadcast an Emergency SOS to all nearby responders immediately.`;
         return {
           query,
           answer_type: 'nearest_survivor_sos',
@@ -341,16 +364,109 @@ async function handleOfflineFallback(path, method, body) {
           local_answer: ans,
           text: ans,
           suggested_action: {
-            kind: 'map',
-            label: 'Open Radar Map',
-            button_text: 'Open Radar Map',
-            target_tab: 'map',
+            kind: 'sos',
+            label: 'Broadcast Emergency SOS',
+            button_text: '1-Tap Broadcast Emergency SOS',
+            target_tab: 'report',
+            urgency: 'critical',
+            auto_report: {
+              kind: 'sos',
+              severity: 'red',
+              visibility: 'public',
+              status: 'needs_help',
+              text: 'Urgent Emergency SOS: Survivor in need of emergency assistance.'
+            }
           },
           warnings: [],
           local_fallback: true,
           mode: 'standalone_mobile_brain',
         };
       }
+    }
+
+    // 1B. Safe Shelter & Evacuation Finder Handler
+    if (isShelterQuery) {
+      const uLat = body?.location?.lat ?? 28.7041;
+      const uLon = body?.location?.lon ?? 77.1025;
+      const sLat = uLat + 0.0072;
+      const sLon = uLon - 0.0041;
+      const d = Math.round(distM(uLat, uLon, sLat, sLon));
+      const b = bearingDeg(uLat, uLon, sLat, sLon);
+      const card = cardinalDirection(b);
+      const walkMin = Math.max(1, Math.round(d / 75));
+      const shelterTarget = {
+        id: 'shelter_alpha',
+        name: 'Shelter Alpha (Central Evacuation Safe Haven)',
+        category: 'shelter',
+        distance_m: d,
+        cardinal: card,
+        bearing_deg: b,
+        walk_time_min: walkMin,
+        status: 'operational',
+        location: { lat: sLat, lon: sLon },
+        facilities: ['Emergency Shelter', 'Medical Triage', 'Clean Water', 'Backup Power']
+      };
+      const ans = `### 🏥 Nearest Verified Safe Shelter\n\n📍 **Location:** ${shelterTarget.name} (${d}m ${card}, ~${walkMin} min walk)\n🛡️ **Operational Status:** Active High-Ground Safe Haven (Operational)\n🏥 **Available Facilities:** Emergency Shelter, Medical Triage, Clean Water, Power\n\n**🧭 Safe Evacuation Guidance:**\n• Proceed via elevated eastern high-ground route.\n• ⚠️ **Hazard Notice:** Checkpoint CP-17 is compromised (flooded road & live fallen wires) — follow alternate high-ground detour.\n• Follow marked evacuation corridors toward ${shelterTarget.name}.`;
+      return {
+        query,
+        answer_type: 'shelter_guidance',
+        cards: [],
+        local_answer: ans,
+        text: ans,
+        suggested_action: {
+          kind: 'map',
+          label: `Navigate to ${shelterTarget.name}`,
+          button_text: `Navigate to Shelter on Radar (${d}m ${card})`,
+          target_tab: 'map',
+          nav_target: shelterTarget,
+        },
+        warnings: ['Avoid flooded roads near CP-17'],
+        local_fallback: true,
+        mode: 'standalone_mobile_brain',
+      };
+    }
+
+    // 1C. Safe Drinking Water & Emergency Purification Handler
+    if (isWaterQuery) {
+      const uLat = body?.location?.lat ?? 28.7041;
+      const uLon = body?.location?.lon ?? 77.1025;
+      const wLat = uLat + 0.0021;
+      const wLon = uLon + 0.0052;
+      const d = Math.round(distM(uLat, uLon, wLat, wLon));
+      const b = bearingDeg(uLat, uLon, wLat, wLon);
+      const card = cardinalDirection(b);
+      const walkMin = Math.max(1, Math.round(d / 75));
+      const waterTarget = {
+        id: 'water_tanker_4',
+        name: 'Water Tanker 4 (Potable Water Point)',
+        category: 'resource',
+        distance_m: d,
+        cardinal: card,
+        bearing_deg: b,
+        walk_time_min: walkMin,
+        status: 'operational',
+        location: { lat: wLat, lon: wLon },
+        facilities: ['Clean Water', 'Purification Tablets']
+      };
+      const ans = `### 💧 Safe Drinking Water & Emergency Purification\n\n📍 **Nearest Water Distribution:** ${waterTarget.name} (${d}m ${card}, ~${walkMin} min walk)\n💧 **Operational Status:** Active Potable Water Point\n\n**Critical Emergency Purification Protocols:**\n\n1. **🔥 Boiling (Most Reliable):**\n   • Bring water to a vigorous rolling boil for **1 full minute** (3 minutes if altitude > 2,000m).\n   • Eliminates 99.9% of bacteria, viruses, and parasites (Giardia, Cryptosporidium).\n   • Cool in a covered, clean container.\n\n2. **🧪 Household Bleach Disinfection:**\n   • Use regular unscented liquid household bleach (5%–8% sodium hypochlorite).\n   • Add **2 drops per liter** of clear water (or 4 drops if murky).\n   • Stir and wait **30 minutes**. Water should have a slight chlorine scent.\n\n3. **☀️ Solar Disinfection (SODIS):**\n   • Pour clear water into clean, transparent PET plastic bottles.\n   • Expose horizontally to direct full sunlight for **6 continuous hours**.\n\n4. **☕ Pre-Filtration:**\n   • Pre-filter turbid water through clean folded cloth or bandana before chlorinating/boiling.\n\n⚠️ **Safety Warning:** Boiling and bleach do **NOT** remove chemical toxins, fuels, or heavy metals. Never collect water from industrial runoff or flooded streets.`;
+      const answer = await searchKnowledgeLocal('water purification disinfection');
+      return {
+        query,
+        answer_type: 'water_safety',
+        cards: answer.source_cards?.slice(0, 1) || [],
+        local_answer: ans,
+        text: ans,
+        suggested_action: {
+          kind: 'map',
+          label: 'Locate Water Station on Radar',
+          button_text: `Navigate to Water Station (${d}m ${card})`,
+          target_tab: 'map',
+          nav_target: waterTarget,
+        },
+        warnings: ['Boiling does not neutralize chemical toxins'],
+        local_fallback: true,
+        mode: 'standalone_mobile_brain',
+      };
     }
 
     const answer = await searchKnowledgeLocal(query);
@@ -1025,7 +1141,7 @@ export async function getNativeOrWebLocation() {
   if (typeof navigator !== 'undefined' && navigator.geolocation) {
     try {
       const webPos = await new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error('Web geolocation timeout')), 3000);
+        const timer = setTimeout(() => reject(new Error('Web geolocation timeout')), 4000);
         navigator.geolocation.getCurrentPosition(
           (pos) => {
             clearTimeout(timer);
@@ -1035,7 +1151,7 @@ export async function getNativeOrWebLocation() {
             clearTimeout(timer);
             reject(err);
           },
-          { enableHighAccuracy: false, timeout: 3000, maximumAge: 60000 }
+          { enableHighAccuracy: true, timeout: 3500, maximumAge: 2000 }
         );
       });
       if (webPos?.coords?.latitude && webPos?.coords?.longitude) {
@@ -1059,6 +1175,120 @@ export async function getNativeOrWebLocation() {
   const anchor = { lat: 28.7041, lon: 77.1025, isFallback: true };
   saveCached(anchor.lat, anchor.lon);
   return anchor;
+}
+
+/**
+ * Continuously streams real-time physical GPS coordinates as the user moves across terrain.
+ * Supports Capacitor Native Geolocation and W3C navigator.geolocation.watchPosition with
+ * high accuracy GNSS satellite chips.
+ *
+ * @param {Function} onUpdate - callback({ lat, lon, accuracy, speed, heading, timestamp, source })
+ * @param {Function} [onError] - callback(error)
+ * @returns {Promise<Function>} unsubscribe - async function to clear the hardware GPS watch
+ */
+export async function watchNativeOrWebLocation(onUpdate, onError) {
+  const saveCached = (lat, lon) => {
+    try {
+      localStorage.setItem('rescue.lastLocation', JSON.stringify({
+        lat: Number(lat),
+        lon: Number(lon),
+        updatedAt: Date.now()
+      }));
+    } catch {
+      // silent
+    }
+  };
+
+  // Tier 1: Capacitor Native Geolocation
+  if (typeof window !== 'undefined' && window.Capacitor?.isPluginAvailable?.('Geolocation')) {
+    try {
+      const { Geolocation } = await import('@capacitor/geolocation');
+
+      try {
+        const perm = await Geolocation.checkPermissions();
+        if (perm.location !== 'granted') {
+          await Geolocation.requestPermissions();
+        }
+      } catch (pErr) {
+        console.warn('[GPS Watch] Permission check notice:', pErr);
+      }
+
+      const watchId = await Geolocation.watchPosition(
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 1000 },
+        (position, err) => {
+          if (err) {
+            onError?.(err);
+            return;
+          }
+          if (position?.coords?.latitude != null && position?.coords?.longitude != null) {
+            saveCached(position.coords.latitude, position.coords.longitude);
+            onUpdate({
+              lat: Number(position.coords.latitude),
+              lon: Number(position.coords.longitude),
+              accuracy: position.coords.accuracy || null,
+              speed: position.coords.speed || null,
+              heading: position.coords.heading || null,
+              timestamp: position.timestamp || Date.now(),
+              source: 'native_gps'
+            });
+          }
+        }
+      );
+
+      return async () => {
+        try {
+          await Geolocation.clearWatch({ id: watchId });
+        } catch (cErr) {
+          console.warn('[GPS Watch] Clear native watch error:', cErr);
+        }
+      };
+    } catch (capErr) {
+      console.warn('[GPS Watch] Capacitor watchPosition failed, falling back to Web API:', capErr);
+    }
+  }
+
+  // Tier 2: Browser navigator.geolocation.watchPosition
+  if (typeof navigator !== 'undefined' && navigator.geolocation) {
+    try {
+      const watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          if (pos?.coords?.latitude != null && pos?.coords?.longitude != null) {
+            saveCached(pos.coords.latitude, pos.coords.longitude);
+            onUpdate({
+              lat: Number(pos.coords.latitude),
+              lon: Number(pos.coords.longitude),
+              accuracy: pos.coords.accuracy || null,
+              speed: pos.coords.speed || null,
+              heading: pos.coords.heading || null,
+              timestamp: pos.timestamp || Date.now(),
+              source: 'web_gps'
+            });
+          }
+        },
+        (err) => {
+          onError?.(err);
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 1000
+        }
+      );
+
+      return () => {
+        try {
+          navigator.geolocation.clearWatch(watchId);
+        } catch {
+          // silent
+        }
+      };
+    } catch (webErr) {
+      console.warn('[GPS Watch] Web watchPosition failed:', webErr);
+    }
+  }
+
+  // Fallback: No hardware GPS watch available
+  return () => {};
 }
 
 // Initialize native status bar and back button when running on Android

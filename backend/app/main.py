@@ -83,9 +83,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         x_node_admin_key: str | None = Header(default=None),
         x_responder_key: str | None = Header(default=None),
     ):
-        if settings.node_admin_key and x_node_admin_key and hmac.compare_digest(x_node_admin_key, settings.node_admin_key):
+        admin_key = x_node_admin_key if isinstance(x_node_admin_key, str) else None
+        resp_key = x_responder_key if isinstance(x_responder_key, str) else None
+        if settings.node_admin_key and admin_key and hmac.compare_digest(admin_key, settings.node_admin_key):
             return
-        if settings.responder_key and x_responder_key and hmac.compare_digest(x_responder_key, settings.responder_key):
+        if settings.responder_key and resp_key and hmac.compare_digest(resp_key, settings.responder_key):
             return
         if not settings.node_admin_key:
             return
@@ -128,11 +130,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                background_tasks: BackgroundTasks,
                x_group_token: str | None = Header(default=None),
                x_node_admin_key: str | None = Header(default=None),
+               x_responder_key: str | None = Header(default=None),
                s: RescueService = Depends(service)):
         if request.group_id and not valid_group_token(s, request.group_id, x_group_token):
             raise HTTPException(403, "group token required")
         if request.verified:
-            require_admin(x_node_admin_key)
+            require_admin(x_node_admin_key, x_responder_key)
         res = s.report(request)
         if settings.central_url and settings.role != "central":
             background_tasks.add_task(async_uplink_sos, s, settings.central_url)
@@ -381,8 +384,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/api/sync/cloud-mirror")
     def cloud_mirror(s: RescueService = Depends(service), _admin: None = Depends(require_admin)):
-        if not settings.qdrant_url or not settings.qdrant_api_key:
-            raise HTTPException(400, "QDRANT_URL and QDRANT_API_KEY required")
+        if not settings.qdrant_url:
+            raise HTTPException(400, "QDRANT_URL required")
         try:
             return mirror_to_qdrant_server(s)
         except HTTPException:

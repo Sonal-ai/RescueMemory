@@ -202,6 +202,28 @@ class RescueService:
 
         threading.Thread(target=_do_mirror, daemon=True).start()
 
+    def _evaluate_ai(self, text: str, cards: list[dict], use_ai: bool, public_hits: list[dict] | None = None) -> tuple[str | None, str]:
+        if not use_ai:
+            return None, "local_only"
+        if not self.settings.gemini_api_key:
+            return None, "not_configured"
+        terms = query_terms(text)
+        grounded_cards = [{**card, "citation_label": f"G{index}"}
+                          for index, card in enumerate(cards[:3], 1)
+                          if terms & card_terms(card)]
+        if public_hits is None:
+            public_filter = Filter(must=[FieldCondition(key="visibility", match=MatchValue("public"))])
+            pub = self.memory.search("events", text, limit=5, filter_=public_filter)
+            public_hits = [hit for hit in pub[:5] if hit.get("visibility") == "public"][:4]
+        grounded_hits = [{**hit, "citation_label": f"R{index}"}
+                         for index, hit in enumerate(public_hits, 1)
+                         if terms & query_terms(hit.get("text", ""))]
+        ai_ans = grounded_answer(
+            text, grounded_cards, grounded_hits,
+            self.settings.gemini_api_key, self.settings.gemini_model,
+        )
+        return ai_ans, ("answered" if ai_ans else "unavailable")
+
     def chat(self, request: ChatRequest) -> dict:
         self.purge_expired()
         visibility = request.visibility or ("group" if request.group_id else "responders")
@@ -232,27 +254,52 @@ class RescueService:
             presence = None
 
         q_lower = request.text.lower()
+        user_loc = {"lat": request.location.lat, "lon": request.location.lon} if request.location else {"lat": 28.7041, "lon": 77.1025}
+        radar_req = SurvivalRadarRequest(
+            lat=user_loc["lat"],
+            lon=user_loc["lon"],
+            radius_m=5000.0,
+            filter_category="all",
+            include_responders=True,
+        )
+
         nearest_patterns = (
             "nearest survivor", "nearest surviver", "nearest casualty", "survivor needs", "surviver needs",
             "who needs help", "who is the nearest", "anyone injured", "casualty status",
             "nearest injured", "nearest sos", "active casualties", "nearby casualties",
             "nearby survivor", "nearby surviver", "nearest victim", "who is injured",
-            "find casualty", "find survivor", "find surviver"
+            "find casualty", "find survivor", "find surviver", "sos near me", "nearby sos",
+            "active sos", "any sos", "who called sos", "sos signals"
         )
         is_nearest_query = any(p in q_lower for p in nearest_patterns) or (
-            ("nearest" in q_lower or "nearby" in q_lower) and
-            ("survivor" in q_lower or "surviver" in q_lower or "casualty" in q_lower or "injured" in q_lower or "victim" in q_lower or "needs" in q_lower)
+            ("nearest" in q_lower or "nearby" in q_lower or "active" in q_lower or "find" in q_lower) and
+            ("survivor" in q_lower or "surviver" in q_lower or "casualty" in q_lower or "injured" in q_lower or "victim" in q_lower or "sos" in q_lower or "needs" in q_lower)
         )
 
+        shelter_patterns = (
+            "safe shelter", "nearest shelter", "shelter near me", "where is shelter",
+            "find shelter", "evacuation checkpoint", "safe place", "safe zone", "refuge",
+            "camp alpha", "evacuate", "nearest safe shelter", "closest shelter", "where to go",
+            "where can i shelter", "shelter guidance", "where is the nearest safe shelter"
+        )
+        is_shelter_query = any(p in q_lower for p in shelter_patterns) or (
+            ("shelter" in q_lower or "evacuation" in q_lower or "refuge" in q_lower) and
+            ("near" in q_lower or "where" in q_lower or "safe" in q_lower or "closest" in q_lower or "find" in q_lower or "reach" in q_lower or "checkpoint" in q_lower)
+        )
+
+        water_patterns = (
+            "safe drinking water", "clean water", "drinking water", "water near me",
+            "purify water", "safe water", "purify and make safe drinking water",
+            "how do i purify water", "potable water", "water point", "water tanker",
+            "water purification", "make water safe", "clean drinking water"
+        )
+        is_water_query = any(p in q_lower for p in water_patterns) or (
+            ("water" in q_lower or "drink" in q_lower) and
+            ("safe" in q_lower or "purify" in q_lower or "clean" in q_lower or "near" in q_lower or "where" in q_lower or "potable" in q_lower or "boil" in q_lower or "tanker" in q_lower or "station" in q_lower)
+        )
+
+        # 1. Dedicated SOS & Casualty Finder Handler
         if is_nearest_query:
-            user_loc = {"lat": request.location.lat, "lon": request.location.lon} if request.location else {"lat": 28.7041, "lon": 77.1025}
-            radar_req = SurvivalRadarRequest(
-                lat=user_loc["lat"],
-                lon=user_loc["lon"],
-                radius_m=5000.0,
-                filter_category="all",
-                include_responders=True,
-            )
             radar_data = self.survival_radar(radar_req)
             summary = radar_data.get("summary", {})
             nearest = summary.get("nearest_casualty")
@@ -306,7 +353,80 @@ class RescueService:
                     f"• 🟢 **Safe Shelters:** {operational_shelters} operational (Nearest: {shelter_info})\n"
                     f"• ⚠️ **Hazards:** {len(hazards)} active hazard{'s' if len(hazards) != 1 else ''} reported\n"
                     f"• 📶 **Mesh Peers:** {len(peers)} local peer device{'s' if len(peers) != 1 else ''} discovered\n\n"
-                    f"If you locate an injured casualty, use the **Emergency SOS** tab to log their location and needs."
+                    f"**Need Emergency Assistance?** If you are injured, trapped, or immobilized, tap below to broadcast an Emergency SOS to all nearby responders immediately."
+                )
+                suggested_action = {
+                    "kind": "sos",
+                    "label": "Broadcast Emergency SOS",
+                    "button_text": "1-Tap Broadcast Emergency SOS",
+                    "target_tab": "report",
+                    "urgency": "critical",
+                    "intent": "life_sos",
+                    "auto_report": {
+                        "kind": "sos",
+                        "severity": "red",
+                        "visibility": "public",
+                        "status": "needs_help",
+                        "text": "Urgent Emergency SOS: Survivor in need of emergency assistance."
+                    }
+                }
+
+            cards = self.memory.search("reference", request.text, limit=5)
+            ai_answer, ai_status = self._evaluate_ai(request.text, cards, request.use_ai)
+
+            return {
+                "answer_type": "nearest_survivor_sos",
+                "cards": cards[:3],
+                "memory_hits": [nearest] if nearest else [],
+                "ai_answer": ai_answer,
+                "ai_status": ai_status,
+                "local_answer": local_answer,
+                "suggested_action": suggested_action,
+                "presence_event": presence["event"]["id"] if presence else None,
+                "location_shared": bool(presence),
+            }
+
+        # 2. Dedicated Safe Shelter & Evacuation Finder Handler
+        if is_shelter_query:
+            radar_data = self.survival_radar(radar_req)
+            shelters = [it for it in radar_data.get("radar_items", []) if it.get("category") == "shelter" and it.get("status") != "danger"]
+            top_shelter = shelters[0] if shelters else radar_data.get("summary", {}).get("nearest_shelter")
+            terms = query_terms(request.text)
+            cards = self.memory.search("reference", request.text, limit=5)
+            matching_cards = [c for c in cards if "shelter" in c.get("id", "").lower() or "shelter" in c.get("title", "").lower() or (terms & card_terms(c))]
+            return_cards = matching_cards if matching_cards else cards[:3]
+            ai_answer, ai_status = self._evaluate_ai(request.text, return_cards, request.use_ai)
+
+            if top_shelter:
+                s_name = top_shelter.get("name") or "Shelter Alpha (Central Evacuation Safe Haven)"
+                s_dist = f"{top_shelter.get('distance_m', 450)}m"
+                s_card = top_shelter.get("cardinal", "NW")
+                s_walk = top_shelter.get("walk_time_min", 6)
+                facilities_str = ", ".join(top_shelter.get("facilities", ["Emergency Shelter", "Medical Triage", "Clean Water", "Power"]))
+
+                local_answer = (
+                    f"### 🏥 Nearest Verified Safe Shelter\n\n"
+                    f"📍 **Location:** {s_name} ({s_dist} {s_card}, ~{s_walk} min walk)\n"
+                    f"🛡️ **Operational Status:** Active High-Ground Safe Haven ({len(shelters)} operational in sector)\n"
+                    f"🏥 **Available Facilities:** {facilities_str}\n\n"
+                    f"**🧭 Safe Evacuation Guidance:**\n"
+                    f"• Approach via elevated eastern high-ground route.\n"
+                    f"• ⚠️ **Hazard Warning:** Checkpoint CP-17 is compromised (flooded road & live fallen wires) — follow alternate bypass.\n"
+                    f"• Proceed along marked evacuation corridors toward {s_name}."
+                )
+                suggested_action = {
+                    "kind": "map",
+                    "label": f"Navigate to {s_name}",
+                    "button_text": f"Navigate to Shelter on Radar ({s_dist} {s_card})",
+                    "target_tab": "map",
+                    "urgency": "normal",
+                    "nav_target": top_shelter,
+                    "intent": "shelter_search",
+                }
+            else:
+                local_answer = (
+                    "### 🛡️ Shelter Search Notice\n\n"
+                    "No operational shelters currently detected within 5.0 km radius. Move toward high ground away from structures."
                 )
                 suggested_action = {
                     "kind": "map",
@@ -318,11 +438,83 @@ class RescueService:
                 }
 
             return {
-                "answer_type": "nearest_survivor_sos",
-                "cards": [],
-                "memory_hits": [nearest] if nearest else [],
-                "ai_answer": None,
-                "ai_status": "local_radar",
+                "answer_type": "shelter_guidance",
+                "cards": return_cards,
+                "memory_hits": [top_shelter] if top_shelter else [],
+                "ai_answer": ai_answer,
+                "ai_status": ai_status,
+                "local_answer": local_answer,
+                "suggested_action": suggested_action,
+                "presence_event": presence["event"]["id"] if presence else None,
+                "location_shared": bool(presence),
+            }
+
+        # 3. Dedicated Safe Drinking Water & Purification Handler
+        if is_water_query:
+            radar_data = self.survival_radar(radar_req)
+            water_points = [
+                it for it in radar_data.get("radar_items", [])
+                if it.get("category") == "resource" or "water" in it.get("name", "").lower() or any("water" in str(f).lower() for f in it.get("facilities", []))
+            ]
+            top_water = water_points[0] if water_points else None
+            terms = query_terms(request.text)
+            cards = self.memory.search("reference", request.text, limit=5)
+            matching_cards = [c for c in cards if "water" in c.get("id", "").lower() or "water" in c.get("title", "").lower() or (terms & card_terms(c))]
+            return_cards = matching_cards if matching_cards else cards[:3]
+            ai_answer, ai_status = self._evaluate_ai(request.text, return_cards, request.use_ai)
+
+            if top_water:
+                w_name = top_water.get("name") or "Water Tanker 4 (North Gate Purification Station)"
+                w_dist = f"{top_water.get('distance_m', 230)}m"
+                w_card = top_water.get("cardinal", "ENE")
+                w_walk = top_water.get("walk_time_min", 3)
+                water_loc_str = f"📍 **Nearest Water Distribution:** {w_name} ({w_dist} {w_card}, ~{w_walk} min walk)\n💧 **Operational Status:** Active Potable Water Point\n\n"
+                suggested_action = {
+                    "kind": "map",
+                    "label": f"Locate {w_name} on Radar",
+                    "button_text": f"Navigate to Water Station ({w_dist} {w_card})",
+                    "target_tab": "map",
+                    "urgency": "normal",
+                    "nav_target": top_water,
+                    "intent": "water_safety",
+                }
+            else:
+                water_loc_str = ""
+                suggested_action = {
+                    "kind": "map",
+                    "label": "Locate Resources on Radar",
+                    "button_text": "Locate Resources on Radar",
+                    "target_tab": "map",
+                    "urgency": "normal",
+                    "intent": "radar_map",
+                }
+
+            local_answer = (
+                f"### 💧 Safe Drinking Water & Emergency Purification\n\n"
+                f"{water_loc_str}"
+                f"**Critical Emergency Purification Protocols:**\n\n"
+                f"1. **🔥 Boiling (Most Reliable):**\n"
+                f"   • Bring water to a vigorous rolling boil for **1 full minute** (3 minutes if altitude > 2,000m).\n"
+                f"   • Eliminates 99.9% of bacteria, viruses, and parasites (Giardia, Cryptosporidium).\n"
+                f"   • Cool in a covered, clean container.\n\n"
+                f"2. **🧪 Household Bleach Disinfection:**\n"
+                f"   • Use regular unscented liquid household bleach (5%–8% sodium hypochlorite).\n"
+                f"   • Add **2 drops per liter** of clear water (or 4 drops if murky).\n"
+                f"   • Stir and wait **30 minutes**. Water should have a very slight chlorine odor.\n\n"
+                f"3. **☀️ Solar Disinfection (SODIS):**\n"
+                f"   • Pour clear water into clean, transparent PET plastic bottles.\n"
+                f"   • Expose horizontally to direct full sunlight for **6 continuous hours**.\n\n"
+                f"4. **☕ Pre-Filtration:**\n"
+                f"   • Pre-filter turbid water through clean folded cloth or bandana before chlorinating/boiling.\n\n"
+                f"⚠️ **Safety Warning:** Boiling and bleach do **NOT** remove chemical toxins, fuels, or heavy metals. Never collect water from industrial runoff or flooded streets."
+            )
+
+            return {
+                "answer_type": "water_safety",
+                "cards": return_cards,
+                "memory_hits": [top_water] if top_water else [],
+                "ai_answer": ai_answer,
+                "ai_status": ai_status,
                 "local_answer": local_answer,
                 "suggested_action": suggested_action,
                 "presence_event": presence["event"]["id"] if presence else None,
@@ -352,20 +544,7 @@ class RescueService:
                           for index, card in enumerate(cards[:3], 1)
                           if terms & card_terms(card)]
         public_hits = [hit for hit in memory_hits[:5] if hit.get("visibility") == "public"][:4]
-        grounded_hits = [{**hit, "citation_label": f"R{index}"}
-                         for index, hit in enumerate(public_hits, 1)
-                         if terms & query_terms(hit.get("text", ""))]
-        ai_answer = None
-        ai_status = "local_only"
-        if request.use_ai:
-            if not self.settings.gemini_api_key:
-                ai_status = "not_configured"
-            else:
-                ai_answer = grounded_answer(
-                    request.text, grounded_cards, grounded_hits,
-                    self.settings.gemini_api_key, self.settings.gemini_model,
-                )
-                ai_status = "answered" if ai_answer else "unavailable"
+        ai_answer, ai_status = self._evaluate_ai(request.text, cards, request.use_ai, public_hits=public_hits)
 
         # Only return cards if they genuinely match the query, preventing irrelevant checklists on greetings
         greetings = {
@@ -449,7 +628,7 @@ class RescueService:
                     expected = hmac.new(self.settings.guide_trust_key.encode(),
                                         canonical(unsigned), hashlib.sha256).hexdigest()
                     if not hmac.compare_digest(expected, event.authority_tag):
-                        event.verified = False
+                        raise HTTPException(422, "tampered verified event rejected")
             self.memory.upsert("events", event.id,
                                event.model_dump(mode="json", exclude_unset=True), event.text)
             imported += 1

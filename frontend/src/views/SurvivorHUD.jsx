@@ -487,10 +487,10 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
           use_ai: true,
           survivor_id: setting('reporterId') || 'survivor-1',
           share_location: shareLocation,
+          location: pin,
           materials: selectedMaterials,
           breathing: breathingStatus,
           bleeding_type: bleedingType,
-          ...(shareLocation ? { location: pin } : {}),
           ...(groupId ? { group_id: groupId } : {})
         }
       });
@@ -615,7 +615,6 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
         const loc = action.nav_target.location || (action.nav_target.lat != null && action.nav_target.lon != null ? { lat: action.nav_target.lat, lon: action.nav_target.lon } : null);
         if (loc) {
           setCenter(loc);
-          setPin(loc);
         }
       }
       setTab('map');
@@ -1010,6 +1009,21 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                             <span>{msg.suggested_action.button_text || 'Navigate on Radar'}</span>
                             <ArrowRight size={11} />
                           </button>
+                        </div>
+                      )}
+
+                      {/* If Protocol Action is suggested */}
+                      {msg.suggested_action?.kind === 'protocol' && (
+                        <div className="mt-2 p-2 rounded-lg border border-amber-300 dark:border-amber-800/80 bg-amber-50/80 dark:bg-amber-950/40 text-slate-900 dark:text-amber-100 flex items-center justify-between gap-2 shadow-xs">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <BookOpen size={14} className="text-amber-600 dark:text-amber-400 shrink-0" />
+                            <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
+                              {msg.suggested_action.title || msg.suggested_action.label || 'Verified Emergency Protocol'}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-amber-700 dark:text-amber-300 font-bold px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 shrink-0">
+                            Follow Checklist Below
+                          </span>
                         </div>
                       )}
 

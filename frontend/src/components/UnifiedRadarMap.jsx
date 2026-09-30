@@ -16,7 +16,7 @@ import {
   Volume2,
   VolumeX,
 } from 'lucide-react';
-import { getSurvivalRadar, distM, bearingDeg, cardinalDirection } from '../api';
+import { getSurvivalRadar, distM, bearingDeg, cardinalDirection, watchNativeOrWebLocation } from '../api';
 import MapPanel from '../MapPanel';
 
 const COMPASS_SIZE = 220;
@@ -76,6 +76,89 @@ export default function UnifiedRadarMap({
   const [deviceHeading, setDeviceHeading] = useState(0);
   const [isCompassActive, setIsCompassActive] = useState(false);
   const [lastHapticTime, setLastHapticTime] = useState(0);
+
+  // Live Physical GPS Streaming State for Walking Navigation
+  const [liveCoords, setLiveCoords] = useState(() => ({
+    lat: userLocation?.lat ?? 28.7041,
+    lon: userLocation?.lon ?? 77.1025
+  }));
+  const [gpsAccuracy, setGpsAccuracy] = useState(null);
+  const [isLiveWalking, setIsLiveWalking] = useState(false);
+  const [totalMetersWalked, setTotalMetersWalked] = useState(0);
+
+  // Keep a fixed physical world anchor for baseline demo facilities so they remain stationary on the ground
+  const baselineAnchorRef = useRef(null);
+  if (!baselineAnchorRef.current) {
+    baselineAnchorRef.current = {
+      lat: userLocation?.lat ?? 28.7041,
+      lon: userLocation?.lon ?? 77.1025
+    };
+  }
+
+  // Update liveCoords if parent explicitly overrides location significantly (>5m)
+  useEffect(() => {
+    if (userLocation?.lat != null && userLocation?.lon != null) {
+      setLiveCoords((prev) => {
+        if (!prev) return { lat: userLocation.lat, lon: userLocation.lon };
+        const delta = distM(prev.lat, prev.lon, userLocation.lat, userLocation.lon);
+        if (delta > 5) {
+          return { lat: userLocation.lat, lon: userLocation.lon };
+        }
+        return prev;
+      });
+    }
+  }, [userLocation]);
+
+  // Continuous Hardware GPS Satellite streaming hook
+  useEffect(() => {
+    let cleanup = null;
+    let isSubscribed = true;
+
+    const startStreamingGps = async () => {
+      try {
+        const unsub = await watchNativeOrWebLocation(
+          (pos) => {
+            if (!isSubscribed) return;
+            const newLat = pos.lat;
+            const newLon = pos.lon;
+            const acc = pos.accuracy ? Math.round(pos.accuracy) : null;
+
+            setLiveCoords((prev) => {
+              if (prev?.lat != null && prev?.lon != null) {
+                const step = distM(prev.lat, prev.lon, newLat, newLon);
+                if (step >= 0.4) {
+                  setTotalMetersWalked((w) => Math.round(w + step));
+                }
+              }
+              return { lat: newLat, lon: newLon };
+            });
+
+            setGpsAccuracy(acc);
+            setIsLiveWalking(true);
+
+            if (onSelectLocation) {
+              onSelectLocation({ lat: newLat, lon: newLon, accuracy: acc });
+            }
+          },
+          (err) => {
+            console.warn('[Radar] GPS streaming notice:', err);
+          }
+        );
+        cleanup = unsub;
+      } catch (err) {
+        console.warn('[Radar] Failed to start GPS watcher:', err);
+      }
+    };
+
+    startStreamingGps();
+
+    return () => {
+      isSubscribed = false;
+      if (typeof cleanup === 'function') {
+        cleanup();
+      }
+    };
+  }, [onSelectLocation]);
 
   // Audio Context Ref for offline synthetic radar/compass ping
   const audioCtxRef = useRef(null);
@@ -199,8 +282,8 @@ export default function UnifiedRadarMap({
   }, []);
 
   // Fetch Radar Signals from Qdrant Edge Memory
-  const locLat = userLocation?.lat ?? 28.7041;
-  const locLon = userLocation?.lon ?? 77.1025;
+  const locLat = liveCoords?.lat ?? userLocation?.lat ?? 28.7041;
+  const locLon = liveCoords?.lon ?? userLocation?.lon ?? 77.1025;
 
   const fetchRadar = useCallback(async () => {
     setLoading(true);
@@ -227,6 +310,16 @@ export default function UnifiedRadarMap({
     return () => clearInterval(interval);
   }, [fetchRadar]);
 
+  const handleManualRefreshGps = useCallback(async () => {
+    if (onRefreshGps) {
+      await onRefreshGps();
+    }
+    if (liveCoords?.lat && liveCoords?.lon) {
+      baselineAnchorRef.current = { lat: liveCoords.lat, lon: liveCoords.lon };
+    }
+    fetchRadar();
+  }, [onRefreshGps, liveCoords, fetchRadar]);
+
   const radarItems = useMemo(() => radarData?.radar_items || [], [radarData]);
   const summary = useMemo(() => radarData?.summary || {
     urgent_casualties: 0,
@@ -248,17 +341,21 @@ export default function UnifiedRadarMap({
   // Build unified destinations list with live relative geodesics
   const destinationOptions = useMemo(() => {
     const list = [...radarItems];
-    const uLat = userLocation?.lat ?? 28.7041;
-    const uLon = userLocation?.lon ?? 77.1025;
+    const uLat = liveCoords?.lat ?? userLocation?.lat ?? 28.7041;
+    const uLon = liveCoords?.lon ?? userLocation?.lon ?? 77.1025;
 
-    // Check if user is near Delhi operations zone (< 50 km) or remote/testing emulator
-    const isNearDelhi = distM(uLat, uLon, 28.7041, 77.1025) < 50000;
+    // Use initial physical anchor for synthetic/baseline facilities so they remain FIXED on the ground
+    const aLat = baselineAnchorRef.current?.lat ?? uLat;
+    const aLon = baselineAnchorRef.current?.lon ?? uLon;
+
+    // Check if anchor is near Delhi operations zone (< 50 km)
+    const isAnchorDelhi = distM(aLat, aLon, 28.7041, 77.1025) < 50000;
 
     // If external target passed (e.g. from SafePlace reroute or casualty), inject it at the top
     if (selectedTarget) {
       const targetId = selectedTarget.id || selectedTarget.entity_id || 'selected_target';
       if (!list.some((item) => item.id === targetId)) {
-        const tLoc = selectedTarget.location || (selectedTarget.lat != null && selectedTarget.lon != null ? { lat: selectedTarget.lat, lon: selectedTarget.lon } : null) || { lat: uLat + 0.005, lon: uLon - 0.004 };
+        const tLoc = selectedTarget.location || (selectedTarget.lat != null && selectedTarget.lon != null ? { lat: selectedTarget.lat, lon: selectedTarget.lon } : null) || { lat: aLat + 0.0015, lon: aLon - 0.0012 };
         const d = Math.round(distM(uLat, uLon, tLoc.lat, tLoc.lon));
         const b = bearingDeg(uLat, uLon, tLoc.lat, tLoc.lon);
         list.unshift({
@@ -276,13 +373,13 @@ export default function UnifiedRadarMap({
       }
     }
 
-    // Baseline facilities: realistically positioned near userLocation
+    // Baseline facilities: realistically anchored at fixed physical world coordinates near the starting position
     const baseline = [
       {
         id: 'priority_casualty',
         name: 'Urgent Casualty (Fracture & Trauma SOS)',
         category: 'casualty',
-        location: isNearDelhi ? { lat: 28.7085, lon: 77.1002 } : { lat: uLat + 0.0035, lon: uLon - 0.0022 },
+        location: isAnchorDelhi ? { lat: 28.7085, lon: 77.1002 } : { lat: aLat + 0.0018, lon: aLon - 0.0012 },
         triage_level: 'immediate_red',
         text: 'Survivor unable to walk unassisted, severe fracture requiring splinting & rapid evacuation.'
       },
@@ -290,7 +387,7 @@ export default function UnifiedRadarMap({
         id: 'water_point_4',
         name: 'Clean Water Depot (North Gate Tanker 4)',
         category: 'resource',
-        location: isNearDelhi ? { lat: 28.7060, lon: 77.1080 } : { lat: uLat + 0.0028, lon: uLon + 0.0041 },
+        location: isAnchorDelhi ? { lat: 28.7060, lon: 77.1080 } : { lat: aLat + 0.0012, lon: aLon + 0.0021 },
         triage_level: 'safe_green',
         text: 'Drinkable water distribution depot with verified emergency purification supply guarded by relief corps.'
       },
@@ -298,7 +395,7 @@ export default function UnifiedRadarMap({
         id: 'shelter_alpha',
         name: 'Shelter Alpha (Central High - Safe Haven)',
         category: 'shelter',
-        location: isNearDelhi ? { lat: 28.7120, lon: 77.0980 } : { lat: uLat + 0.0062, lon: uLon - 0.0048 },
+        location: isAnchorDelhi ? { lat: 28.7120, lon: 77.0980 } : { lat: aLat + 0.0035, lon: aLon - 0.0028 },
         triage_level: 'safe_green',
         text: 'Verified safe high-ground shelter with food, emergency surgery & power generator.'
       },
@@ -306,7 +403,7 @@ export default function UnifiedRadarMap({
         id: 'cp_17',
         name: 'Checkpoint CP-17 (North Bridge)',
         category: 'hazard',
-        location: isNearDelhi ? { lat: 28.7041, lon: 77.1065 } : { lat: uLat + 0.0005, lon: uLon + 0.0032 },
+        location: isAnchorDelhi ? { lat: 28.7041, lon: 77.1065 } : { lat: aLat + 0.0006, lon: aLon + 0.0010 },
         triage_level: 'hazard_warning',
         text: 'Caution: Submerged entrance & downed live wires. Exercise caution and follow northern detour.'
       }
@@ -329,7 +426,7 @@ export default function UnifiedRadarMap({
     });
 
     return list;
-  }, [radarItems, selectedTarget, userLocation]);
+  }, [radarItems, selectedTarget, liveCoords, userLocation]);
 
   // Compute Active Target for Compass Pointer
   const activeTarget = useMemo(() => {
@@ -361,14 +458,14 @@ export default function UnifiedRadarMap({
   // Current heading from smoothed device magnetometer
   const currentHeading = deviceHeading;
 
-  // Real-time geodesic metrics between userLocation and activeTarget.location
+  // Real-time geodesic metrics between live walking GPS and activeTarget.location
   const liveTargetMetrics = useMemo(() => {
     if (!activeTarget) {
       return { bearing: 0, distance: 0, cardinal: 'N' };
     }
     const tLoc = activeTarget.location || (activeTarget.lat != null && activeTarget.lon != null ? { lat: activeTarget.lat, lon: activeTarget.lon } : null);
-    const uLat = userLocation?.lat;
-    const uLon = userLocation?.lon;
+    const uLat = liveCoords?.lat ?? userLocation?.lat;
+    const uLon = liveCoords?.lon ?? userLocation?.lon;
 
     if (!tLoc || tLoc.lat == null || tLoc.lon == null || uLat == null || uLon == null) {
       return {
@@ -382,7 +479,7 @@ export default function UnifiedRadarMap({
     const b = bearingDeg(uLat, uLon, tLoc.lat, tLoc.lon);
     const c = cardinalDirection(b);
     return { bearing: b, distance: d, cardinal: c };
-  }, [activeTarget, userLocation]);
+  }, [activeTarget, liveCoords, userLocation]);
 
   const targetBearing = liveTargetMetrics.bearing;
   const targetDistance = liveTargetMetrics.distance;
