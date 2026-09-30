@@ -63,15 +63,21 @@ export default function CommandInspector() {
 
   const refresh = useCallback(async () => {
     try {
-      const [h, s, memory, reference] = await Promise.all([
+      const [h, s, publicMem, responderMem, reference] = await Promise.all([
         api('/health').catch(() => null),
         api('/api/sync/status').catch(() => null),
         api('/api/memory?scope=public&limit=100').catch(() => ({ items: [] })),
+        api('/api/memory?scope=responders&limit=100', { responder: true }).catch(() => ({ items: [] })),
         api('/api/guides').catch(() => ({ guides: [] })),
       ]);
       if (h) setHealth(h);
       if (s) setSync(s);
-      if (memory?.items) setEvents(memory.items.slice().reverse());
+      const combined = [
+        ...(publicMem?.items || []),
+        ...(responderMem?.items || []),
+      ];
+      const uniqueEvents = Array.from(new Map(combined.map((e) => [e.id, e])).values());
+      setEvents(uniqueEvents.slice().reverse());
       if (reference?.guides) setGuides(reference.guides);
       setError('');
     } catch (err) {
@@ -226,11 +232,12 @@ export default function CommandInspector() {
           </div>
           <div className="min-w-0">
             <div className="text-xl font-black text-slate-100 font-mono">
-              {sync?.local_event_count ?? events.length}
+              {events.length}
             </div>
             <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">
               Memory Events
             </p>
+            <span className="text-[9px] text-cyan-400 font-medium">Live Field Reports</span>
           </div>
         </div>
 
@@ -246,6 +253,7 @@ export default function CommandInspector() {
             <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">
               Vector Protocols
             </p>
+            <span className="text-[9px] text-amber-400 font-medium">Fixed Medical Library</span>
           </div>
         </div>
 
