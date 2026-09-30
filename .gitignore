@@ -68,6 +68,6 @@ dist-ssr/
 Thumbs.db
 tmp/
 .tmp_pytest/
-.pytest_cache/
 *.apk
+!RescueMemory-debug.apk
 
