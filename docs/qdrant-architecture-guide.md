@@ -69,7 +69,7 @@ Instead of dumping everything into one bucket, Qdrant Edge initializes **four se
 4. `receipts`: Multi-hop transfer receipts proving how information jumped from node to node.
 
 > **How Point IDs Work (`point_id()`)**:  
-> Qdrant Edge requires 64-bit integer IDs. We take the SHA-256 hash of an event’s unique ID string, slice the first 8 bytes, and convert it to an integer. This ensures the **exact same report gets the exact same point ID on every device in the disaster area**, preventing duplicate records.
+> Qdrant Edge requires 64-bit integer IDs. We take the SHA-256 hash of an event's unique ID string, slice the first 8 bytes, and convert it to an integer. This ensures the **exact same report gets the exact same point ID on every device in the disaster area**, preventing duplicate records.
 
 ---
 
@@ -78,11 +78,11 @@ Computers cannot search concepts like *"severe bleeding"* or *"flooded bridge"* 
 
 ```
 Text: "How to stop deep leg bleeding?"
-  ├── 1. Dense Embedding (FastEmbed): [0.042, -0.198, 0.311, ... 384 numbers]
-  │      ↳ Captures MEANING (connects "deep leg bleeding" to "arterial hemorrhage" and "tourniquet").
-  │
-  └── 2. Sparse Embedding (BM25): {"bleeding": 2.41, "leg": 1.83, "deep": 1.25}
-         ↳ Captures EXACT KEYWORDS (guarantees specific medical or location terms match).
+  |-- 1. Dense Embedding (FastEmbed): [0.042, -0.198, 0.311, ... 384 numbers]
+  |      -> Captures MEANING (connects "deep leg bleeding" to "arterial hemorrhage" and "tourniquet").
+  |
+  `-- 2. Sparse Embedding (BM25): {"bleeding": 2.41, "leg": 1.83, "deep": 1.25}
+         -> Captures EXACT KEYWORDS (guarantees specific medical or location terms match).
 ```
 
 * **Dense Vectors (`memory.py:25-29`)**: Generated locally using `sentence-transformers/all-MiniLM-L6-v2` via `fastembed`. It runs on CPU in milliseconds with zero cloud connection.
@@ -128,11 +128,11 @@ geo = Filter(must=[FieldCondition(
     ),
 )])
 ```
-When you open the **Tactical Map** or **Survival Radar**, Qdrant filters points in a circle around the survivor’s GPS location natively in Rust, so the phone only displays threats and resources within walking distance.
+When you open the **Tactical Map** or **Survival Radar**, Qdrant filters points in a circle around the survivor's GPS location natively in Rust, so the phone only displays threats and resources within walking distance.
 
 ---
 
-### Step 5: Negative Vector Arithmetic — Safe Shelter Recommendation (`memory.py:137-206`)
+### Step 5: Negative Vector Arithmetic -- Safe Shelter Recommendation (`memory.py:137-206`)
 
 This is one of the most innovative features in the system.
 
@@ -147,10 +147,10 @@ This is one of the most innovative features in the system.
 
 ```
        [High Hazard Vector: Flooding & Live Wires]
-                      ▲
-                      │  (Subtract 0.5 * Hazard)
-                      │
-[CP-17: Clinic + Power] ───► [Target Search Vector] ───► Finds: [Clinic Beta: High Ground + Surgery]
+                      ^
+                      |  (Subtract 0.5 * Hazard)
+                      |
+[CP-17: Clinic + Power] ---> [Target Search Vector] ---> Finds: [Clinic Beta: High Ground + Surgery]
 ```
 
 **Result**: Qdrant finds an alternative facility that **shares the medical resources** of CP-17 while being as far away as possible in vector space from the flooding hazard!
@@ -213,7 +213,7 @@ sequenceDiagram
 
 ### Q2: "Why do you use both Dense Vectors and BM25 Sparse Vectors?"
 > **Answer**:  
-> *"Dense vectors understand semantic meaning—for example, mapping 'cannot walk' to 'femur fracture protocol' even when the exact words differ. But dense vectors can blur distinct alphanumeric codes like 'Shelter CP-17' versus 'Shelter CP-18'. By using **Qdrant's native Reciprocal Rank Fusion (RRF)**, we combine the semantic intelligence of all-MiniLM-L6-v2 with the exact keyword precision of BM25 in a single atomic query."*
+> *"Dense vectors understand semantic meaning -- for example, mapping 'cannot walk' to 'femur fracture protocol' even when the exact words differ. But dense vectors can blur distinct alphanumeric codes like 'Shelter CP-17' versus 'Shelter CP-18'. By using **Qdrant's native Reciprocal Rank Fusion (RRF)**, we combine the semantic intelligence of all-MiniLM-L6-v2 with the exact keyword precision of BM25 in a single atomic query."*
 
 ### Q3: "How does the negative vector math work for rerouting around hazards?"
 > **Answer**:  
