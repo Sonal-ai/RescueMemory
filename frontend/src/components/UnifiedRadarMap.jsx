@@ -433,31 +433,31 @@ export default function UnifiedRadarMap({
   }, [items, mapFilter]);
 
   return (
-    <div className="flex flex-col gap-4 text-slate-900 dark:text-slate-100">
+    <div className="flex flex-col gap-2.5 sm:gap-3 text-slate-900 dark:text-slate-100">
       {/* Sleek, Simplified Tactical Radar & Destination Header */}
-      <div className="bg-[#f0f5fa] dark:bg-[#0b1626] border border-[#cfe1f0] dark:border-slate-800 rounded-3xl p-3.5 sm:p-4 shadow-sm transition-all">
-        <div className="flex items-center justify-between gap-3 mb-2.5">
+      <div className="bg-[#f0f5fa] dark:bg-[#0b1626] border border-[#cfe1f0] dark:border-slate-800 rounded-2xl p-2.5 sm:p-3.5 shadow-xs transition-all">
+        <div className="flex items-center justify-between gap-2 mb-2">
           {/* Title and Status */}
-          <div className="flex items-center gap-2">
-            <div className="h-7 w-7 rounded-xl bg-gradient-to-tr from-cyan-600 to-blue-600 flex items-center justify-center text-white shadow-sm shrink-0">
-              <Navigation size={15} />
+          <div className="flex items-center gap-1.5">
+            <div className="h-6 w-6 rounded-lg bg-gradient-to-tr from-cyan-600 to-blue-600 flex items-center justify-center text-white shadow-xs shrink-0">
+              <Navigation size={13} />
             </div>
-            <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-              <span>Radar Map & Compass</span>
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="Offline Active" />
+            <h2 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+              <span>Radar Map</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" title="Offline Active" />
             </h2>
           </div>
 
           {/* Right Action Menu: GPS Pill, Options and Refresh */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1">
             {userLocation?.lat != null && (
               <button
                 type="button"
                 onClick={onRefreshGps}
                 title="Your current GPS coordinates. Tap to refresh."
-                className="inline-flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-xl border border-[#cbdbe9] dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-mono font-semibold hover:border-cyan-500 transition-colors"
+                className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-lg border border-[#cbdbe9] dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-mono font-semibold hover:border-cyan-500 transition-colors"
               >
-                <MapPin size={11} className="text-cyan-600 dark:text-cyan-400" />
+                <MapPin size={10} className="text-cyan-600 dark:text-cyan-400" />
                 <span>{userLocation.lat.toFixed(3)}, {userLocation.lon.toFixed(3)}</span>
               </button>
             )}
@@ -465,39 +465,39 @@ export default function UnifiedRadarMap({
             <button
               type="button"
               onClick={() => setShowSettings(!showSettings)}
-              className={`px-2.5 py-1 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-all ${
+              className={`px-2 py-0.5 rounded-lg border text-[11px] font-bold flex items-center gap-1 transition-all ${
                 showSettings
                   ? 'bg-slate-900 text-white dark:bg-cyan-500 dark:text-slate-950 border-transparent shadow-xs'
                   : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-[#cbdbe9] dark:border-slate-800 hover:bg-[#edf5fb] dark:hover:bg-slate-800'
               }`}
               title="Toggle gyro and audio settings"
             >
-              <Settings2 size={13} />
+              <Settings2 size={12} />
               <span>Options</span>
-              <ChevronDown size={12} className={`transition-transform duration-200 ${showSettings ? 'rotate-180' : ''}`} />
+              <ChevronDown size={11} className={`transition-transform duration-200 ${showSettings ? 'rotate-180' : ''}`} />
             </button>
 
             <button
               type="button"
               onClick={fetchRadar}
               disabled={loading}
-              className="p-1.5 rounded-xl border border-[#cbdbe9] dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-[#edf5fb] dark:hover:bg-slate-800 transition-colors"
+              className="p-1 rounded-lg border border-[#cbdbe9] dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-[#edf5fb] dark:hover:bg-slate-800 transition-colors"
               title="Refresh local radar"
             >
-              <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+              <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
             </button>
           </div>
         </div>
 
         {/* Streamlined Destination Selector Bar */}
         <div className="relative">
-          <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-red-500">
-            <MapPin size={16} />
+          <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-red-500">
+            <MapPin size={14} />
           </div>
           <select
             value={selectedTargetId}
             onChange={(e) => handleSelectDestination(e.target.value)}
-            className="w-full appearance-none py-2.5 pl-10 pr-10 rounded-2xl border-2 border-[#cbd5e1] dark:border-slate-700 bg-white dark:bg-[#07111e] text-slate-900 dark:text-slate-100 text-xs sm:text-sm font-bold focus:outline-none focus:ring-2 focus:ring-cyan-500 cursor-pointer shadow-inner"
+            className="w-full appearance-none py-1.5 pl-8 pr-8 rounded-xl border border-[#cbd5e1] dark:border-slate-700 bg-white dark:bg-[#07111e] text-slate-900 dark:text-slate-100 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-cyan-500 cursor-pointer shadow-xs"
           >
             {destinationOptions.map((dest) => {
               const isCas = dest.category === 'casualty';
@@ -510,40 +510,40 @@ export default function UnifiedRadarMap({
               );
             })}
           </select>
-          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-400">
-            <ChevronDown size={16} />
+          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2.5 text-slate-400">
+            <ChevronDown size={14} />
           </div>
         </div>
 
         {/* Collapsible Secondary Controls Drawer */}
         {showSettings && (
-          <div className="mt-2.5 pt-2.5 border-t border-[#dbe6f0] dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-2.5 animate-in fade-in">
-            <div className="flex items-center gap-2">
-              <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-lg border ${
+          <div className="mt-2 pt-2 border-t border-[#dbe6f0] dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-2 animate-in fade-in">
+            <div className="flex items-center gap-1.5">
+              <span className={`text-[9px] font-mono font-bold px-1.5 py-0.2 rounded border ${
                 isCompassActive
                   ? 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-400 border-emerald-400/40 dark:border-emerald-500/20'
                   : 'bg-amber-500/15 text-amber-800 dark:text-amber-400 border-amber-400/40 dark:border-amber-500/20'
               }`}>
-                {isCompassActive ? 'GYRO HARDWARE ACTIVE' : 'NORTH REFERENCE MODE'}
+                {isCompassActive ? 'GYRO ACTIVE' : 'NORTH REF'}
               </span>
 
               <button
                 type="button"
                 onClick={() => setAudioEnabled(!audioEnabled)}
-                className={`px-2.5 py-1 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-all ${
+                className={`px-2 py-0.5 rounded-lg border text-[11px] font-bold flex items-center gap-1 transition-all ${
                   audioEnabled
                     ? 'bg-cyan-500/15 text-cyan-800 dark:text-cyan-400 border-cyan-400/40'
                     : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-400 border-[#cbdbe9] dark:border-slate-800'
                 }`}
                 title={audioEnabled ? 'Audio ping active' : 'Turn on audio ping beacon'}
               >
-                {audioEnabled ? <Volume2 size={13} /> : <VolumeX size={13} />}
-                <span>Beacon Ping Audio</span>
+                {audioEnabled ? <Volume2 size={12} /> : <VolumeX size={12} />}
+                <span>Ping Sound</span>
               </button>
             </div>
 
             {activeTarget && (
-              <span className="text-[11px] font-mono text-cyan-800 dark:text-cyan-400 font-bold ml-auto">
+              <span className="text-[10px] font-mono text-cyan-800 dark:text-cyan-400 font-bold ml-auto">
                 Locked: {activeTarget.name} ({activeTarget.distance_m}m · {activeTarget.cardinal})
               </span>
             )}
@@ -552,21 +552,21 @@ export default function UnifiedRadarMap({
       </div>
 
       {/* TOP VIEW: Interactive Tactical Map */}
-      <div className="bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 rounded-3xl p-4 sm:p-5 shadow-xs text-slate-900 dark:text-slate-100">
+      <div className="bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 rounded-2xl p-2.5 sm:p-4 shadow-xs text-slate-900 dark:text-slate-100">
         {/* Map Filter Pills */}
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-          <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap items-center justify-between gap-1.5 mb-2">
+          <div className="flex flex-wrap gap-1">
             {[
-              ['all', 'All Points'],
-              ['sos', 'SOS / Casualties'],
+              ['all', 'All'],
+              ['sos', 'SOS'],
               ['hazard', 'Hazards'],
-              ['resource', 'Safe Resources']
+              ['resource', 'Safe Spots']
             ].map(([f, label]) => (
               <button
                 key={f}
                 type="button"
                 onClick={() => setMapFilter(f)}
-                className={`text-xs px-3 py-1.5 rounded-xl border font-bold transition-all ${
+                className={`text-[11px] px-2.5 py-0.5 rounded-lg border font-bold transition-all ${
                   mapFilter === f
                     ? 'bg-slate-900 text-white dark:bg-cyan-500 dark:text-slate-950 border-transparent shadow-xs'
                     : 'border-[#cbdbe9] dark:border-slate-800 bg-[#e6f0f7] dark:bg-slate-900 text-slate-700 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-[#d9e8f4]'
@@ -577,13 +577,13 @@ export default function UnifiedRadarMap({
             ))}
           </div>
 
-          <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-            {filteredMapItems.length} active points
+          <div className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+            {filteredMapItems.length} points
           </div>
         </div>
 
         {/* Map Canvas */}
-        <div className="relative rounded-2xl overflow-hidden border border-[#e8e4db] dark:border-slate-800">
+        <div className="relative rounded-xl overflow-hidden border border-[#e8e4db] dark:border-slate-800">
           <MapPanel
             center={userLocation}
             items={filteredMapItems}
@@ -601,19 +601,19 @@ export default function UnifiedRadarMap({
           />
 
           {/* Compass Rose Mini Watermark overlay on map */}
-          <div className="absolute top-3 right-3 bg-slate-900/80 backdrop-blur-md border border-slate-700/60 rounded-xl px-2.5 py-1 text-[11px] font-mono text-cyan-300 font-bold flex items-center gap-1.5 shadow-md">
-            <Compass size={13} className="text-cyan-400" />
+          <div className="absolute top-2.5 right-2.5 bg-slate-900/80 backdrop-blur-md border border-slate-700/60 rounded-lg px-2 py-0.5 text-[10px] font-mono text-cyan-300 font-bold flex items-center gap-1 shadow-sm">
+            <Compass size={11} className="text-cyan-400" />
             <span>N {String(currentHeading).padStart(3, '0')}°</span>
           </div>
         </div>
       </div>
 
       {/* JUST BELOW THE MAP: Working 360° Compass Pointer & Live Azimuth Dial */}
-      <div className="bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xs">
-        <div className="flex flex-col lg:flex-row items-center justify-between gap-6">
+      <div className="bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 rounded-2xl p-3 sm:p-4 shadow-xs">
+        <div className="flex flex-col lg:flex-row items-center justify-between gap-4">
           {/* Compass SVG Housing */}
           <div className="flex flex-col items-center justify-center shrink-0 w-full lg:w-auto">
-            <div className="relative w-[300px] h-[300px] flex items-center justify-center">
+            <div className="relative w-[260px] h-[260px] sm:w-[300px] sm:h-[300px] flex items-center justify-center">
               <svg
                 width={COMPASS_SIZE}
                 height={COMPASS_SIZE}
@@ -776,22 +776,22 @@ export default function UnifiedRadarMap({
           </div>
 
           {/* Locked Target Navigation Telemetry & Alignment Guide */}
-          <div className="flex-1 min-w-0 w-full flex flex-col gap-3.5">
-            {/* Live Alignment Action Banner with FIXED HEIGHT to guarantee ZERO layout shift */}
-            <div className="w-full font-mono h-[52px] min-h-[52px] flex items-center justify-center">
+          <div className="flex-1 min-w-0 w-full flex flex-col gap-2.5">
+            {/* Live Alignment Action Banner with FIXED HEIGHT */}
+            <div className="w-full font-mono h-[38px] min-h-[38px] flex items-center justify-center">
               {isAligned ? (
-                <div className="w-full h-full rounded-2xl bg-emerald-500/10 border border-emerald-500/40 text-emerald-800 dark:text-emerald-300 font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xs animate-pulse px-3">
-                  <CheckCircle2 size={17} className="text-emerald-500 shrink-0" />
+                <div className="w-full h-full rounded-xl bg-emerald-500/10 border border-emerald-500/40 text-emerald-800 dark:text-emerald-300 font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs animate-pulse px-2.5">
+                  <CheckCircle2 size={15} className="text-emerald-500 shrink-0" />
                   <span className="truncate">ON TARGET · PROCEED STRAIGHT</span>
                 </div>
               ) : turnRightAngle > 0 ? (
-                <div className="w-full h-full rounded-2xl bg-amber-500/10 border border-amber-500/40 text-amber-900 dark:text-amber-300 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 px-3">
-                  <ArrowRight size={17} className="text-amber-600 shrink-0" />
+                <div className="w-full h-full rounded-xl bg-amber-500/10 border border-amber-500/40 text-amber-900 dark:text-amber-300 font-bold text-xs flex items-center justify-center gap-1.5 px-2.5">
+                  <ArrowRight size={15} className="text-amber-600 shrink-0" />
                   <span className="truncate tabular-nums">TURN RIGHT {Math.round(turnRightAngle)}° TO ALIGN</span>
                 </div>
               ) : (
-                <div className="w-full h-full rounded-2xl bg-amber-500/10 border border-amber-500/40 text-amber-900 dark:text-amber-300 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 px-3">
-                  <ArrowLeft size={17} className="text-amber-600 shrink-0" />
+                <div className="w-full h-full rounded-xl bg-amber-500/10 border border-amber-500/40 text-amber-900 dark:text-amber-300 font-bold text-xs flex items-center justify-center gap-1.5 px-2.5">
+                  <ArrowLeft size={15} className="text-amber-600 shrink-0" />
                   <span className="truncate tabular-nums">TURN LEFT {Math.round(turnLeftAngle)}° TO ALIGN</span>
                 </div>
               )}
@@ -800,7 +800,7 @@ export default function UnifiedRadarMap({
             {/* Target Card Details */}
             {activeTarget ? (
               <div
-                className={`p-4 sm:p-5 rounded-2xl border-2 transition-all shadow-xs ${
+                className={`p-3 sm:p-3.5 rounded-xl border transition-all shadow-xs ${
                   activeTarget.category === 'casualty'
                     ? 'bg-red-50/80 dark:bg-red-950/20 border-red-300 dark:border-red-500/60'
                     : activeTarget.category === 'shelter'
@@ -808,9 +808,9 @@ export default function UnifiedRadarMap({
                     : 'bg-[#f0f5fa] dark:bg-slate-900/60 border-[#dbe6f0] dark:border-slate-700'
                 }`}
               >
-                <div className="flex items-start gap-3 mb-3">
+                <div className="flex items-start gap-2 mb-2">
                   <div
-                    className={`p-2.5 rounded-xl shrink-0 ${
+                    className={`p-1.5 rounded-lg shrink-0 ${
                       activeTarget.category === 'casualty'
                         ? 'bg-red-600 text-white'
                         : activeTarget.category === 'shelter'
@@ -819,19 +819,19 @@ export default function UnifiedRadarMap({
                     }`}
                   >
                     {activeTarget.category === 'casualty' ? (
-                      <HeartPulse size={22} className="animate-pulse" />
+                      <HeartPulse size={16} className="animate-pulse" />
                     ) : activeTarget.category === 'shelter' ? (
-                      <ShieldCheck size={22} />
+                      <ShieldCheck size={16} />
                     ) : activeTarget.category === 'resource' ? (
-                      <Droplets size={22} />
+                      <Droplets size={16} />
                     ) : (
-                      <MapPin size={22} />
+                      <MapPin size={16} />
                     )}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-1.5">
                       <span
-                        className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
+                        className={`text-[9px] font-bold uppercase px-1.5 py-0.2 rounded-full ${
                           activeTarget.category === 'casualty'
                             ? 'bg-red-600 text-white animate-pulse'
                             : 'bg-emerald-600 text-white'
@@ -839,41 +839,41 @@ export default function UnifiedRadarMap({
                       >
                         {activeTarget.category === 'casualty' ? 'PRIORITY CASUALTY' : 'SAFE DESTINATION'}
                       </span>
-                      <span className="text-xs font-mono font-bold text-slate-700 dark:text-slate-300">
+                      <span className="text-[11px] font-mono font-bold text-slate-700 dark:text-slate-300">
                         Azimuth {String(activeTarget.bearing_deg).padStart(3, '0')}° ({activeTarget.cardinal})
                       </span>
                     </div>
-                    <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white truncate mt-1">
+                    <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white truncate mt-0.5">
                       {activeTarget.name}
                     </h3>
                   </div>
                 </div>
 
                 {/* Metrics Matrix */}
-                <div className="grid grid-cols-3 gap-2 bg-[#f8fafc] dark:bg-slate-950/80 p-3 rounded-xl border border-[#dbe6f0] dark:border-slate-800 text-center font-mono text-xs mb-3">
+                <div className="grid grid-cols-3 gap-1.5 bg-[#f8fafc] dark:bg-slate-950/80 p-2 rounded-lg border border-[#dbe6f0] dark:border-slate-800 text-center font-mono text-[11px] mb-2">
                   <div>
-                    <span className="text-[10px] text-slate-500 uppercase block font-medium">Distance</span>
-                    <strong className="text-sm font-black text-slate-900 dark:text-cyan-400">{activeTarget.distance_m} m</strong>
+                    <span className="text-[9px] text-slate-500 uppercase block font-medium">Distance</span>
+                    <strong className="text-xs font-black text-slate-900 dark:text-cyan-400">{activeTarget.distance_m} m</strong>
                   </div>
                   <div>
-                    <span className="text-[10px] text-slate-500 uppercase block font-medium">Bearing</span>
-                    <strong className="text-sm font-black text-slate-900 dark:text-cyan-400">{activeTarget.bearing_deg}° {activeTarget.cardinal}</strong>
+                    <span className="text-[9px] text-slate-500 uppercase block font-medium">Bearing</span>
+                    <strong className="text-xs font-black text-slate-900 dark:text-cyan-400">{activeTarget.bearing_deg}° {activeTarget.cardinal}</strong>
                   </div>
                   <div>
-                    <span className="text-[10px] text-slate-500 uppercase block font-medium">Walking Time</span>
-                    <strong className="text-sm font-black text-slate-900 dark:text-cyan-400">~{activeTarget.walk_time_min || 5} min</strong>
+                    <span className="text-[9px] text-slate-500 uppercase block font-medium">Walk</span>
+                    <strong className="text-xs font-black text-slate-900 dark:text-cyan-400">~{activeTarget.walk_time_min || 5} min</strong>
                   </div>
                 </div>
 
                 {/* Situation text / Description */}
                 {activeTarget.text && (
-                  <p className="text-xs text-slate-800 dark:text-slate-300 bg-[#f8fafc] dark:bg-slate-950/60 p-3 rounded-xl border border-[#dbe6f0] dark:border-slate-800/80 leading-relaxed mb-3 font-medium">
+                  <p className="text-[11px] text-slate-800 dark:text-slate-300 bg-[#f8fafc] dark:bg-slate-950/60 p-2 rounded-lg border border-[#dbe6f0] dark:border-slate-800/80 leading-relaxed mb-2 font-medium">
                     {activeTarget.text}
                   </p>
                 )}
 
                 {/* 1-Tap Action Buttons */}
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-1.5">
                   <button
                     type="button"
                     onClick={() => {
@@ -882,24 +882,24 @@ export default function UnifiedRadarMap({
                       }
                       playChirp(1000);
                     }}
-                    className="flex-1 py-2.5 px-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-98"
+                    className="flex-1 py-1.5 px-2.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center justify-center gap-1 shadow-xs transition-all active:scale-98"
                   >
-                    <Navigation size={14} />
-                    <span>Center Map on Destination</span>
+                    <Navigation size={13} />
+                    <span>Center Map on Target</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => playChirp(activeTarget.category === 'casualty' ? 1400 : 900)}
-                    className="py-2.5 px-3 rounded-xl border border-[#cbdbe9] dark:border-slate-700 hover:border-cyan-500 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 font-bold text-xs flex items-center justify-center gap-1.5 transition-all active:scale-98"
+                    className="py-1.5 px-2.5 rounded-lg border border-[#cbdbe9] dark:border-slate-700 hover:border-cyan-500 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 font-bold text-xs flex items-center justify-center gap-1 transition-all active:scale-98"
                   >
-                    <Volume2 size={14} className="text-cyan-600 dark:text-cyan-400" />
-                    <span>Ping Sound</span>
+                    <Volume2 size={13} className="text-cyan-600 dark:text-cyan-400" />
+                    <span>Ping</span>
                   </button>
                 </div>
               </div>
             ) : (
-              <div className="p-6 rounded-2xl border border-dashed border-[#cbdbe9] dark:border-slate-800 text-center text-xs text-slate-500 dark:text-slate-400">
+              <div className="p-4 rounded-xl border border-dashed border-[#cbdbe9] dark:border-slate-800 text-center text-xs text-slate-500 dark:text-slate-400">
                 Select a target destination from the dropdown above to point the compass and view tactical telemetry.
               </div>
             )}

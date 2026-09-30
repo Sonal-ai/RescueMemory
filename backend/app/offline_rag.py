@@ -600,15 +600,21 @@ def synthesize_offline_rag(
             for step in protocol["steps"][:3]:
                 p_lines.append(f"• {step}")
     # General greeting or conversational query
-    greetings = {"hi", "hello", "hey", "halo", "greetings", "good morning", "good afternoon", "good evening", "who are you", "what can you do"}
-    is_greeting = question.lower().strip() in greetings or bool(re.match(r"^(hi|hello|hey)[\s!.]*$", question.lower().strip()))
+    greetings = {
+        "hi", "hello", "hey", "halo", "greetings", "good morning", "good afternoon",
+        "good evening", "who are you", "what can you do", "hi there", "hey there", "hello there"
+    }
+    is_greeting = (
+        question.lower().strip() in greetings or
+        bool(re.match(r"^(hi|hello|hey|greetings|halo|howdy)([\s,!.]+.*)?$", question.lower().strip()))
+    )
 
     if is_greeting or not sections:
         sections = [
-            "### 🛡️ Stay Calm & Safe\n"
-            "• **Move away from hazards:** If you are near falling debris, rising floodwater, structural damage, fire, or downed power lines, move immediately to an open, secure area.\n"
-            "• **Contact emergency services:** If you or someone nearby is injured or in immediate danger, call **112 / 911** right away or broadcast via the **Emergency SOS** tab.\n"
-            "• **Tell me what you need:** I am your offline disaster assistant. Let me know what symptoms you see, if someone cannot walk or is bleeding, or if you need shelter or clean drinking water."
+            "### 🛡️ Rescue Assistant Ready\n"
+            "• **I am here to help you.** You are connected to RescueMemory.\n"
+            "• **Offline Disaster Protocols:** I can guide you through first aid (bleeding, fractures, CPR, burns), finding nearby casualties, and locating shelters.\n"
+            "• **How can I assist you right now?** Describe any injuries or hazards you observe, or choose one of the quick prompts below."
         ]
 
     return "\n\n".join(sections), action

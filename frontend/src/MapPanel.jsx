@@ -41,14 +41,14 @@ export default function MapPanel({
   return (
     <div className="select-none">
       <div
-        className="relative rounded-3xl overflow-hidden border border-slate-700/80 shadow-2xl"
+        className="relative rounded-2xl overflow-hidden border border-slate-700/80 shadow-md"
         style={{ backgroundColor: mapBg }}
       >
         <svg
           viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
           role="img"
           aria-label="Offline coordinate grid with report markers and nearby peer devices"
-          className={`w-full h-auto min-h-[260px] sm:min-h-[320px] ${onSelect ? 'cursor-crosshair' : ''}`}
+          className={`w-full h-auto min-h-[190px] sm:min-h-[280px] ${onSelect ? 'cursor-crosshair' : ''}`}
           onClick={pick}
         >
           <defs>

@@ -134,88 +134,88 @@ export default function VolunteerBoard() {
       subtitle="Gather nearby survivor reports, relay life-critical data peer-to-peer across hotspots, and uplink to command."
     >
       {error && (
-        <div role="alert" className="mb-6 p-4 rounded-2xl border border-red-800/80 bg-red-950/40 text-red-200 text-sm shadow-md">
+        <div role="alert" className="mb-2.5 p-2.5 rounded-xl border border-red-800/80 bg-red-950/40 text-red-200 text-xs shadow-md">
           {error}
         </div>
       )}
 
       {/* Telemetry Stat Cards */}
-      <div className="grid sm:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-2.5 sm:mb-3">
         <div className="stat-card">
-          <div className="p-3 rounded-2xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
-            <Radio size={24} />
+          <div className="p-1.5 sm:p-2 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 shrink-0">
+            <Radio size={16} />
           </div>
-          <div>
-            <div className="text-2xl sm:text-3xl font-black text-slate-100 font-mono">
+          <div className="min-w-0">
+            <div className="text-base sm:text-xl font-black text-slate-100 font-mono">
               {status?.local_event_count ?? '—'}
             </div>
-            <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mt-0.5">
-              Locally Stored Reports
+            <p className="text-[9.5px] sm:text-[11px] text-slate-400 font-semibold uppercase tracking-wider mt-0.5 truncate">
+              Local Reports
             </p>
           </div>
         </div>
 
         <div className="stat-card">
-          <div className="p-3 rounded-2xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
-            <Users size={24} />
+          <div className="p-1.5 sm:p-2 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20 shrink-0">
+            <Users size={16} />
           </div>
-          <div>
-            <div className="text-2xl sm:text-3xl font-black text-slate-100 font-mono">
+          <div className="min-w-0">
+            <div className="text-base sm:text-xl font-black text-slate-100 font-mono">
               {status?.by_visibility?.group ?? '—'}
             </div>
-            <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mt-0.5">
-              Private Group Reports
+            <p className="text-[9.5px] sm:text-[11px] text-slate-400 font-semibold uppercase tracking-wider mt-0.5 truncate">
+              Group Reports
             </p>
           </div>
         </div>
 
         <div className="stat-card">
-          <div className="p-3 rounded-2xl bg-rose-500/10 text-rose-400 border border-rose-500/20">
-            <ShieldAlert size={24} />
+          <div className="p-1.5 sm:p-2 rounded-xl bg-rose-500/10 text-rose-400 border border-rose-500/20 shrink-0">
+            <ShieldAlert size={16} />
           </div>
-          <div>
-            <div className="text-2xl sm:text-3xl font-black text-slate-100 font-mono">
+          <div className="min-w-0">
+            <div className="text-base sm:text-xl font-black text-slate-100 font-mono">
               {status?.by_visibility?.responders ?? '—'}
             </div>
-            <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mt-0.5">
-              Urgent Medical SOS Records
+            <p className="text-[9.5px] sm:text-[11px] text-slate-400 font-semibold uppercase tracking-wider mt-0.5 truncate">
+              Medical SOS
             </p>
           </div>
         </div>
       </div>
 
       {/* Tactical Display Mode Selector */}
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-6 bg-slate-900/90 border border-slate-800 p-2.5 rounded-2xl shadow-lg">
-        <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5 sm:mb-3 bg-slate-900/90 border border-slate-800 p-1.5 sm:p-2 rounded-xl shadow-md">
+        <div className="flex items-center gap-1.5">
           <button
             type="button"
             onClick={() => setDisplayMode('radar')}
-            className={`px-4 py-2 rounded-xl text-xs font-mono font-bold flex items-center gap-2 transition-all ${
+            className={`px-2.5 py-1.5 rounded-lg text-[11px] font-mono font-bold flex items-center gap-1.5 transition-all ${
               displayMode === 'radar'
                 ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20'
                 : 'text-slate-400 hover:text-white bg-slate-800/60 border border-slate-700/60'
             }`}
           >
-            <Radio size={15} className={displayMode === 'radar' ? 'animate-pulse' : ''} />
-            <span>POLAR PROXIMITY RADAR</span>
+            <Radio size={13} className={displayMode === 'radar' ? 'animate-pulse' : ''} />
+            <span>POLAR RADAR</span>
           </button>
           <button
             type="button"
             onClick={() => setDisplayMode('map')}
-            className={`px-4 py-2 rounded-xl text-xs font-mono font-bold flex items-center gap-2 transition-all ${
+            className={`px-2.5 py-1.5 rounded-lg text-[11px] font-mono font-bold flex items-center gap-1.5 transition-all ${
               displayMode === 'map'
                 ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20'
                 : 'text-slate-400 hover:text-white bg-slate-800/60 border border-slate-700/60'
             }`}
           >
-            <Shield size={15} />
-            <span>GRID MAP & PROVENANCE</span>
+            <Shield size={13} />
+            <span>GRID MAP</span>
           </button>
         </div>
 
-        <div className="hidden sm:flex items-center gap-2 text-xs font-mono text-cyan-400/80">
-          <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
-          <span>FIELD SCANNER ACTIVE</span>
+        <div className="hidden sm:flex items-center gap-1.5 text-[11px] font-mono text-cyan-400/80">
+          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping"></span>
+          <span>FIELD SCANNER</span>
         </div>
       </div>
 
@@ -230,11 +230,11 @@ export default function VolunteerBoard() {
           }}
         />
       ) : (
-        <div className="grid xl:grid-cols-[1.3fr_.7fr] gap-6">
+        <div className="grid xl:grid-cols-[1.3fr_.7fr] gap-3 sm:gap-4">
           {/* Left Column: Tactical Map & Incident Stream */}
           <Card title="Nearby Field Memory">
-            <div className="flex flex-wrap gap-2 mb-4 items-center justify-between">
-              <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap gap-2 mb-2.5 items-center justify-between">
+              <div className="flex flex-wrap gap-1">
               {['public', 'group', 'responders'].map((value) => (
                 <button
                   key={value}
@@ -242,7 +242,7 @@ export default function VolunteerBoard() {
                     setScope(value);
                     setSelected(null);
                   }}
-                  className={`text-xs px-3.5 py-1.5 rounded-xl font-bold uppercase tracking-wider border transition-all ${
+                  className={`text-[11px] px-2.5 py-1 rounded-lg font-bold uppercase tracking-wider border transition-all ${
                     scope === value
                       ? 'bg-cyan-950 border-cyan-500 text-cyan-300 shadow-sm'
                       : 'bg-[#07111e] border-slate-800 text-slate-400 hover:border-slate-700'
@@ -277,28 +277,28 @@ export default function VolunteerBoard() {
           <MapPanel center={center} items={items} peers={peers} onMarker={inspect} />
 
           {/* Incident Feed */}
-          <div className="mt-5 space-y-2 max-h-80 overflow-auto pr-1">
+          <div className="mt-3 space-y-1.5 max-h-72 overflow-auto pr-1">
             {items.length ? (
               items.map((item) => (
                 <button
                   key={item.id}
                   onClick={() => inspect(item)}
-                  className={`w-full text-left border p-3.5 rounded-2xl transition-all ${
+                  className={`w-full text-left border p-2.5 rounded-xl transition-all ${
                     selected?.id === item.id
                       ? 'border-cyan-500 bg-cyan-950/40 shadow-sm'
                       : 'border-slate-800 bg-[#07111e] hover:border-slate-700'
                   }`}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="font-bold capitalize text-sm text-slate-100">
+                    <span className="font-bold capitalize text-xs sm:text-sm text-slate-100">
                       {item.kind} · {item.status || item.severity}
                     </span>
-                    <span className="text-xs text-cyan-400 font-mono">
-                      {item.distance_m} m away
+                    <span className="text-[11px] text-cyan-400 font-mono">
+                      {item.distance_m} m
                     </span>
                   </div>
-                  <div className="text-xs text-slate-300 mt-1.5 leading-relaxed">{item.text}</div>
-                  <div className="text-[10px] text-slate-500 mt-2 font-mono flex items-center justify-between">
+                  <div className="text-[11.5px] text-slate-300 mt-1 leading-snug">{item.text}</div>
+                  <div className="text-[9.5px] text-slate-500 mt-1.5 font-mono flex items-center justify-between">
                     <span>{formatTime(item.observed_at)}</span>
                     <span>Origin: {item.origin_device}</span>
                   </div>
@@ -313,14 +313,14 @@ export default function VolunteerBoard() {
         </Card>
 
         {/* Right Column: Peer Synchronization & Provenance Journey */}
-        <div className="space-y-6">
+        <div className="space-y-3 sm:space-y-4">
           <Card title="Exchange Mesh Memory">
-            <p className="text-xs text-slate-400 mb-3 leading-relaxed">
+            <p className="text-[11px] text-slate-400 mb-2 leading-snug">
               Nearby sync operates directly over local Wi-Fi / hotspot. Zero internet connectivity is required.
             </p>
 
             {!setting('adminKey') && (
-              <div className="mb-3 p-2.5 rounded-xl border border-amber-500/30 bg-amber-950/30 text-amber-200 text-xs flex items-center justify-between">
+              <div className="mb-2 p-2 rounded-xl border border-amber-500/30 bg-amber-950/30 text-amber-200 text-[11px] flex items-center justify-between">
                 <span>Admin key required for sync operations.</span>
                 <button
                   type="button"
@@ -336,22 +336,22 @@ export default function VolunteerBoard() {
               </div>
             )}
 
-            <div className="text-xs text-slate-300 mb-3 bg-[#07111e] border border-slate-800 p-3 rounded-xl flex items-center justify-between">
+            <div className="text-xs text-slate-300 mb-2 bg-[#07111e] border border-slate-800 p-2 rounded-xl flex items-center justify-between">
               <div>
-                <span className="text-slate-500 block text-[10px] uppercase font-mono">Target Node</span>
-                <span className="font-bold text-slate-200">{setting('peerUrl') || 'Select active peer below'}</span>
+                <span className="text-slate-500 block text-[9.5px] uppercase font-mono">Target Node</span>
+                <span className="font-bold text-slate-200 text-xs">{setting('peerUrl') || 'Select active peer below'}</span>
               </div>
               {peers.length > 0 && (
-                <span className="text-emerald-400 font-bold flex items-center gap-1 text-xs">
-                  <Wifi size={13} /> {peers.length} on Wi-Fi
+                <span className="text-emerald-400 font-bold flex items-center gap-1 text-[11px]">
+                  <Wifi size={12} /> {peers.length} on Wi-Fi
                 </span>
               )}
             </div>
 
             {/* Selectable Nearby Peer Nodes */}
             {peers.length > 0 && (
-              <div className="mb-4 space-y-1.5 max-h-40 overflow-auto pr-1">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+              <div className="mb-2.5 space-y-1 max-h-36 overflow-auto pr-1">
+                <span className="text-[9.5px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">
                   Active Local Nodes on Hotspot:
                 </span>
                 {peers.map((p) => (
@@ -361,18 +361,18 @@ export default function VolunteerBoard() {
                       saveSetting('peerUrl', p.url);
                       refresh();
                     }}
-                    className={`w-full text-left p-2.5 rounded-xl border text-xs flex items-center justify-between transition-all ${
+                    className={`w-full text-left p-1.5 sm:p-2 rounded-lg border text-xs flex items-center justify-between transition-all ${
                       setting('peerUrl') === p.url
                         ? 'border-cyan-500 bg-cyan-950/40 text-cyan-200 font-bold'
                         : 'border-slate-800 bg-[#07111e] text-slate-300 hover:border-slate-700'
                     }`}
                   >
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-                      <span>{p.node_id}</span>
-                      <span className="text-[10px] text-slate-500 font-mono">({p.role})</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                      <span className="text-[11px]">{p.node_id}</span>
+                      <span className="text-[9.5px] text-slate-500 font-mono">({p.role})</span>
                     </div>
-                    <span className="text-cyan-400 font-mono text-[11px]">
+                    <span className="text-cyan-400 font-mono text-[10px]">
                       {p.distance_m != null ? `~${p.distance_m}m` : p.ip}
                     </span>
                   </button>
@@ -380,48 +380,48 @@ export default function VolunteerBoard() {
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-1.5">
               <button
                 disabled={Boolean(working)}
                 onClick={() => exchange('public')}
-                className="btn-secondary text-xs py-2.5 flex items-center justify-center gap-1.5"
+                className="btn-secondary text-xs py-1.5 flex items-center justify-center gap-1"
               >
-                <Radio size={14} /> Public Relay
+                <Radio size={13} /> Public Relay
               </button>
               <button
                 disabled={Boolean(working)}
                 onClick={() => exchange('group')}
-                className="btn-secondary text-xs py-2.5 flex items-center justify-center gap-1.5"
+                className="btn-secondary text-xs py-1.5 flex items-center justify-center gap-1"
               >
-                <Users size={14} /> Team Group
+                <Users size={13} /> Team Group
               </button>
               <button
                 disabled={Boolean(working)}
                 onClick={() => exchange('responders')}
-                className="btn-secondary text-xs py-2.5 flex items-center justify-center gap-1.5"
+                className="btn-secondary text-xs py-1.5 flex items-center justify-center gap-1"
               >
-                <ShieldCheck size={14} /> Responders
+                <ShieldCheck size={13} /> Responders
               </button>
               <button
                 disabled={Boolean(working)}
                 onClick={() => exchange('sos')}
-                className="btn-secondary text-xs py-2.5 flex items-center justify-center gap-1.5"
+                className="btn-secondary text-xs py-1.5 flex items-center justify-center gap-1"
               >
-                <ArrowUpRight size={14} /> SOS Uplink
+                <ArrowUpRight size={13} /> SOS Uplink
               </button>
             </div>
 
             <button
               disabled={Boolean(working)}
               onClick={() => exchange('global')}
-              className="btn-primary w-full mt-3 flex justify-center items-center gap-2 text-sm"
+              className="btn-primary w-full mt-2 flex justify-center items-center gap-1.5 text-xs sm:text-sm py-2"
             >
-              <CloudUpload size={17} />
-              <span>{working ? 'Syncing with Central Memory…' : 'Sync to Qdrant Cloud Central'}</span>
+              <CloudUpload size={15} />
+              <span>{working ? 'Syncing with Central…' : 'Sync to Qdrant Cloud Central'}</span>
             </button>
 
             {result && (
-              <pre className="text-[11px] text-emerald-300 bg-slate-950/80 rounded-xl p-3 overflow-auto mt-3 max-h-40 border border-emerald-900/50 font-mono">
+              <pre className="text-[10px] text-emerald-300 bg-slate-950/80 rounded-xl p-2.5 overflow-auto mt-2 max-h-36 border border-emerald-900/50 font-mono">
                 {JSON.stringify(result, null, 2)}
               </pre>
             )}

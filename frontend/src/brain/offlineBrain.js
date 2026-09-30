@@ -11,7 +11,15 @@
  * 4. Auto-Sync outbox manager that synchronizes local reports when connection is restored.
  */
 
-import { saveOfflineReport, getUnsyncedReports, markReportsSynced, getAllLocalReports } from './offlineStorage.js';
+import {
+  saveOfflineReport,
+  getUnsyncedReports,
+  markReportsSynced,
+  getAllLocalReports,
+  saveImportedReports,
+  saveImportedGuides,
+  getAllLocalGuides,
+} from './offlineStorage.js';
 import staticCards from '../../public/data/knowledge_cards.json';
 
 let cachedCards = Array.isArray(staticCards) ? staticCards : [];
@@ -34,13 +42,26 @@ function notifySync(state) {
 }
 
 /**
- * Loads pre-computed knowledge cards and 384-d vectors into browser memory.
+ * Loads pre-computed knowledge cards and 384-d vectors into browser memory,
+ * merging with any newly downloaded guides from Central sync.
  */
-export async function initOfflineBrain() {
-  if (!cachedCards || cachedCards.length === 0) {
-    cachedCards = Array.isArray(staticCards) ? staticCards : [];
+export async function initOfflineBrain(forceReload = false) {
+  if (forceReload || !cachedCards || cachedCards.length === 0) {
+    let base = Array.isArray(staticCards) ? [...staticCards] : [];
+    try {
+      const localGuides = await getAllLocalGuides();
+      if (Array.isArray(localGuides) && localGuides.length > 0) {
+        const guideMap = new Map();
+        base.forEach((c) => guideMap.set(c.id, c));
+        localGuides.forEach((g) => guideMap.set(g.id, { ...guideMap.get(g.id), ...g }));
+        base = Array.from(guideMap.values());
+      }
+    } catch (e) {
+      console.warn('[OfflineBrain] Error loading local guides:', e);
+    }
+    cachedCards = base;
   }
-  if (cachedVectors) {
+  if (cachedVectors && !forceReload) {
     return { cards: cachedCards, vectors: cachedVectors };
   }
   if (isInitializing) {
@@ -256,6 +277,17 @@ export async function searchKnowledgeLocal(queryText, limit = 5) {
     ? cachedCards
     : (Array.isArray(staticCards) ? staticCards : []);
 
+  const isGreetingQuery = /^(hi|hello|hey|greetings|halo|howdy)([\s,!.]+.*)?$/i.test((queryText || '').trim());
+  if (isGreetingQuery) {
+    return {
+      source_cards: [],
+      text: `### 🛡️ Rescue Assistant Ready\n\n• **I am here to help you.** You are connected to RescueMemory's offline emergency brain.\n• **On-Device Protocols:** I can guide you through first aid (bleeding, fractures, CPR, burns), finding nearby casualties, and locating shelters.\n• **How can I assist you right now?** Describe any injuries or hazards you observe, or select one of the quick prompts below.`,
+      warnings: [],
+      on_device: true,
+      is_greeting: true,
+    };
+  }
+
   const rawWords = (queryText || '')
     .toLowerCase()
     .replace(/[^\w\s]/g, ' ')
@@ -368,6 +400,11 @@ function resolveServerUrl(path) {
   if (!path || path.startsWith('http://') || path.startsWith('https://')) return path;
   const custom = (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('rescue.backendUrl')) || '';
   if (custom) return `${custom.replace(/\/$/, '')}${path.startsWith('/') ? path : `/${path}`}`;
+  const envUrl = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_BACKEND_URL) || '';
+  if (envUrl) return `${envUrl.replace(/\/$/, '')}${path.startsWith('/') ? path : `/${path}`}`;
+  if (typeof window !== 'undefined' && (window.Capacitor?.isNativePlatform?.() || window.location?.origin?.includes('localhost') || window.location?.protocol === 'capacitor:')) {
+    return `https://rescuememory-backend.onrender.com${path.startsWith('/') ? path : `/${path}`}`;
+  }
   return path;
 }
 
@@ -378,48 +415,120 @@ export async function triggerAutoSync() {
   }
 
   try {
-    // Check if FastAPI edge server is reachable
-    const healthCheck = await fetch(resolveServerUrl('/health'), { method: 'GET', signal: AbortSignal.timeout(3000) });
+    // Check if Central/Edge server is reachable
+    const healthCheck = await fetch(resolveServerUrl('/health'), { method: 'GET', signal: AbortSignal.timeout(3500) });
     if (!healthCheck.ok) {
       notifySync({ state: 'server_unreachable', pendingCount: (await getUnsyncedReports()).length });
       return;
     }
 
     const unsynced = await getUnsyncedReports();
-    if (unsynced.length === 0) {
-      notifySync({ state: 'synced', pendingCount: 0 });
-      return;
-    }
-
     notifySync({ state: 'syncing', pendingCount: unsynced.length });
-    console.log(`[AutoSync] Flushing ${unsynced.length} pending reports to server...`);
 
+    // 1. UPLINK: Flush pending local reports to server with cryptographic idempotency
     const syncedIds = [];
-    for (const report of unsynced) {
-      try {
-        const payload = {
-          entity_id: report.entity_id || report.id,
-          kind: report.kind || 'incident',
-          text: report.text,
-          location: report.location,
-          scope: report.scope || 'public',
-        };
-        const res = await fetch(resolveServerUrl('/api/reports'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        if (res.ok) {
-          syncedIds.push(report.id);
+    if (unsynced.length > 0) {
+      console.log(`[AutoSync] Uplinking ${unsynced.length} pending reports to server...`);
+      for (const report of unsynced) {
+        try {
+          const payload = {
+            idempotency_key: report.id,
+            entity_id: report.entity_id || report.id,
+            kind: report.kind || 'sos',
+            text: report.text,
+            location: report.location,
+            visibility: report.visibility || 'public',
+            status: report.status || 'needs_help',
+            severity: report.severity || 'red',
+            reporter_id: report.reporter_id || 'survivor-mobile',
+            observed_at: report.created_at || report.observed_at || new Date().toISOString(),
+          };
+          const res = await fetch(resolveServerUrl('/api/reports'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          // HTTP 200 or HTTP 409 (duplicate / already indexed) confirms durability on server
+          if (res.ok || res.status === 409) {
+            syncedIds.push(report.id);
+          }
+        } catch (err) {
+          console.warn(`[AutoSync] Failed to uplink report ${report.id}:`, err);
         }
-      } catch (err) {
-        console.warn(`[AutoSync] Failed to upload report ${report.id}:`, err);
+      }
+
+      if (syncedIds.length > 0) {
+        await markReportsSynced(syncedIds);
+        console.log(`[AutoSync] Successfully synced ${syncedIds.length} reports to server.`);
       }
     }
 
-    if (syncedIds.length > 0) {
-      await markReportsSynced(syncedIds);
-      console.log(`[AutoSync] Successfully synced ${syncedIds.length} reports to server.`);
+    // 2. DOWNLINK: Download latest remote SOS, hazards, and shelters into local IndexedDB
+    const meshKey = (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem('rescue.meshKey') || sessionStorage.getItem('rescue.adminKey'))) || 'rescue-mesh-shared-key-2026';
+    const syncHeaders = {
+      Accept: 'application/json',
+      'X-Mesh-Key': meshKey,
+    };
+
+    // A. Pull public events from Central export
+    try {
+      const exportRes = await fetch(resolveServerUrl('/api/sync/export?scope=public&limit=64'), {
+        method: 'GET',
+        headers: syncHeaders,
+        signal: AbortSignal.timeout(5000),
+      });
+      if (exportRes.ok) {
+        const data = await exportRes.json();
+        if (Array.isArray(data?.events) && data.events.length > 0) {
+          const imp = await saveImportedReports(data.events);
+          if (imp > 0) console.log(`[AutoSync] Downlinked ${imp} new public events into local storage.`);
+        }
+      }
+    } catch (e) {
+      console.warn('[AutoSync] Public export downlink skip:', e.message);
+    }
+
+    // B. Pull nearby map observations (open endpoint)
+    try {
+      const nearbyRes = await fetch(resolveServerUrl('/api/map/nearby'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({
+          location: { lat: 28.7041, lon: 77.1025 },
+          radius_m: 50000,
+        }),
+        signal: AbortSignal.timeout(5000),
+      });
+      if (nearbyRes.ok) {
+        const nearbyData = await nearbyRes.json();
+        const items = Array.isArray(nearbyData?.items) ? nearbyData.items : (Array.isArray(nearbyData?.events) ? nearbyData.events : []);
+        if (items.length > 0) {
+          await saveImportedReports(items);
+        }
+      }
+    } catch (e) {
+      console.warn('[AutoSync] Nearby downlink skip:', e.message);
+    }
+
+    // C. Pull verified emergency guidance updates
+    try {
+      const guidesRes = await fetch(resolveServerUrl('/api/sync/guides/export'), {
+        method: 'GET',
+        headers: syncHeaders,
+        signal: AbortSignal.timeout(5000),
+      });
+      if (guidesRes.ok) {
+        const guidesData = await guidesRes.json();
+        if (Array.isArray(guidesData?.guides) && guidesData.guides.length > 0) {
+          const gCount = await saveImportedGuides(guidesData.guides);
+          if (gCount > 0) {
+            console.log(`[AutoSync] Downlinked ${gCount} verified guidance cards.`);
+            await initOfflineBrain(true);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[AutoSync] Guides downlink skip:', e.message);
     }
 
     const remaining = (await getUnsyncedReports()).length;

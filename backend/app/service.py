@@ -339,8 +339,14 @@ class RescueService:
                 ai_status = "answered" if ai_answer else "unavailable"
 
         # Only return cards if they genuinely match the query, preventing irrelevant checklists on greetings
-        greetings = {"hi", "hello", "hey", "halo", "greetings", "good morning", "good afternoon", "good evening"}
-        is_greeting = request.text.lower().strip() in greetings
+        greetings = {
+            "hi", "hello", "hey", "halo", "greetings", "good morning", "good afternoon",
+            "good evening", "hi there", "hey there", "hello there", "who are you", "what can you do"
+        }
+        is_greeting = (
+            request.text.lower().strip() in greetings or
+            bool(re.match(r"^(hi|hello|hey|greetings|halo|howdy)([\s,!.]+.*)?$", request.text.lower().strip()))
+        )
         if is_greeting:
             matching_cards = []
         elif grounded_cards:

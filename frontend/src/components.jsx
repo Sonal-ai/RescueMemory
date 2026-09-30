@@ -23,6 +23,7 @@ export { useNodeStatus };
 
 export function SettingsPanel({ onClose }) {
   const [values, setValues] = useState({
+    backendUrl: setting('backendUrl'),
     adminKey: setting('adminKey'),
     responderKey: setting('responderKey'),
     groupId: setting('groupId'),
@@ -64,6 +65,7 @@ export function SettingsPanel({ onClose }) {
 
         <div className="grid sm:grid-cols-2 gap-4">
           {[
+            ['backendUrl', 'Central Server URL', 'https://rescuememory-backend.onrender.com'],
             ['reporterId', 'Survivor / Device Name', 'e.g. survivor-alpha'],
             ['peerUrl', 'Nearby Node Hotspot URL', 'http://192.168.43.12:8001'],
             ['groupId', 'Private Team Group ID', 'Optional team identifier'],
@@ -85,22 +87,40 @@ export function SettingsPanel({ onClose }) {
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3 mt-7 pt-4 border-t border-[#dbe6f0] dark:border-slate-800">
-          <button
-            type="button"
-            className="text-xs font-mono text-cyan-600 dark:text-cyan-400 hover:underline cursor-pointer"
-            onClick={() => {
-              setValues({
-                reporterId: 'survivor-1',
-                peerUrl: 'http://127.0.0.1:8000',
-                groupId: 'camp-alpha',
-                groupToken: 'demo-mesh-shared-key',
-                adminKey: 'demo-node-admin-key',
-                responderKey: 'demo-responder-shared-key'
-              });
-            }}
-          >
-            ⚡ Fill Demo Keys (Prototype)
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[11px] text-slate-500 font-medium">Quick Presets:</span>
+            <button
+              type="button"
+              className="text-[11px] font-mono py-1 px-2 rounded-lg bg-cyan-50 dark:bg-slate-800 text-cyan-700 dark:text-cyan-300 border border-cyan-200 dark:border-slate-700 hover:bg-cyan-100 cursor-pointer"
+              onClick={() => setValues(v => ({ ...v, backendUrl: 'http://10.0.2.2:8000' }))}
+            >
+              📱 Emulator (10.0.2.2)
+            </button>
+            <button
+              type="button"
+              className="text-[11px] font-mono py-1 px-2 rounded-lg bg-emerald-50 dark:bg-slate-800 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-slate-700 hover:bg-emerald-100 cursor-pointer"
+              onClick={() => setValues(v => ({ ...v, backendUrl: 'http://10.122.244.213:8000' }))}
+            >
+              📶 Wi-Fi PC (10.122.244.213)
+            </button>
+            <button
+              type="button"
+              className="text-[11px] font-mono py-1 px-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700 hover:bg-slate-200 cursor-pointer"
+              onClick={() => {
+                setValues({
+                  backendUrl: 'http://10.0.2.2:8000',
+                  reporterId: 'survivor-1',
+                  peerUrl: 'http://10.0.2.2:8000',
+                  groupId: 'camp-alpha',
+                  groupToken: 'demo-mesh-shared-key',
+                  adminKey: 'demo-node-admin-key',
+                  responderKey: 'demo-responder-shared-key'
+                });
+              }}
+            >
+              ⚡ Fill Demo Keys
+            </button>
+          </div>
           <div className="flex items-center gap-3">
             <button className="btn-secondary text-sm" onClick={onClose}>
               Cancel
@@ -123,15 +143,15 @@ export function QuietTelemetryPill({ health, sync, error }) {
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-emerald-300 dark:border-emerald-500/30 bg-emerald-100/90 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-300 hover:bg-emerald-200/80 dark:hover:bg-emerald-950/60 text-xs font-bold transition-all active:scale-95 shadow-xs"
+        className="flex items-center gap-1.5 px-2 py-1 rounded-lg border border-emerald-300 dark:border-emerald-500/30 bg-emerald-100/90 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-300 hover:bg-emerald-200/80 dark:hover:bg-emerald-950/60 text-[11px] font-bold transition-all active:scale-95 shadow-xs"
         title="Offline system status & peer telemetry"
       >
-        <span className="relative flex h-2 w-2">
+        <span className="relative flex h-1.5 w-1.5">
           <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 bg-emerald-500"></span>
-          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-600"></span>
+          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-600"></span>
         </span>
         <span className="hidden sm:inline font-bold">Offline Ready</span>
-        <ChevronDown size={13} className={`opacity-70 transition-transform ${open ? 'rotate-180' : ''}`} />
+        <ChevronDown size={11} className={`opacity-70 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
       {open && (
@@ -220,24 +240,24 @@ export function Shell({ title, subtitle, children }) {
   }, [theme]);
 
   return (
-    <div className="app-shell min-h-screen bg-[#f0f5fa] dark:bg-[#080d19] text-slate-900 dark:text-slate-100 flex flex-col pb-16 sm:pb-0">
+    <div className="app-shell min-h-screen bg-[#f0f5fa] dark:bg-[#080d19] text-slate-900 dark:text-slate-100 flex flex-col pb-12 sm:pb-0">
       {/* Top Tactical Navigation Header */}
       <header className="app-header border-b border-[#dbe6f0] dark:border-cyan-500/15 bg-white/95 dark:bg-[#0b1528]/95 sticky top-0 z-40 backdrop-blur-xl shadow-xs">
         <div className="h-0.5 w-full bg-gradient-to-r from-red-500 via-cyan-400 to-emerald-400 opacity-90" />
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2.5 flex items-center justify-between gap-3">
+        <div className="max-w-7xl mx-auto px-2.5 sm:px-6 py-1.5 sm:py-2.5 flex items-center justify-between gap-2">
           
           {/* Logo & Tactical Identity */}
-          <Link to="/" className="flex items-center gap-2 font-black tracking-tight text-base sm:text-lg group shrink min-w-0">
-            <span className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl bg-gradient-to-br from-red-500 via-rose-500 to-red-600 flex items-center justify-center text-white shadow-md shadow-red-500/25 group-hover:scale-105 transition-transform shrink-0">
-              <Activity size={18} />
+          <Link to="/" className="flex items-center gap-1.5 sm:gap-2 font-black tracking-tight text-sm sm:text-base group shrink-0">
+            <span className="h-7 w-7 sm:h-8 sm:w-8 rounded-lg bg-gradient-to-br from-red-500 via-rose-500 to-red-600 flex items-center justify-center text-white shadow-sm shadow-red-500/25 group-hover:scale-105 transition-transform shrink-0">
+              <Activity size={15} />
             </span>
-            <span className="font-extrabold text-base sm:text-lg tracking-tight text-slate-900 dark:text-white truncate">
+            <span className="font-extrabold text-sm sm:text-base tracking-tight text-slate-900 dark:text-white">
               RescueMemory
             </span>
           </Link>
 
           {/* Right Action Bar */}
-          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+          <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
             {/* Quiet Status Pill */}
             <QuietTelemetryPill health={health} sync={sync} error={error} />
 
@@ -247,7 +267,7 @@ export function Shell({ title, subtitle, children }) {
               title={online ? 'Internet Connected (Cloud AI Gemini & Sync ON). Tap to switch to Disconnected Offline Mode' : 'Offline Disaster Mode (Local Edge Memory Only). Tap to enable Internet & Cloud AI'}
               aria-label={online ? 'Disconnect Internet (Enter Offline Mode)' : 'Connect Internet (Enable Cloud AI)'}
               aria-pressed={online}
-              className={`flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-xl border text-xs font-bold cursor-pointer transition-all active:scale-95 ${
+              className={`flex items-center gap-1 px-1.5 sm:px-2.5 py-1 rounded-lg border text-[11px] font-bold cursor-pointer transition-all active:scale-95 ${
                 online
                   ? 'bg-emerald-100 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-400 border-emerald-300 dark:border-emerald-500/30 hover:bg-emerald-200/60 dark:hover:bg-emerald-500/20'
                   : 'bg-amber-100 dark:bg-amber-500/10 text-amber-800 dark:text-amber-400 border-amber-300 dark:border-amber-500/30 hover:bg-amber-200/60 dark:hover:bg-amber-500/20'
@@ -256,17 +276,17 @@ export function Shell({ title, subtitle, children }) {
             >
               {online ? (
                 <>
-                  <span className="relative flex h-2 w-2">
+                  <span className="relative flex h-1.5 w-1.5">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-600"></span>
+                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-600"></span>
                   </span>
-                  <Wifi size={13} className="text-emerald-600 dark:text-emerald-500" />
+                  <Wifi size={12} className="text-emerald-600 dark:text-emerald-500" />
                   <span className="hidden md:inline">Online</span>
                 </>
               ) : (
                 <>
-                  <span className="inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
-                  <WifiOff size={13} className="text-amber-600 dark:text-amber-500" />
+                  <span className="inline-flex rounded-full h-1.5 w-1.5 bg-amber-500"></span>
+                  <WifiOff size={12} className="text-amber-600 dark:text-amber-500" />
                   <span className="hidden md:inline">Offline</span>
                 </>
               )}
@@ -278,18 +298,18 @@ export function Shell({ title, subtitle, children }) {
               title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
               aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
               aria-pressed={theme === 'light'}
-              className="theme-toggle-btn flex items-center justify-center p-1.5 sm:px-3 sm:py-1.5 rounded-xl border border-[#cbdbe9] dark:border-slate-700 bg-[#e6f0f7] dark:bg-slate-800 text-xs font-bold cursor-pointer transition-all active:scale-95 text-slate-800 dark:text-slate-200"
+              className="theme-toggle-btn flex items-center justify-center p-1 sm:px-2.5 sm:py-1 rounded-lg border border-[#cbdbe9] dark:border-slate-700 bg-[#e6f0f7] dark:bg-slate-800 text-[11px] font-bold cursor-pointer transition-all active:scale-95 text-slate-800 dark:text-slate-200"
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
             >
               {theme === 'dark' ? (
                 <>
-                  <Sun size={15} className="text-amber-400" />
-                  <span className="hidden md:inline text-slate-200">Light</span>
+                  <Sun size={13} className="text-amber-400" />
+                  <span className="hidden md:inline text-slate-200 ml-1">Light</span>
                 </>
               ) : (
                 <>
-                  <Moon size={15} className="text-indigo-600" />
-                  <span className="hidden md:inline text-slate-800">Dark</span>
+                  <Moon size={13} className="text-indigo-600" />
+                  <span className="hidden md:inline text-slate-800 ml-1">Dark</span>
                 </>
               )}
             </button>
@@ -298,29 +318,29 @@ export function Shell({ title, subtitle, children }) {
             <button
               title="Device & Mesh Settings"
               aria-label="Device & Mesh Settings"
-              className="icon-btn p-1.5 rounded-xl text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:white"
+              className="p-1 rounded-lg border border-[#cbdbe9] dark:border-slate-700 bg-[#e6f0f7] dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all active:scale-95"
               onClick={() => setSettingsOpen(true)}
             >
-              <Settings2 size={17} />
+              <Settings2 size={14} />
             </button>
           </div>
         </div>
       </header>
 
       {/* Main Screen Canvas */}
-      <main className="w-full max-w-7xl mx-auto px-2.5 sm:px-6 py-2.5 sm:py-6 flex-1 overflow-x-hidden">
+      <main className="w-full max-w-7xl mx-auto px-1.5 sm:px-4 py-1.5 sm:py-4 flex-1 overflow-x-hidden">
         {/* Minimal Reassuring Header */}
         {(title || subtitle || last) && (
-          <div className="flex flex-wrap items-center justify-between gap-2 mb-3 sm:mb-4">
+          <div className="flex flex-wrap items-center justify-between gap-1.5 mb-2 sm:mb-3">
             {(title || subtitle) && (
               <div>
                 {title && (
-                  <h1 className="text-lg sm:text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">
+                  <h1 className="text-base sm:text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
                     {title}
                   </h1>
                 )}
                 {subtitle && (
-                  <p className="hidden sm:block text-slate-600 dark:text-slate-400 text-xs sm:text-sm mt-0.5 leading-relaxed font-medium">
+                  <p className="hidden sm:block text-slate-600 dark:text-slate-400 text-xs mt-0.5 leading-relaxed font-medium">
                     {subtitle}
                   </p>
                 )}
@@ -328,8 +348,8 @@ export function Shell({ title, subtitle, children }) {
             )}
 
             {last && (
-              <div className="text-[11px] sm:text-xs text-slate-700 dark:text-slate-400 bg-[#e6f0f7] dark:bg-slate-900/90 border border-[#cce0ef] dark:border-slate-800/80 rounded-xl px-2.5 py-1 flex items-center gap-1.5 shadow-xs font-mono font-medium">
-                <Cloud size={12} className="text-cyan-600 dark:text-cyan-400" />
+              <div className="text-[10px] sm:text-xs text-slate-700 dark:text-slate-400 bg-[#e6f0f7] dark:bg-slate-900/90 border border-[#cce0ef] dark:border-slate-800/80 rounded-lg px-2 py-0.5 flex items-center gap-1 shadow-xs font-mono font-medium">
+                <Cloud size={11} className="text-cyan-600 dark:text-cyan-400" />
                 <span>Synced {new Date(last).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
               </div>
             )}
@@ -340,10 +360,10 @@ export function Shell({ title, subtitle, children }) {
         {error && (
           <div
             role="alert"
-            className="mb-6 rounded-2xl border border-red-300 dark:border-red-800/80 bg-red-50 dark:bg-red-950/50 p-4 text-red-800 dark:text-red-200 text-sm flex items-center justify-between gap-3 shadow-sm"
+            className="mb-4 rounded-xl border border-red-300 dark:border-red-800/80 bg-red-50 dark:bg-red-950/50 p-3 text-red-800 dark:text-red-200 text-xs flex items-center justify-between gap-2 shadow-sm"
           >
-            <div className="flex items-center gap-2.5">
-              <CloudOff size={18} className="text-red-500 dark:text-red-400 shrink-0" />
+            <div className="flex items-center gap-2">
+              <CloudOff size={16} className="text-red-500 dark:text-red-400 shrink-0" />
               <span>Edge node is currently unreachable: {error}. Start the backend or connect to its Wi-Fi hotspot.</span>
             </div>
           </div>
@@ -360,17 +380,17 @@ export function Shell({ title, subtitle, children }) {
 
 export function Card({ title, subtitle, action, children, className = '' }) {
   return (
-    <section className={`app-card bg-white dark:bg-[#0b1626] border border-[#e2e8f0] dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xs transition-all ${className}`}>
+    <section className={`app-card bg-white dark:bg-[#0b1626] border border-[#e2e8f0] dark:border-slate-800 rounded-2xl p-3 sm:p-4 md:p-5 shadow-xs transition-all ${className}`}>
       {(title || action) && (
-        <div className="flex items-center justify-between mb-4 border-b border-[#eef2f6] dark:border-slate-800 pb-3">
+        <div className="flex items-center justify-between mb-2.5 border-b border-[#eef2f6] dark:border-slate-800 pb-2">
           <div>
             {title && (
-              <h2 className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-slate-100 tracking-tight flex items-center gap-2">
-                <span className="w-1.5 h-4 rounded-full bg-cyan-600 dark:bg-cyan-400 inline-block shrink-0"></span>
-                <span className="text-slate-900 dark:text-slate-100 font-extrabold">{title}</span>
+              <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 tracking-tight flex items-center gap-1.5">
+                <span className="w-1 h-3.5 rounded-full bg-cyan-600 dark:bg-cyan-400 inline-block shrink-0"></span>
+                <span className="text-slate-900 dark:text-slate-100 font-bold">{title}</span>
               </h2>
             )}
-            {subtitle && <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">{subtitle}</p>}
+            {subtitle && <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5 leading-relaxed">{subtitle}</p>}
           </div>
           {action && <div>{action}</div>}
         </div>

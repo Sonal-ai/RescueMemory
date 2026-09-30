@@ -181,43 +181,43 @@ export default function SafePlace() {
   return (
     <div className="min-h-screen bg-[#050914] text-white font-sans flex flex-col">
       {/* TOP HEADER */}
-      <header className="flex justify-between items-center px-6 sm:px-10 py-5 border-b border-slate-800 bg-[#091122]">
-        <div className="flex items-center gap-6">
+      <header className="flex justify-between items-center px-3 sm:px-6 py-2.5 sm:py-3.5 border-b border-slate-800 bg-[#091122]">
+        <div className="flex items-center gap-2.5 sm:gap-4">
           <button
             onClick={() => navigate('/')}
-            className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
+            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
             title="Back to Crisis HUD"
           >
-            <ArrowLeft className="w-6 h-6" />
+            <ArrowLeft className="w-5 h-5" />
           </button>
           <div>
-            <h2 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
-              <ShieldCheck className="text-emerald-400 w-7 h-7" />
+            <h2 className="text-xs sm:text-base font-bold text-white flex items-center gap-1.5">
+              <ShieldCheck className="text-emerald-400 w-5 h-5" />
               Find a Safe Location
             </h2>
-            <p className="text-xs sm:text-sm text-slate-400 font-mono mt-0.5">
-              Qdrant Edge Vector Rerouting · 100% Offline Satellite Trilateration
+            <p className="text-[10px] sm:text-xs text-slate-400 font-mono mt-0.5">
+              Qdrant Edge Vector Rerouting · 100% Offline
             </p>
           </div>
         </div>
-        <div className="bg-emerald-950/60 border border-emerald-700/80 text-emerald-400 px-4 py-2 rounded-full text-xs font-bold flex items-center gap-2">
-          <div className="w-2.5 h-2.5 bg-emerald-400 rounded-full animate-pulse"></div>
-          OFFLINE VECTOR BRAIN
+        <div className="bg-emerald-950/60 border border-emerald-700/80 text-emerald-400 px-2.5 py-1 rounded-full text-[10px] sm:text-xs font-bold flex items-center gap-1.5">
+          <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></div>
+          OFFLINE BRAIN
         </div>
       </header>
 
       {/* MAIN CONTENT */}
-      <div className="flex-grow p-4 sm:p-8 grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="flex-grow p-2 sm:p-4 grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4">
         {/* LEFT COLUMN: Interactive Filters */}
-        <div className="lg:col-span-3 bg-[#0f172a] border border-slate-800 rounded-2xl p-6 flex flex-col">
-          <h3 className="text-xl font-bold mb-6 text-slate-100 flex items-center justify-between">
+        <div className="lg:col-span-3 bg-[#0f172a] border border-slate-800 rounded-xl p-3 sm:p-4 flex flex-col">
+          <h3 className="text-xs sm:text-sm font-bold mb-3 text-slate-100 flex items-center justify-between">
             <span>Filter Criteria</span>
-            {loading && <RefreshCw className="w-4 h-4 text-cyan-400 animate-spin" />}
+            {loading && <RefreshCw className="w-3.5 h-3.5 text-cyan-400 animate-spin" />}
           </h3>
 
-          <div className="mb-6">
-            <h4 className="text-xs text-slate-400 font-bold tracking-widest uppercase mb-4">YOUR NEEDS</h4>
-            <div className="space-y-3">
+          <div className="mb-3">
+            <h4 className="text-[10px] text-slate-400 font-bold tracking-widest uppercase mb-2">YOUR NEEDS</h4>
+            <div className="space-y-1.5">
               {[
                 ['water', 'Water & Purification', Droplet],
                 ['medical', 'Medical & First Aid', HeartPulse],
@@ -227,16 +227,16 @@ export default function SafePlace() {
                 <button
                   key={key}
                   onClick={() => toggleNeed(key)}
-                  className={`w-full flex items-center gap-3 p-2.5 rounded-xl border text-left text-sm transition-all ${
+                  className={`w-full flex items-center gap-2 p-1.5 sm:p-2 rounded-lg border text-left text-xs transition-all ${
                     needs[key]
                       ? 'bg-emerald-950/40 border-emerald-500 text-emerald-200 font-semibold'
                       : 'bg-[#07111e] border-slate-800 text-slate-400 hover:border-slate-700'
                   }`}
                 >
                   {needs[key] ? (
-                    <CheckSquare className="w-5 h-5 text-emerald-400 shrink-0" />
+                    <CheckSquare className="w-4 h-4 text-emerald-400 shrink-0" />
                   ) : (
-                    <Square className="w-5 h-5 text-slate-600 shrink-0" />
+                    <Square className="w-4 h-4 text-slate-600 shrink-0" />
                   )}
                   <span>{label}</span>
                 </button>
@@ -244,9 +244,9 @@ export default function SafePlace() {
             </div>
           </div>
 
-          <div className="mb-6">
-            <h4 className="text-xs text-slate-400 font-bold tracking-widest uppercase mb-4">AVOID HAZARDS</h4>
-            <div className="space-y-3">
+          <div className="mb-3">
+            <h4 className="text-[10px] text-slate-400 font-bold tracking-widest uppercase mb-2">AVOID HAZARDS</h4>
+            <div className="space-y-1.5">
               {[
                 ['flooded', 'Flooded areas & deep water'],
                 ['electrical', 'Downed electrical wires'],
@@ -254,16 +254,16 @@ export default function SafePlace() {
                 <button
                   key={key}
                   onClick={() => toggleAvoid(key)}
-                  className={`w-full flex items-center gap-3 p-2.5 rounded-xl border text-left text-sm transition-all ${
+                  className={`w-full flex items-center gap-2 p-1.5 sm:p-2 rounded-lg border text-left text-xs transition-all ${
                     avoid[key]
                       ? 'bg-rose-950/40 border-rose-500 text-rose-200 font-semibold'
                       : 'bg-[#07111e] border-slate-800 text-slate-400 hover:border-slate-700'
                   }`}
                 >
                   {avoid[key] ? (
-                    <CheckSquare className="w-5 h-5 text-rose-400 shrink-0" />
+                    <CheckSquare className="w-4 h-4 text-rose-400 shrink-0" />
                   ) : (
-                    <Square className="w-5 h-5 text-slate-600 shrink-0" />
+                    <Square className="w-4 h-4 text-slate-600 shrink-0" />
                   )}
                   <span>{label}</span>
                 </button>
@@ -271,18 +271,18 @@ export default function SafePlace() {
             </div>
           </div>
 
-          <div className="mt-auto pt-4 border-t border-slate-800">
-            <div className="flex justify-between items-center mb-2">
-              <h4 className="text-xs text-slate-400 font-bold tracking-widest uppercase">WALKING RADIUS</h4>
-              <button onClick={acquireGps} className="text-xs text-cyan-400 hover:underline font-mono">
+          <div className="mt-auto pt-2.5 border-t border-slate-800">
+            <div className="flex justify-between items-center mb-1">
+              <h4 className="text-[10px] text-slate-400 font-bold tracking-widest uppercase">WALKING RADIUS</h4>
+              <button onClick={acquireGps} className="text-[11px] text-cyan-400 hover:underline font-mono">
                 GPS
               </button>
             </div>
-            <div className="flex justify-between items-end mb-2">
-              <span className="text-2xl font-bold font-mono text-cyan-300">
-                {radiusKm} <span className="text-sm text-slate-400">km</span>
+            <div className="flex justify-between items-end mb-1">
+              <span className="text-base sm:text-lg font-bold font-mono text-cyan-300">
+                {radiusKm} <span className="text-xs text-slate-400">km</span>
               </span>
-              <span className="text-slate-400 text-xs font-mono">~{Math.round(radiusKm * 14)} min walk</span>
+              <span className="text-slate-400 text-[10px] font-mono">~{Math.round(radiusKm * 14)} min walk</span>
             </div>
             <input
               type="range"
@@ -291,40 +291,40 @@ export default function SafePlace() {
               step="0.5"
               value={radiusKm}
               onChange={(e) => setRadiusKm(parseFloat(e.target.value))}
-              className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+              className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-400"
             />
           </div>
         </div>
 
         {/* MIDDLE COLUMN: Dynamic Shelter Cards */}
-        <div className="lg:col-span-4 flex flex-col gap-4">
-          <h4 className="text-xs text-slate-400 font-bold tracking-widest uppercase">
+        <div className="lg:col-span-4 flex flex-col gap-2.5 sm:gap-3">
+          <h4 className="text-[10px] text-slate-400 font-bold tracking-widest uppercase">
             SUGGESTED SAFE SHELTERS ({shelters.length})
           </h4>
 
           {shelters.map((shelter, idx) => (
             <div
               key={shelter.id}
-              className={`bg-[#0f172a] border rounded-2xl p-5 transition-all shadow-md ${
+              className={`bg-[#0f172a] border rounded-xl p-2.5 sm:p-3.5 transition-all shadow-sm ${
                 idx === 0
                   ? 'border-cyan-500 shadow-cyan-900/20 bg-gradient-to-br from-[#0f172a] to-[#071325]'
                   : 'border-slate-800 hover:border-slate-700'
               }`}
             >
-              <div className="flex justify-between items-start mb-2">
-                <h3 className="text-lg font-bold text-slate-100">{shelter.name}</h3>
-                <span className="bg-emerald-950/80 text-emerald-400 border border-emerald-700/60 px-2.5 py-0.5 rounded-full text-xs font-bold">
+              <div className="flex justify-between items-start mb-1">
+                <h3 className="text-xs sm:text-sm font-bold text-slate-100">{shelter.name}</h3>
+                <span className="bg-emerald-950/80 text-emerald-400 border border-emerald-700/60 px-2 py-0.5 rounded-full text-[10px] font-bold">
                   {shelter.status}
                 </span>
               </div>
-              <p className="text-slate-400 text-xs mb-3 font-mono">
+              <p className="text-slate-400 text-[11px] mb-2 font-mono">
                 {shelter.type} · {shelter.dist_m} m away · ~{shelter.walk_min} min walk
               </p>
-              <div className="flex gap-1.5 mb-4 flex-wrap">
+              <div className="flex gap-1 mb-2.5 flex-wrap">
                 {shelter.facilities.map((fac) => (
                   <span
                     key={fac}
-                    className="bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1 rounded-full text-xs font-medium"
+                    className="bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded-full text-[10px] font-medium"
                   >
                     {fac}
                   </span>
@@ -332,35 +332,35 @@ export default function SafePlace() {
               </div>
               <button
                 onClick={() => handleNavigate(shelter)}
-                className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-sm py-3 rounded-xl flex items-center justify-center gap-2 transition shadow-lg shadow-cyan-900/30"
+                className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs py-2 rounded-lg flex items-center justify-center gap-1.5 transition shadow-sm"
               >
-                <Route className="w-4 h-4" /> Navigate on Compass HUD
+                <Route className="w-3.5 h-3.5" /> Navigate on Compass HUD
               </button>
             </div>
           ))}
 
           {/* Exclusion Warning (Negative Vector output) */}
           {excluded && (
-            <div className="bg-rose-950/40 border border-rose-800 rounded-2xl p-4 flex items-center gap-3 text-rose-300 text-xs">
-              <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />
-              <span>
-                <strong>{excluded.name || excluded.entity_id || 'CP-17'} Excluded:</strong> {excluded.hazard || 'Flooded entrance, live electrical wires detected.'} Rerouted to nearest safe facility automatically.
+            <div className="bg-rose-950/40 border border-rose-800 rounded-xl p-2.5 flex items-center gap-2 text-rose-300 text-xs">
+              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+              <span className="leading-snug">
+                <strong>{excluded.name || excluded.entity_id || 'CP-17'} Excluded:</strong> {excluded.hazard || 'Flooded entrance, live electrical wires detected.'} Rerouted automatically.
               </span>
             </div>
           )}
         </div>
 
         {/* RIGHT COLUMN: Map View */}
-        <div className="lg:col-span-5 bg-[#0b1120] border border-slate-800 rounded-2xl overflow-hidden min-h-[400px] flex flex-col">
-          <div className="p-3 border-b border-slate-800 bg-[#07111e] flex justify-between items-center">
-            <span className="text-xs font-bold font-mono text-cyan-300 uppercase tracking-wider">
+        <div className="lg:col-span-5 bg-[#0b1120] border border-slate-800 rounded-xl overflow-hidden min-h-[220px] sm:min-h-[340px] flex flex-col">
+          <div className="p-2 sm:p-2.5 border-b border-slate-800 bg-[#07111e] flex justify-between items-center">
+            <span className="text-[11px] font-bold font-mono text-cyan-300 uppercase tracking-wider">
               TACTICAL FIELD MAP
             </span>
-            <span className="text-[11px] font-mono text-slate-400">
+            <span className="text-[10px] font-mono text-slate-400">
               Center: {center.lat.toFixed(4)}, {center.lon.toFixed(4)}
             </span>
           </div>
-          <div className="flex-1 p-3">
+          <div className="flex-1 p-2">
             <MapPanel center={center} items={mapItems} onMarker={(item) => handleNavigate(item)} dark={true} />
           </div>
         </div>

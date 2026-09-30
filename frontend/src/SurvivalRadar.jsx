@@ -381,53 +381,53 @@ export default function SurvivalRadar({
   }, [isAligned, activeCompassTarget, lastHapticTime]);
 
   return (
-    <div className="flex flex-col gap-4 text-slate-900 dark:text-slate-100">
+    <div className="flex flex-col gap-2.5 sm:gap-3 text-slate-900 dark:text-slate-100">
       {/* Calm Primary Navigation Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-white/90 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-2xl p-3 sm:p-4 shadow-sm backdrop-blur-md">
+      <div className="flex flex-wrap items-center justify-between gap-2 bg-white/90 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl p-2 sm:p-2.5 shadow-xs backdrop-blur-md">
         {/* Mode Switcher */}
-        <div className="flex bg-slate-100 dark:bg-slate-950 p-1 rounded-xl border border-slate-200 dark:border-slate-800">
+        <div className="flex bg-slate-100 dark:bg-slate-950 p-0.5 rounded-lg border border-slate-200 dark:border-slate-800">
           <button
             type="button"
             onClick={() => {
               setViewMode('compass');
               if (summary.nearest_casualty) setSelectedTarget(summary.nearest_casualty);
             }}
-            className={`px-3.5 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-all ${
+            className={`px-2.5 py-1.5 rounded-md text-[11px] font-bold flex items-center gap-1.5 transition-all ${
               viewMode === 'compass'
-                ? 'bg-red-500 text-white shadow-md shadow-red-500/25'
+                ? 'bg-red-500 text-white shadow-sm shadow-red-500/25'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
-            <Compass className="w-4 h-4 text-inherit" />
-            <span>Survivor Compass</span>
+            <Compass className="w-3.5 h-3.5 text-inherit" />
+            <span>Compass</span>
             {summary.total_casualties > 0 && (
-              <span className="w-2 h-2 rounded-full bg-red-400 animate-pulse"></span>
+              <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse"></span>
             )}
           </button>
 
           <button
             type="button"
             onClick={() => setViewMode('radar')}
-            className={`px-3.5 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-all ${
+            className={`px-2.5 py-1.5 rounded-md text-[11px] font-bold flex items-center gap-1.5 transition-all ${
               viewMode === 'radar'
-                ? 'bg-cyan-600 dark:bg-cyan-500 text-white dark:text-slate-950 shadow-md shadow-cyan-500/20'
+                ? 'bg-cyan-600 dark:bg-cyan-500 text-white dark:text-slate-950 shadow-sm shadow-cyan-500/20'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
-            <Radio className="w-4 h-4 text-inherit" />
-            <span>Polar Radar</span>
+            <Radio className="w-3.5 h-3.5 text-inherit" />
+            <span>Radar</span>
           </button>
 
           <button
             type="button"
             onClick={() => setViewMode('list')}
-            className={`px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+            className={`px-2 py-1.5 rounded-md text-[11px] font-bold flex items-center gap-1 transition-all ${
               viewMode === 'list'
                 ? 'bg-slate-800 text-white dark:bg-slate-700'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
-            <Crosshair className="w-4 h-4 text-inherit" />
+            <Crosshair className="w-3.5 h-3.5 text-inherit" />
             <span className="hidden sm:inline">Directory</span>
             <span>({items.length})</span>
           </button>

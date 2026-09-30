@@ -69,9 +69,11 @@ if ($LASTEXITCODE -ne 0) { Write-Error "Gradle build failed"; exit 1 }
 
 $APK_PATH = Join-Path $ANDROID_DIR "app\build\outputs\apk\debug\app-debug.apk"
 if (Test-Path $APK_PATH) {
+    Copy-Item $APK_PATH -Destination (Join-Path $ROOT_DIR "RescueMemory-debug.apk") -Force
+    Copy-Item $APK_PATH -Destination (Join-Path (Split-Path -Parent $ROOT_DIR) "RescueMemory-debug.apk") -Force -ErrorAction SilentlyContinue
     Write-Host "`nSUCCESS! APK Generated at:" -ForegroundColor Green
     Write-Host "$APK_PATH" -ForegroundColor White
-    explorer.exe /select,$APK_PATH
+    Write-Host "Copied to: RescueMemory-debug.apk" -ForegroundColor Green
 } else {
     Write-Error "APK file not found after build"
 }

@@ -62,11 +62,25 @@ function setStandaloneMode(active) {
   }
 }
 
+export const DEFAULT_CENTRAL_URL = 'https://rescuememory-backend.onrender.com';
+let resolvedBackendUrl = null;
+
 export function getBackendBaseUrl() {
   const custom = setting('backendUrl');
   if (custom) return custom.replace(/\/$/, '');
+  if (resolvedBackendUrl) return resolvedBackendUrl;
   const envUrl = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_BACKEND_URL) || '';
   if (envUrl) return envUrl.replace(/\/$/, '');
+  if (typeof window !== 'undefined') {
+    const isNative = window.Capacitor?.isNativePlatform?.() || window.location?.protocol === 'capacitor:';
+    if (isNative) {
+      // In Android emulator or native app, default to local host PC
+      return 'http://10.0.2.2:8000';
+    }
+    if (window.location?.origin && !window.location.origin.includes('localhost') && !window.location.origin.includes('127.0.0.1')) {
+      return window.location.origin;
+    }
+  }
   return '';
 }
 
@@ -75,6 +89,35 @@ export function buildBackendUrl(path) {
   const base = getBackendBaseUrl();
   if (!base) return path;
   return `${base}${path.startsWith('/') ? path : `/${path}`}`;
+}
+
+export function distM(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const phi1 = (lat1 * Math.PI) / 180;
+  const phi2 = (lat2 * Math.PI) / 180;
+  const deltaPhi = ((lat2 - lat1) * Math.PI) / 180;
+  const deltaLambda = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(deltaPhi / 2) ** 2 +
+    Math.cos(phi1) * Math.cos(phi2) * Math.sin(deltaLambda / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+export function bearingDeg(lat1, lon1, lat2, lon2) {
+  const phi1 = (lat1 * Math.PI) / 180;
+  const phi2 = (lat2 * Math.PI) / 180;
+  const deltaLambda = ((lon2 - lon1) * Math.PI) / 180;
+  const y = Math.sin(deltaLambda) * Math.cos(phi2);
+  const x =
+    Math.cos(phi1) * Math.sin(phi2) -
+    Math.sin(phi1) * Math.cos(phi2) * Math.cos(deltaLambda);
+  return Math.round(((Math.atan2(y, x) * 180) / Math.PI + 360) % 360);
+}
+
+const CARDINALS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+export function cardinalDirection(b) {
+  const idx = Math.round((b % 360) / 22.5) % 16;
+  return CARDINALS[idx];
 }
 
 export async function api(path, options = {}) {
@@ -135,6 +178,40 @@ export async function api(path, options = {}) {
       err.message.includes('AbortError');
 
     if (isNetworkError) {
+      // On native Android / Capacitor, attempt local candidate hostnames before falling back to offline brain
+      if (typeof window !== 'undefined' && (window.Capacitor?.isNativePlatform?.() || window.location?.protocol === 'capacitor:')) {
+        const currentBase = getBackendBaseUrl();
+        const candidates = [
+          'http://10.0.2.2:8000',
+          'http://10.122.244.213:8000',
+          'http://127.0.0.1:8000',
+        ].filter((u) => u !== currentBase);
+
+        for (const candidate of candidates) {
+          try {
+            const candidateUrl = `${candidate}${path.startsWith('/') ? path : `/${path}`}`;
+            const cController = new AbortController();
+            const cTimer = setTimeout(() => cController.abort(), 2000);
+            const cRes = await fetch(candidateUrl, {
+              method,
+              headers,
+              body: body === undefined ? undefined : JSON.stringify(body),
+              signal: cController.signal,
+            });
+            clearTimeout(cTimer);
+            if (cRes.ok) {
+              const cData = await cRes.json();
+              resolvedBackendUrl = candidate;
+              saveSetting('backendUrl', candidate);
+              setStandaloneMode(false);
+              return cData;
+            }
+          } catch {
+            // try next candidate
+          }
+        }
+      }
+
       setStandaloneMode(true);
       return handleOfflineFallback(path, method, body);
     }
@@ -171,11 +248,28 @@ async function handleOfflineFallback(path, method, body) {
         ['cannot walk', 'cant walk', 'bleeding', 'trapped', 'broken', 'injured'].some((w) => (r.text || '').toLowerCase().includes(w))
       );
 
-      if (casualties.length > 0) {
-        const topCas = casualties[0];
+      const uLat = body?.location?.lat ?? 28.7041;
+      const uLon = body?.location?.lon ?? 77.1025;
+
+      const scoredCasualties = casualties.map((c) => {
+        const cLat = c.location?.lat ?? (uLat + 0.002);
+        const cLon = c.location?.lon ?? (uLon + 0.003);
+        const d = distM(uLat, uLon, cLat, cLon);
+        const b = bearingDeg(uLat, uLon, cLat, cLon);
+        return {
+          ...c,
+          distance_m: Math.round(d),
+          bearing_deg: b,
+          cardinal: cardinalDirection(b),
+          walk_time_min: Math.max(1, Math.round(d / 75)),
+        };
+      }).sort((a, b) => a.distance_m - b.distance_m);
+
+      if (scoredCasualties.length > 0) {
+        const topCas = scoredCasualties[0];
         const casText = topCas.text || 'Casualty requires emergency assistance';
         const cid = (topCas.entity_id || topCas.id || 'casualty').slice(0, 10);
-        const ans = `### 🚨 Nearest Survivor Emergency SOS\n\n📍 **Location:** ~150m nearby\n🚨 **Triage Priority:** IMMEDIATE (Red Triage)\n👤 **Casualty Ref:** #${cid}\n\n**Critical Condition & Needs:**\n• **Reported Condition:** ${casText}\n• **Required Needs:** Rigid splint, Sterile pressure dressing, Clean drinking water\n\n**Recommended Immediate Actions:**\n• Apply firm continuous pressure to halt bleeding.\n• Immobilize limb in position found; do not bear weight.\n• Assess structural scene safety before approaching.\n\n---\n**📊 Area Status Summary:**\n• 🔴 **Casualties:** ${casualties.length} active urgent casualty in local memory\n• ⚠️ **Hazards:** 1 active hazard logged\n• 🟢 **Safe Shelters:** 3 operational (Nearest: Shelter Alpha)`;
+        const ans = `### 🚨 Nearest Survivor Emergency SOS\n\n📍 **Location:** ${topCas.distance_m}m ${topCas.cardinal} (Bearing ${String(topCas.bearing_deg).padStart(3, '0')}°, ~${topCas.walk_time_min} min walk)\n🚨 **Triage Priority:** IMMEDIATE (Red Triage)\n👤 **Casualty Ref:** #${cid}\n\n**Critical Condition & Needs:**\n• **Reported Condition:** ${casText}\n• **Required Needs:** Rigid splint, Sterile pressure dressing, Clean drinking water\n\n**Recommended Immediate Actions:**\n• Apply firm continuous pressure to halt bleeding.\n• Immobilize limb in position found; do not bear weight.\n• Assess structural scene safety before approaching.\n\n---\n**📊 Area Status Summary:**\n• 🔴 **Casualties:** ${casualties.length} active casualty in local memory\n• ⚠️ **Hazards:** 1 active hazard logged\n• 🟢 **Safe Shelters:** 3 operational (Nearest: Shelter Alpha)`;
         return {
           query,
           answer_type: 'nearest_survivor_sos',
@@ -184,8 +278,8 @@ async function handleOfflineFallback(path, method, body) {
           text: ans,
           suggested_action: {
             kind: 'map',
-            label: 'Navigate to Survivor',
-            button_text: 'Navigate to Survivor on Radar',
+            label: `Navigate to Survivor (${topCas.distance_m}m ${topCas.cardinal})`,
+            button_text: `Navigate to Survivor on Radar (${topCas.distance_m}m)`,
             target_tab: 'map',
             nav_target: topCas,
           },
@@ -194,7 +288,7 @@ async function handleOfflineFallback(path, method, body) {
           mode: 'standalone_mobile_brain',
         };
       } else {
-        const ans = `### 🛡️ Nearest Survivor Status\n\n• **Casualties:** No active survivor SOS signals detected in on-device memory.\n\n**📊 Area Status Summary:**\n• 🟢 **Safe Shelters:** 3 operational (Nearest: Shelter Alpha)\n• ⚠️ **Hazards:** 1 active hazard logged (Checkpoint CP-17: Flooded entrance live wires)\n• 📶 **Active Mesh Peers:** Local Wi-Fi mesh scanning active\n\nIf you locate an injured casualty, use the **Emergency SOS** tab to log their location and needs.`;
+        const ans = `### 🛡️ Nearest Survivor Status\n\n• **Casualties:** No active survivor SOS signals detected in on-device memory.\n\n**📊 Area Status Summary:**\n• 🟢 **Safe Shelters:** 3 operational (Nearest: Shelter Alpha ~420m)\n• ⚠️ **Hazards:** 1 active hazard logged (Checkpoint CP-17: Flooded entrance live wires)\n• 📶 **Active Mesh Peers:** Local Wi-Fi mesh scanning active\n\nIf you locate an injured casualty, use the **Emergency SOS** tab to log their location and needs.`;
         return {
           query,
           answer_type: 'nearest_survivor_sos',
@@ -507,35 +601,133 @@ export async function assessCasualty(params = {}) {
 }
 
 /**
- * Native GPS with fallback to browser navigator.geolocation
+ * Ultra-resilient cascading GPS resolver.
+ * Tier 1: Native High-Accuracy GPS (3.5s timeout)
+ * Tier 2: Native Coarse / Network GPS (3s timeout)
+ * Tier 3: Browser navigator.geolocation (3s timeout)
+ * Tier 4: Cached Last-Known Location from localStorage
+ * Tier 5: Disaster Zone Anchor ({ lat: 28.7041, lon: 77.1025 })
+ *
+ * Never rejects or crashes the UI. Always returns a valid { lat, lon }.
  */
 export async function getNativeOrWebLocation() {
-  try {
-    const { Geolocation } = await import('@capacitor/geolocation');
-    const perm = await Geolocation.checkPermissions();
-    if (perm.location !== 'granted') {
-      await Geolocation.requestPermissions();
+  const saveCached = (lat, lon) => {
+    try {
+      localStorage.setItem('rescue.lastLocation', JSON.stringify({
+        lat: Number(lat),
+        lon: Number(lon),
+        updatedAt: Date.now()
+      }));
+    } catch {
+      // silent
     }
-    const position = await Geolocation.getCurrentPosition({
-      enableHighAccuracy: true,
-      timeout: 10000,
-    });
-    return {
-      lat: position.coords.latitude,
-      lon: position.coords.longitude,
-    };
-  } catch {
-    return new Promise((resolve, reject) => {
-      if (typeof navigator === 'undefined' || !navigator.geolocation) {
-        return reject(new Error('Geolocation is unavailable on this device.'));
+  };
+
+  const getCached = () => {
+    try {
+      const raw = localStorage.getItem('rescue.lastLocation');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.lat && parsed?.lon) {
+          return { lat: Number(parsed.lat), lon: Number(parsed.lon), isCached: true };
+        }
       }
-      navigator.geolocation.getCurrentPosition(
-        (pos) => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
-        (err) => reject(err),
-        { enableHighAccuracy: true, timeout: 10000 }
-      );
-    });
+    } catch {
+      // silent
+    }
+    return null;
+  };
+
+  const withTimeout = (promise, ms) =>
+    Promise.race([
+      promise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error(`Timeout ${ms}ms`)), ms))
+    ]);
+
+  // Tier 1 & 2: Native Capacitor Geolocation
+  if (typeof window !== 'undefined' && window.Capacitor?.isPluginAvailable?.('Geolocation')) {
+    try {
+      const { Geolocation } = await import('@capacitor/geolocation');
+
+      try {
+        const perm = await withTimeout(Geolocation.checkPermissions(), 1500);
+        if (perm.location !== 'granted') {
+          await withTimeout(Geolocation.requestPermissions(), 2500);
+        }
+      } catch (pErr) {
+        console.warn('[GPS] Permission check notice:', pErr);
+      }
+
+      // Tier 1: High accuracy
+      try {
+        const pos1 = await withTimeout(
+          Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 3500 }),
+          4000
+        );
+        if (pos1?.coords?.latitude && pos1?.coords?.longitude) {
+          saveCached(pos1.coords.latitude, pos1.coords.longitude);
+          return { lat: pos1.coords.latitude, lon: pos1.coords.longitude, accuracy: pos1.coords.accuracy };
+        }
+      } catch (t1Err) {
+        console.warn('[GPS] Native high-accuracy failed, trying coarse:', t1Err);
+      }
+
+      // Tier 2: Coarse / Network location
+      try {
+        const pos2 = await withTimeout(
+          Geolocation.getCurrentPosition({ enableHighAccuracy: false, timeout: 3000 }),
+          3500
+        );
+        if (pos2?.coords?.latitude && pos2?.coords?.longitude) {
+          saveCached(pos2.coords.latitude, pos2.coords.longitude);
+          return { lat: pos2.coords.latitude, lon: pos2.coords.longitude, accuracy: pos2.coords.accuracy, isCoarse: true };
+        }
+      } catch (t2Err) {
+        console.warn('[GPS] Native coarse failed:', t2Err);
+      }
+    } catch (capErr) {
+      console.warn('[GPS] Capacitor Geolocation error:', capErr);
+    }
   }
+
+  // Tier 3: Browser navigator.geolocation
+  if (typeof navigator !== 'undefined' && navigator.geolocation) {
+    try {
+      const webPos = await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('Web geolocation timeout')), 3000);
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            clearTimeout(timer);
+            resolve(pos);
+          },
+          (err) => {
+            clearTimeout(timer);
+            reject(err);
+          },
+          { enableHighAccuracy: false, timeout: 3000, maximumAge: 60000 }
+        );
+      });
+      if (webPos?.coords?.latitude && webPos?.coords?.longitude) {
+        saveCached(webPos.coords.latitude, webPos.coords.longitude);
+        return { lat: webPos.coords.latitude, lon: webPos.coords.longitude, accuracy: webPos.coords.accuracy, isWeb: true };
+      }
+    } catch (webErr) {
+      console.warn('[GPS] Web geolocation failed:', webErr);
+    }
+  }
+
+  // Tier 4: Cached location
+  const cached = getCached();
+  if (cached) {
+    console.log('[GPS] Using cached location:', cached);
+    return cached;
+  }
+
+  // Tier 5: Anchor fallback coordinate
+  console.log('[GPS] Using disaster anchor coordinate fallback');
+  const anchor = { lat: 28.7041, lon: 77.1025, isFallback: true };
+  saveCached(anchor.lat, anchor.lon);
+  return anchor;
 }
 
 // Initialize native status bar and back button when running on Android

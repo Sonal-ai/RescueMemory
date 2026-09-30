@@ -72,100 +72,100 @@ export default function CentralHQ() {
   return (
     <div className="min-h-screen bg-[#050914] text-white font-sans flex flex-col">
       {/* TOP HEADER */}
-      <header className="flex flex-wrap justify-between items-center px-6 sm:px-10 py-5 border-b border-slate-800 bg-[#091122] gap-4">
-        <div className="flex items-center gap-6">
-          <Link to="/" className="flex items-center gap-3 group">
-            <AlertCircle className="text-red-500 w-8 h-8 group-hover:scale-105 transition-transform" />
-            <span className="text-2xl font-bold tracking-tight">RescueMemory</span>
+      <header className="flex flex-wrap justify-between items-center px-3 sm:px-6 py-2.5 sm:py-3.5 border-b border-slate-800 bg-[#091122] gap-2.5">
+        <div className="flex items-center gap-3 sm:gap-4">
+          <Link to="/" className="flex items-center gap-2 group">
+            <AlertCircle className="text-red-500 w-5 h-5 group-hover:scale-105 transition-transform" />
+            <span className="text-base sm:text-lg font-bold tracking-tight">RescueMemory</span>
           </Link>
           <div>
-            <h2 className="text-xl sm:text-2xl font-bold text-slate-100 flex items-center gap-2">
-              Central Command & Relay HQ
+            <h2 className="text-xs sm:text-base font-bold text-slate-100 flex items-center gap-1.5">
+              Central Command HQ
             </h2>
-            <p className="text-xs sm:text-sm text-slate-400 font-mono mt-0.5">
-              Node: {health?.node_id || 'central_HQ'} · Role: {health?.role || 'central'} · {health?.engine || 'Qdrant Edge Vector Engine'}
+            <p className="text-[10px] sm:text-xs text-slate-400 font-mono mt-0.5">
+              Node: {health?.node_id || 'central_HQ'} · {health?.role || 'central'}
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="bg-emerald-950/60 border border-emerald-700/80 text-emerald-400 px-4 py-2 rounded-full text-xs font-bold flex items-center gap-2">
-            <Upload className="w-4 h-4" />
-            {health?.cloud_configured ? 'Qdrant Cloud Synced' : 'Mesh Gateway Online'}
+        <div className="flex items-center gap-2 sm:gap-3">
+          <div className="bg-emerald-950/60 border border-emerald-700/80 text-emerald-400 px-2.5 py-1 rounded-full text-[10px] sm:text-xs font-bold flex items-center gap-1.5">
+            <Upload className="w-3.5 h-3.5" />
+            {health?.cloud_configured ? 'Cloud Synced' : 'Mesh Gateway Online'}
           </div>
-          <span className="text-xl sm:text-2xl font-mono text-slate-400">
+          <span className="text-xs sm:text-sm font-mono text-slate-400">
             {lastUplink ? lastUplink.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}
           </span>
         </div>
       </header>
 
       {/* STATS ROW */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 p-4 sm:p-8 pb-2">
-        <div className="bg-[#0f172a] border border-slate-800 rounded-2xl p-5">
-          <div className="text-slate-400 text-xs font-mono uppercase mb-2">Devices Online</div>
-          <div className="text-3xl sm:text-5xl font-black mb-2 text-cyan-300 font-mono">{peerCount + 1}</div>
-          <div className="text-slate-500 text-xs font-mono">{peerCount} Wi-Fi peers · 1 local HQ</div>
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 sm:gap-2.5 p-2 sm:p-4 pb-1">
+        <div className="bg-[#0f172a] border border-slate-800 rounded-xl p-2 sm:p-2.5">
+          <div className="text-slate-400 text-[9.5px] font-mono uppercase mb-0.5">Devices Online</div>
+          <div className="text-xl sm:text-2xl font-black mb-0.5 text-cyan-300 font-mono">{peerCount + 1}</div>
+          <div className="text-slate-500 text-[9.5px] font-mono truncate">{peerCount} peers · 1 HQ</div>
         </div>
 
-        <div className="bg-[#0f172a] border border-slate-800 rounded-2xl p-5">
-          <div className="text-slate-400 text-xs font-mono uppercase mb-2">Events in Ledger</div>
-          <div className="text-3xl sm:text-5xl font-black mb-2 text-slate-100 font-mono">{totalEvents}</div>
-          <div className="text-slate-500 text-xs font-mono">0 duplicates · Verified immutable</div>
+        <div className="bg-[#0f172a] border border-slate-800 rounded-xl p-2 sm:p-2.5">
+          <div className="text-slate-400 text-[9.5px] font-mono uppercase mb-0.5">Events Ledger</div>
+          <div className="text-xl sm:text-2xl font-black mb-0.5 text-slate-100 font-mono">{totalEvents}</div>
+          <div className="text-slate-500 text-[9.5px] font-mono truncate">0 duplicates</div>
         </div>
 
-        <div className="bg-rose-950/40 border-2 border-rose-800/80 rounded-2xl p-5">
-          <div className="text-slate-400 text-xs font-mono uppercase mb-2">Urgent Medical SOS</div>
-          <div className="text-3xl sm:text-5xl font-black mb-2 text-rose-500 font-mono">{responderEvents}</div>
-          <div className="text-slate-400 text-xs font-mono">Responder Triage Queue</div>
+        <div className="bg-rose-950/40 border-2 border-rose-800/80 rounded-xl p-2 sm:p-2.5">
+          <div className="text-slate-400 text-[9.5px] font-mono uppercase mb-0.5">Urgent SOS</div>
+          <div className="text-xl sm:text-2xl font-black mb-0.5 text-rose-500 font-mono">{responderEvents}</div>
+          <div className="text-slate-400 text-[9.5px] font-mono truncate">Triage Queue</div>
         </div>
 
-        <div className="bg-[#0f172a] border border-slate-800 rounded-2xl p-5">
-          <div className="text-slate-400 text-xs font-mono uppercase mb-2">Unsafe Checkpoints</div>
-          <div className="text-3xl sm:text-5xl font-black mb-2 text-amber-400 font-mono">{unsafeCount}</div>
-          <div className="text-slate-500 text-xs font-mono">{unsafeSubtitle}</div>
+        <div className="bg-[#0f172a] border border-slate-800 rounded-xl p-2 sm:p-2.5">
+          <div className="text-slate-400 text-[9.5px] font-mono uppercase mb-0.5">Checkpoints</div>
+          <div className="text-xl sm:text-2xl font-black mb-0.5 text-amber-400 font-mono">{unsafeCount}</div>
+          <div className="text-slate-500 text-[9.5px] font-mono truncate">{unsafeSubtitle}</div>
         </div>
 
-        <div className="bg-[#0f172a] border border-slate-800 rounded-2xl p-5">
-          <div className="text-slate-400 text-xs font-mono uppercase mb-2">Protocols Indexed</div>
-          <div className="text-3xl sm:text-5xl font-black mb-2 font-mono text-emerald-400">
+        <div className="bg-[#0f172a] border border-slate-800 rounded-xl p-2 sm:p-2.5 col-span-2 sm:col-span-1">
+          <div className="text-slate-400 text-[9.5px] font-mono uppercase mb-0.5">Protocols</div>
+          <div className="text-xl sm:text-2xl font-black mb-0.5 font-mono text-emerald-400">
             {health?.guides ?? 420}
           </div>
-          <div className="text-slate-500 text-xs font-mono">Signed Reference Manuals</div>
+          <div className="text-slate-500 text-[9.5px] font-mono truncate">Signed Protocols</div>
         </div>
       </div>
 
       {/* MAIN CONTENT: Map + Incident Stream */}
-      <div className="flex-grow p-4 sm:p-8 grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="flex-grow p-2 sm:p-4 grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4">
         {/* LEFT: Live Map (7 cols) */}
-        <div className="lg:col-span-7 bg-[#0b1120] border border-slate-800 rounded-2xl overflow-hidden min-h-[450px] flex flex-col">
-          <div className="p-3 bg-[#07111e] border-b border-slate-800 flex justify-between items-center">
-            <span className="text-xs font-bold font-mono text-cyan-300 uppercase tracking-wider flex items-center gap-2">
-              <Radio size={14} className="animate-pulse" /> Command Operational Sector Map
+        <div className="lg:col-span-7 bg-[#0b1120] border border-slate-800 rounded-xl overflow-hidden min-h-[220px] sm:min-h-[340px] flex flex-col">
+          <div className="p-2 sm:p-2.5 bg-[#07111e] border-b border-slate-800 flex justify-between items-center">
+            <span className="text-[11px] font-bold font-mono text-cyan-300 uppercase tracking-wider flex items-center gap-1.5">
+              <Radio size={12} className="animate-pulse" /> Command Sector Map
             </span>
-            <span className="text-[11px] font-mono text-slate-400">
-              5 km Qdrant HNSW Radius
+            <span className="text-[10px] font-mono text-slate-400">
+              5 km HNSW Radius
             </span>
           </div>
-          <div className="flex-1 p-3">
+          <div className="flex-1 p-2">
             <MapPanel center={DEFAULT_CENTER} items={mapItems} peers={peers} dark={true} />
           </div>
         </div>
 
         {/* RIGHT: Incident Stream (5 cols) */}
-        <div className="lg:col-span-5 bg-[#0f172a] border border-slate-800 rounded-2xl p-6 flex flex-col">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-xl font-bold text-slate-100 flex items-center gap-2">
+        <div className="lg:col-span-5 bg-[#0f172a] border border-slate-800 rounded-xl p-3 sm:p-4 flex flex-col">
+          <div className="flex justify-between items-center mb-2.5">
+            <h3 className="text-xs sm:text-sm font-bold text-slate-100 flex items-center gap-1.5">
               Incident Ledger Stream
-              {loading && <RefreshCw size={16} className="text-cyan-400 animate-spin" />}
+              {loading && <RefreshCw size={13} className="text-cyan-400 animate-spin" />}
             </h3>
-            <span className="text-slate-400 font-mono text-xs tracking-wider">LIVE MESH RELAY</span>
+            <span className="text-slate-400 font-mono text-[10px] tracking-wider">LIVE MESH RELAY</span>
           </div>
 
-          <div className="flex-grow space-y-3 overflow-y-auto max-h-[400px] pr-1">
+          <div className="flex-grow space-y-1.5 overflow-y-auto max-h-[320px] pr-1">
             {events.length > 0 ? (
               events.map((ev) => (
-                <div key={ev.id} className="flex items-start gap-4 p-3 rounded-xl border border-slate-800 bg-[#07111e]">
+                <div key={ev.id} className="flex items-start gap-2.5 p-2 rounded-lg border border-slate-800 bg-[#07111e]">
                   <div
-                    className={`w-3 h-3 rounded-full mt-1.5 shrink-0 ${
+                    className={`w-2 h-2 rounded-full mt-1 shrink-0 ${
                       ev.severity === 'red' || ev.kind === 'incident'
                         ? 'bg-rose-500'
                         : ev.kind === 'hazard'
@@ -174,11 +174,11 @@ export default function CentralHQ() {
                     }`}
                   />
                   <div className="flex-grow min-w-0">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-slate-100 font-bold text-sm truncate">{ev.text}</span>
-                      <span className="text-slate-500 font-mono text-xs shrink-0">{formatTime(ev.observed_at)}</span>
+                    <div className="flex items-center justify-between gap-1.5">
+                      <span className="text-slate-100 font-bold text-xs truncate">{ev.text}</span>
+                      <span className="text-slate-500 font-mono text-[10px] shrink-0">{formatTime(ev.observed_at)}</span>
                     </div>
-                    <div className="text-slate-400 text-xs mt-1 font-mono flex items-center justify-between">
+                    <div className="text-slate-400 text-[10px] mt-0.5 font-mono flex items-center justify-between">
                       <span>Origin: {ev.origin_device || 'survivor'}</span>
                       <span className="text-cyan-400 capitalize">{ev.kind} · {ev.visibility}</span>
                     </div>
@@ -186,7 +186,7 @@ export default function CentralHQ() {
                 </div>
               ))
             ) : (
-              <div className="p-8 text-center text-slate-400 text-xs font-mono border border-dashed border-slate-800 rounded-xl">
+              <div className="p-4 text-center text-slate-400 text-xs font-mono border border-dashed border-slate-800 rounded-lg">
                 No active incidents recorded. Initializing mesh discovery...
               </div>
             )}
@@ -195,10 +195,10 @@ export default function CentralHQ() {
           {/* Action button leading to Command Inspector */}
           <button
             onClick={() => navigate('/command')}
-            className="mt-6 w-full bg-[#0b1120] border border-cyan-500/60 hover:border-cyan-400 text-cyan-200 font-bold text-sm py-4 rounded-xl flex items-center justify-center gap-3 transition shadow-lg shadow-cyan-950/40"
+            className="mt-3 w-full bg-[#0b1120] border border-cyan-500/60 hover:border-cyan-400 text-cyan-200 font-bold text-xs py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition shadow-md shadow-cyan-950/40"
           >
-            Open Command Inspector & Sign Protocols
-            <ArrowRight className="w-5 h-5 text-cyan-400" />
+            <span>Open Command Inspector & Sign Protocols</span>
+            <ArrowRight className="w-4 h-4 text-cyan-400" />
           </button>
         </div>
       </div>

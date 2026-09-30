@@ -4,7 +4,7 @@
  */
 
 const DB_NAME = 'RescueMemoryOfflineDB';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 function openDB() {
   return new Promise((resolve, reject) => {
@@ -15,6 +15,10 @@ function openDB() {
         const reportStore = db.createObjectStore('reports', { keyPath: 'id' });
         reportStore.createIndex('synced', 'synced', { unique: false });
         reportStore.createIndex('created_at', 'created_at', { unique: false });
+      }
+      if (!db.objectStoreNames.contains('guides')) {
+        const guideStore = db.createObjectStore('guides', { keyPath: 'id' });
+        guideStore.createIndex('version', 'version', { unique: false });
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -65,6 +69,35 @@ export async function getAllLocalReports() {
   });
 }
 
+export async function saveImportedReports(reports) {
+  if (!Array.isArray(reports) || reports.length === 0) return 0;
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('reports', 'readwrite');
+    const store = tx.objectStore('reports');
+    let importedCount = 0;
+    reports.forEach((rep) => {
+      if (!rep || !rep.id) return;
+      const getReq = store.get(rep.id);
+      getReq.onsuccess = () => {
+        const existing = getReq.result;
+        // Don't overwrite unsynced local changes with older remote copy
+        if (!existing || existing.synced) {
+          store.put({
+            ...rep,
+            synced: true,
+            imported: true,
+            imported_at: new Date().toISOString(),
+          });
+          importedCount++;
+        }
+      };
+    });
+    tx.oncomplete = () => resolve(importedCount);
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
 export async function markReportsSynced(ids) {
   const db = await openDB();
   return new Promise((resolve, reject) => {
@@ -86,5 +119,33 @@ export async function markReportsSynced(ids) {
       };
     });
     tx.onerror = () => reject(tx.error);
+  });
+}
+
+export async function saveImportedGuides(guides) {
+  if (!Array.isArray(guides) || guides.length === 0) return 0;
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('guides', 'readwrite');
+    const store = tx.objectStore('guides');
+    let count = 0;
+    guides.forEach((g) => {
+      if (!g || !g.id) return;
+      store.put({ ...g, imported: true, imported_at: new Date().toISOString() });
+      count++;
+    });
+    tx.oncomplete = () => resolve(count);
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+export async function getAllLocalGuides() {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('guides', 'readonly');
+    const store = tx.objectStore('guides');
+    const req = store.getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
   });
 }
