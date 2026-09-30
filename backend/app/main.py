@@ -95,7 +95,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return bool(group_id and token and hmac.compare_digest(token, s.group_token(group_id)))
 
     def valid_responder_token(token: str | None) -> bool:
-        return bool(settings.role != "survivor" and settings.responder_key and token
+        return bool(settings.responder_key and token
                     and hmac.compare_digest(token, settings.responder_key))
 
     @app.get("/health")
