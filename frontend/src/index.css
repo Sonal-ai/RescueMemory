@@ -217,6 +217,18 @@ html:not(.dark) .stat-card {
   font-size: 0.85rem;
   margin: 0;
 }
+:root[data-theme="light"] .stat-card .font-mono,
+html:not(.dark) .stat-card .font-mono,
+:root[data-theme="light"] .stat-card [class*="text-slate-100"],
+html:not(.dark) .stat-card [class*="text-slate-100"] {
+  color: #0f172a !important;
+}
+:root[data-theme="light"] .stat-card p,
+html:not(.dark) .stat-card p,
+:root[data-theme="light"] .stat-card [class*="text-slate-400"],
+html:not(.dark) .stat-card [class*="text-slate-400"] {
+  color: #475569 !important;
+}
 
 .app-card {
   background: var(--bg-card);

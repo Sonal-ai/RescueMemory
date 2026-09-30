@@ -11,8 +11,14 @@ export default function MapPanel({
   selectedPeer,
   onSelect,
   onMarker,
-  onSelectPeer
+  onSelectPeer,
+  dark = false
 }) {
+  const mapBg = dark ? '#091927' : 'var(--map-bg)';
+  const mapGrid = dark ? '#18334b' : 'var(--map-grid)';
+  const mapRoad = dark ? '#264a68' : 'var(--map-road)';
+  const mapRoadLine = dark ? '#4a779d' : 'var(--map-road-line)';
+
   const span = 0.11;
   const project = (location) => ({
     x: Math.max(16, Math.min(WIDTH - 16, WIDTH / 2 + (location.lon - center.lon) / span * WIDTH)),
@@ -34,7 +40,10 @@ export default function MapPanel({
 
   return (
     <div className="select-none">
-      <div className="relative rounded-3xl overflow-hidden border border-slate-700/80 bg-[var(--map-bg)] shadow-2xl">
+      <div
+        className="relative rounded-3xl overflow-hidden border border-slate-700/80 shadow-2xl"
+        style={{ backgroundColor: mapBg }}
+      >
         <svg
           viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
           role="img"
@@ -45,7 +54,7 @@ export default function MapPanel({
           <defs>
             {/* Grid Pattern */}
             <pattern id="map-grid" width="40" height="40" patternUnits="userSpaceOnUse">
-              <path d="M 40 0 L 0 0 0 40" fill="none" stroke="var(--map-grid)" strokeWidth="0.75" opacity="0.65" />
+              <path d="M 40 0 L 0 0 0 40" fill="none" stroke={mapGrid} strokeWidth="0.75" opacity="0.65" />
             </pattern>
 
             {/* Hazard Diagonal Stripe Pattern */}
@@ -55,14 +64,14 @@ export default function MapPanel({
           </defs>
 
           {/* Background Canvas */}
-          <rect width={WIDTH} height={HEIGHT} fill="var(--map-bg)" />
+          <rect width={WIDTH} height={HEIGHT} fill={mapBg} />
           <rect width={WIDTH} height={HEIGHT} fill="url(#map-grid)" />
 
           {/* Tactical Roads / Infrastructure */}
-          <path d="M-10 270 Q130 225 245 250 T610 130" stroke="var(--map-road)" strokeWidth="22" fill="none" opacity=".7" />
-          <path d="M-10 270 Q130 225 245 250 T610 130" stroke="var(--map-road-line)" strokeWidth="2" fill="none" strokeDasharray="6 6" opacity=".85" />
-          <path d="M160 -10 Q180 110 290 160 T450 350" stroke="var(--map-road)" strokeWidth="16" fill="none" opacity=".7" />
-          <path d="M160 -10 Q180 110 290 160 T450 350" stroke="var(--map-road-line)" strokeWidth="1.5" fill="none" strokeDasharray="5 5" opacity=".75" />
+          <path d="M-10 270 Q130 225 245 250 T610 130" stroke={mapRoad} strokeWidth="22" fill="none" opacity=".7" />
+          <path d="M-10 270 Q130 225 245 250 T610 130" stroke={mapRoadLine} strokeWidth="2" fill="none" strokeDasharray="6 6" opacity=".85" />
+          <path d="M160 -10 Q180 110 290 160 T450 350" stroke={mapRoad} strokeWidth="16" fill="none" opacity=".7" />
+          <path d="M160 -10 Q180 110 290 160 T450 350" stroke={mapRoadLine} strokeWidth="1.5" fill="none" strokeDasharray="5 5" opacity=".75" />
 
           {/* Schematic Buildings / Infrastructure Blocks */}
           <rect x="50" y="40" width="45" height="35" rx="4" fill="var(--map-road)" opacity="0.35" />

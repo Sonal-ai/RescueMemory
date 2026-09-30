@@ -146,7 +146,7 @@ export default function CentralHQ() {
             </span>
           </div>
           <div className="flex-1 p-3">
-            <MapPanel center={DEFAULT_CENTER} items={mapItems} peers={peers} />
+            <MapPanel center={DEFAULT_CENTER} items={mapItems} peers={peers} dark={true} />
           </div>
         </div>
 

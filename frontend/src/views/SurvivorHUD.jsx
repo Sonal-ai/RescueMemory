@@ -745,7 +745,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                     Offline
                   </span>
                 </div>
-              </div>
+                </div>
 
               <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
                 {/* Clear chat button */}
