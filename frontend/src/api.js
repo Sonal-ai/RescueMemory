@@ -814,8 +814,6 @@ export async function getDiscoveredPeers() {
     }
   }
 
-
-
   return {
     peers: allPeers,
     count: allPeers.length,
