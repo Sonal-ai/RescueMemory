@@ -81,15 +81,10 @@ export default function UnifiedRadarMap({
   // Device orientation / heading state (0 = North, 90 = East, 180 = South, 270 = West)
   const [deviceHeading, setDeviceHeading] = useState(0);
   const [isCompassActive, setIsCompassActive] = useState(false);
-  const [headingMode, setHeadingMode] = useState('sensor'); // 'sensor' | 'manual'
-  const [manualHeading, setManualHeading] = useState(0);
-  const [isAutoSweeping, setIsAutoSweeping] = useState(false);
   const [lastHapticTime, setLastHapticTime] = useState(0);
 
   // Audio Context Ref for offline synthetic radar/compass ping
   const audioCtxRef = useRef(null);
-  const compassDialRef = useRef(null);
-  const isDraggingCompass = useRef(false);
 
   const playChirp = useCallback((freq = 880) => {
     if (!audioEnabled) return;
@@ -207,52 +202,7 @@ export default function UnifiedRadarMap({
     };
   }, []);
 
-  // Continuous auto-sweep rotation demo loop
-  useEffect(() => {
-    if (!isAutoSweeping) return;
-    const interval = setInterval(() => {
-      setManualHeading((prev) => (prev + 2) % 360);
-    }, 40);
-    return () => clearInterval(interval);
-  }, [isAutoSweeping]);
 
-  // Touch & Pointer Dragging around the Compass Bezel
-  const getAngleFromPointer = (e) => {
-    if (!compassDialRef.current) return null;
-    const rect = compassDialRef.current.getBoundingClientRect();
-    const centerX = rect.left + rect.width / 2;
-    const centerY = rect.top + rect.height / 2;
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    if (clientX === undefined || clientY === undefined || Number.isNaN(clientX) || Number.isNaN(clientY)) return null;
-    const dx = clientX - centerX;
-    const dy = clientY - centerY;
-    // 0 deg is North (top, dy < 0)
-    const deg = (Math.atan2(dx, -dy) * 180) / Math.PI;
-    return (Math.round(deg) + 360) % 360;
-  };
-
-  const handlePointerDownDial = (e) => {
-    isDraggingCompass.current = true;
-    setHeadingMode('manual');
-    setIsAutoSweeping(false);
-    const angle = getAngleFromPointer(e);
-    if (angle !== null) {
-      setManualHeading(angle);
-    }
-  };
-
-  const handlePointerMoveDial = (e) => {
-    if (!isDraggingCompass.current) return;
-    const angle = getAngleFromPointer(e);
-    if (angle !== null) {
-      setManualHeading(angle);
-    }
-  };
-
-  const handlePointerUpDial = () => {
-    isDraggingCompass.current = false;
-  };
 
   // Fetch Radar Signals from Qdrant Edge Memory
   const locLat = userLocation?.lat ?? 28.7041;
@@ -411,8 +361,8 @@ export default function UnifiedRadarMap({
     }
   }, [activeTarget, selectedTargetId]);
 
-  // Current heading to use: device magnetometer if sensor active, else manual dial
-  const currentHeading = headingMode === 'sensor' && isCompassActive ? deviceHeading : manualHeading;
+  // Current heading: device orientation sensor (automatic)
+  const currentHeading = deviceHeading;
 
   // Real-time geodesic metrics between userLocation and activeTarget.location
   const liveTargetMetrics = useMemo(() => {
@@ -620,7 +570,7 @@ export default function UnifiedRadarMap({
                   ? 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-400 border-emerald-400/40 dark:border-emerald-500/20'
                   : 'bg-amber-500/15 text-amber-800 dark:text-amber-400 border-amber-400/40 dark:border-amber-500/20'
               }`}>
-                {isCompassActive ? 'SENSOR ACTIVE' : 'TOUCH SIMULATOR'}
+                {isCompassActive ? 'SENSOR ACTIVE' : 'COMPASS READY'}
               </span>
 
               <button
@@ -722,14 +672,9 @@ export default function UnifiedRadarMap({
           {/* Compass SVG Housing & Interactive Bezel */}
           <div className="flex flex-col items-center justify-center shrink-0 w-full lg:w-auto">
             <div
-              ref={compassDialRef}
-              onPointerDown={handlePointerDownDial}
-              onPointerMove={handlePointerMoveDial}
-              onPointerUp={handlePointerUpDial}
-              onPointerLeave={handlePointerUpDial}
               onClick={requestCompassPermission}
-              className="relative w-[260px] h-[260px] sm:w-[300px] sm:h-[300px] flex items-center justify-center cursor-grab active:cursor-grabbing touch-none select-none"
-              title="Touch and drag to rotate compass, or move phone to use live gyroscope"
+              className="relative w-[240px] h-[240px] sm:w-[280px] sm:h-[280px] flex items-center justify-center select-none"
+              title="Live 360° Compass Navigation"
             >
               <svg
                 width={COMPASS_SIZE}
@@ -798,7 +743,7 @@ export default function UnifiedRadarMap({
                   <g
                     transform={`rotate(${needleAngle} ${COMPASS_CENTER} ${COMPASS_CENTER})`}
                     filter="url(#needleGlow)"
-                    className={isCompassActive && headingMode === 'sensor' ? 'transition-none' : 'transition-transform duration-300 ease-out'}
+                    className={isCompassActive ? 'transition-none' : 'transition-transform duration-300 ease-out'}
                   >
                     {/* Needle Arrowhead */}
                     <polygon
@@ -867,110 +812,7 @@ export default function UnifiedRadarMap({
               </svg>
             </div>
 
-            {/* Compass Control Toolbar: Quick Turns, Target Lock, Auto Sweep */}
-            <div className="mt-3 w-full max-w-[320px] flex flex-col gap-2">
-              <div className="grid grid-cols-4 gap-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setHeadingMode('manual');
-                    setIsAutoSweeping(false);
-                    setManualHeading((prev) => (prev - 45 + 360) % 360);
-                  }}
-                  className="py-1 px-1.5 rounded-lg border border-[#cbdbe9] dark:border-slate-800 bg-[#f0f5fa] dark:bg-slate-900 text-slate-800 dark:text-slate-200 text-[11px] font-mono font-bold hover:border-cyan-500 transition-all active:scale-95"
-                  title="Turn left 45 degrees"
-                >
-                  -45°
-                </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setHeadingMode('manual');
-                    setIsAutoSweeping(false);
-                    setManualHeading(0);
-                  }}
-                  className="py-1 px-1.5 rounded-lg border border-[#cbdbe9] dark:border-slate-800 bg-[#f0f5fa] dark:bg-slate-900 text-slate-800 dark:text-slate-200 text-[11px] font-mono font-bold hover:border-cyan-500 transition-all active:scale-95"
-                  title="Face North (0 degrees)"
-                >
-                  0° N
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setHeadingMode('manual');
-                    setIsAutoSweeping(false);
-                    setManualHeading((prev) => (prev + 45) % 360);
-                  }}
-                  className="py-1 px-1.5 rounded-lg border border-[#cbdbe9] dark:border-slate-800 bg-[#f0f5fa] dark:bg-slate-900 text-slate-800 dark:text-slate-200 text-[11px] font-mono font-bold hover:border-cyan-500 transition-all active:scale-95"
-                  title="Turn right 45 degrees"
-                >
-                  +45°
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setHeadingMode('manual');
-                    setIsAutoSweeping(false);
-                    setManualHeading(targetBearing);
-                    playChirp(1200);
-                    if (typeof navigator !== 'undefined' && navigator.vibrate) {
-                      navigator.vibrate([40, 50, 40]);
-                    }
-                  }}
-                  className="py-1 px-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold flex items-center justify-center gap-0.5 transition-all shadow-xs active:scale-95"
-                  title="Instantly face locked destination azimuth"
-                >
-                  <Crosshair size={11} />
-                  <span>Align</span>
-                </button>
-              </div>
-
-              {/* Secondary Demo Tools: Mode Switcher & Auto Sweep */}
-              <div className="flex items-center justify-between gap-1.5 bg-[#f0f5fa] dark:bg-slate-900/80 p-1.5 rounded-xl border border-[#cbdbe9] dark:border-slate-800 text-[11px] font-mono">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsAutoSweeping(false);
-                    setHeadingMode((prev) => (prev === 'sensor' ? 'manual' : 'sensor'));
-                    if (headingMode === 'manual') {
-                      requestCompassPermission();
-                    }
-                  }}
-                  className={`px-2 py-0.5 rounded-lg font-bold transition-all ${
-                    headingMode === 'sensor' && isCompassActive
-                      ? 'bg-emerald-500 text-slate-950 font-black shadow-xs'
-                      : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
-                  }`}
-                  title="Switch between live gyroscope sensor and manual touch drag"
-                >
-                  {headingMode === 'sensor' && isCompassActive ? '📱 Gyro Live' : '✋ Touch Mode'}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setHeadingMode('manual');
-                    setIsAutoSweeping((prev) => !prev);
-                  }}
-                  className={`px-2 py-0.5 rounded-lg font-bold flex items-center gap-1 transition-all ${
-                    isAutoSweeping
-                      ? 'bg-amber-500 text-slate-950 font-black animate-pulse'
-                      : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-[#cbdbe9] dark:border-slate-700'
-                  }`}
-                  title="Run continuous 360-degree rotation demo"
-                >
-                  <RotateCw size={11} className={isAutoSweeping ? 'animate-spin' : ''} />
-                  <span>{isAutoSweeping ? 'Sweeping...' : 'Auto-Sweep'}</span>
-                </button>
-
-                <span className="text-[10px] text-cyan-600 dark:text-cyan-400 font-bold ml-auto tabular-nums">
-                  {Math.round(currentHeading)}°
-                </span>
-              </div>
-            </div>
           </div>
 
           {/* Locked Target Navigation Telemetry & Alignment Guide */}

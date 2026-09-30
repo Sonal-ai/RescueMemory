@@ -20,6 +20,11 @@ import {
   saveImportedGuides,
   getAllLocalGuides,
 } from './offlineStorage.js';
+import {
+  pushReportsToCloud,
+  pullReportsFromCloud,
+  pullGuidesFromCloud,
+} from './cloudSync.js';
 import staticCards from '../../public/data/knowledge_cards.json';
 
 let cachedCards = Array.isArray(staticCards) ? staticCards : [];
@@ -397,146 +402,139 @@ export async function recordReportLocal(reportData) {
  * Auto-Sync Engine: Syncs local IndexedDB outbox to server whenever connection is restored.
  */
 function resolveServerUrl(path) {
-  if (!path || path.startsWith('http://') || path.startsWith('https://')) return path;
+  if (path && (path.startsWith('http://') || path.startsWith('https://'))) return path;
   const custom = (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('rescue.backendUrl')) || '';
-  if (custom) return `${custom.replace(/\/$/, '')}${path.startsWith('/') ? path : `/${path}`}`;
+  if (custom) return `${custom.replace(/\/$/, '')}${path ? (path.startsWith('/') ? path : `/${path}`) : ''}`;
   const envUrl = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_BACKEND_URL) || '';
-  if (envUrl) return `${envUrl.replace(/\/$/, '')}${path.startsWith('/') ? path : `/${path}`}`;
-  if (typeof window !== 'undefined' && (window.Capacitor?.isNativePlatform?.() || window.location?.origin?.includes('localhost') || window.location?.protocol === 'capacitor:')) {
-    return `https://rescuememory-backend.onrender.com${path.startsWith('/') ? path : `/${path}`}`;
-  }
-  return path;
+  if (envUrl) return `${envUrl.replace(/\/$/, '')}${path ? (path.startsWith('/') ? path : `/${path}`) : ''}`;
+  const resolved = (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('rescue.resolvedBackendUrl')) || '';
+  if (resolved) return `${resolved.replace(/\/$/, '')}${path ? (path.startsWith('/') ? path : `/${path}`) : ''}`;
+  return '';
 }
 
 export async function triggerAutoSync() {
-  if (!navigator.onLine) {
-    notifySync({ state: 'offline', pendingCount: (await getUnsyncedReports()).length });
-    return;
+  const unsyncedInitial = await getUnsyncedReports();
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    notifySync({ state: 'offline', pendingCount: unsyncedInitial.length });
+    return { synced: 0, imported: 0, pending: unsyncedInitial.length, status: 'offline' };
   }
 
-  try {
-    // Check if Central/Edge server is reachable
-    const healthCheck = await fetch(resolveServerUrl('/health'), { method: 'GET', signal: AbortSignal.timeout(3500) });
-    if (!healthCheck.ok) {
-      notifySync({ state: 'server_unreachable', pendingCount: (await getUnsyncedReports()).length });
-      return;
-    }
+  notifySync({ state: 'syncing', pendingCount: unsyncedInitial.length });
+  let totalSyncedCount = 0;
+  let remoteImportedCount = 0;
+  let anyChannelConnected = false;
 
-    const unsynced = await getUnsyncedReports();
-    notifySync({ state: 'syncing', pendingCount: unsynced.length });
-
-    // 1. UPLINK: Flush pending local reports to server with cryptographic idempotency
-    const syncedIds = [];
-    if (unsynced.length > 0) {
-      console.log(`[AutoSync] Uplinking ${unsynced.length} pending reports to server...`);
-      for (const report of unsynced) {
-        try {
-          const payload = {
-            idempotency_key: report.id,
-            entity_id: report.entity_id || report.id,
-            kind: report.kind || 'sos',
-            text: report.text,
-            location: report.location,
-            visibility: report.visibility || 'public',
-            status: report.status || 'needs_help',
-            severity: report.severity || 'red',
-            reporter_id: report.reporter_id || 'survivor-mobile',
-            observed_at: report.created_at || report.observed_at || new Date().toISOString(),
-          };
-          const res = await fetch(resolveServerUrl('/api/reports'), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-          });
-          // HTTP 200 or HTTP 409 (duplicate / already indexed) confirms durability on server
-          if (res.ok || res.status === 409) {
-            syncedIds.push(report.id);
-          }
-        } catch (err) {
-          console.warn(`[AutoSync] Failed to uplink report ${report.id}:`, err);
-        }
-      }
-
-      if (syncedIds.length > 0) {
-        await markReportsSynced(syncedIds);
-        console.log(`[AutoSync] Successfully synced ${syncedIds.length} reports to server.`);
-      }
-    }
-
-    // 2. DOWNLINK: Download latest remote SOS, hazards, and shelters into local IndexedDB
-    const meshKey = (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem('rescue.meshKey') || sessionStorage.getItem('rescue.adminKey'))) || 'rescue-mesh-shared-key-2026';
-    const syncHeaders = {
-      Accept: 'application/json',
-      'X-Mesh-Key': meshKey,
-    };
-
-    // A. Pull public events from Central export
+  // 1. Channel A: Try Local Edge / Central Server if reachable
+  const edgeBase = resolveServerUrl('');
+  let edgeReachable = false;
+  if (edgeBase) {
     try {
-      const exportRes = await fetch(resolveServerUrl('/api/sync/export?scope=public&limit=64'), {
+      const healthCheck = await fetch(`${edgeBase}/health`, { method: 'GET', signal: AbortSignal.timeout(2000) });
+      if (healthCheck.ok) {
+        edgeReachable = true;
+        anyChannelConnected = true;
+      }
+    } catch {
+      edgeReachable = false;
+    }
+  }
+
+  if (edgeReachable) {
+    const unsynced = await getUnsyncedReports();
+    const syncedIds = [];
+    for (const report of unsynced) {
+      try {
+        const payload = {
+          idempotency_key: report.id,
+          entity_id: report.entity_id || report.id,
+          kind: report.kind || 'sos',
+          text: report.text,
+          location: report.location,
+          visibility: report.visibility || 'public',
+          status: report.status || 'needs_help',
+          severity: report.severity || 'red',
+          reporter_id: report.reporter_id || 'survivor-mobile',
+          observed_at: report.created_at || report.observed_at || new Date().toISOString(),
+        };
+        const res = await fetch(`${edgeBase}/api/reports`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(3000),
+        });
+        if (res.ok || res.status === 409) {
+          syncedIds.push(report.id);
+        }
+      } catch (err) {
+        console.warn(`[AutoSync] Edge uplink fail for ${report.id}:`, err.message);
+      }
+    }
+    if (syncedIds.length > 0) {
+      await markReportsSynced(syncedIds);
+      totalSyncedCount += syncedIds.length;
+    }
+
+    // Downlink from Edge
+    try {
+      const exportRes = await fetch(`${edgeBase}/api/sync/export?scope=public&limit=64`, {
         method: 'GET',
-        headers: syncHeaders,
-        signal: AbortSignal.timeout(5000),
+        headers: { Accept: 'application/json' },
+        signal: AbortSignal.timeout(3000),
       });
       if (exportRes.ok) {
         const data = await exportRes.json();
         if (Array.isArray(data?.events) && data.events.length > 0) {
           const imp = await saveImportedReports(data.events);
-          if (imp > 0) console.log(`[AutoSync] Downlinked ${imp} new public events into local storage.`);
+          remoteImportedCount += imp;
         }
       }
-    } catch (e) {
-      console.warn('[AutoSync] Public export downlink skip:', e.message);
+    } catch {
+      // silent
     }
-
-    // B. Pull nearby map observations (open endpoint)
-    try {
-      const nearbyRes = await fetch(resolveServerUrl('/api/map/nearby'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({
-          location: { lat: 28.7041, lon: 77.1025 },
-          radius_m: 50000,
-        }),
-        signal: AbortSignal.timeout(5000),
-      });
-      if (nearbyRes.ok) {
-        const nearbyData = await nearbyRes.json();
-        const items = Array.isArray(nearbyData?.items) ? nearbyData.items : (Array.isArray(nearbyData?.events) ? nearbyData.events : []);
-        if (items.length > 0) {
-          await saveImportedReports(items);
-        }
-      }
-    } catch (e) {
-      console.warn('[AutoSync] Nearby downlink skip:', e.message);
-    }
-
-    // C. Pull verified emergency guidance updates
-    try {
-      const guidesRes = await fetch(resolveServerUrl('/api/sync/guides/export'), {
-        method: 'GET',
-        headers: syncHeaders,
-        signal: AbortSignal.timeout(5000),
-      });
-      if (guidesRes.ok) {
-        const guidesData = await guidesRes.json();
-        if (Array.isArray(guidesData?.guides) && guidesData.guides.length > 0) {
-          const gCount = await saveImportedGuides(guidesData.guides);
-          if (gCount > 0) {
-            console.log(`[AutoSync] Downlinked ${gCount} verified guidance cards.`);
-            await initOfflineBrain(true);
-          }
-        }
-      }
-    } catch (e) {
-      console.warn('[AutoSync] Guides downlink skip:', e.message);
-    }
-
-    const remaining = (await getUnsyncedReports()).length;
-    notifySync({ state: remaining === 0 ? 'synced' : 'partial', pendingCount: remaining });
-  } catch (err) {
-    console.warn('[AutoSync] Sync attempt skipped (offline/unreachable):', err.message);
-    notifySync({ state: 'offline', pendingCount: (await getUnsyncedReports()).length });
   }
+
+  // 2. Channel B: Direct Qdrant Cloud Uplink & Downlink (Guaranteed multi-device mesh channel)
+  try {
+    const remainingUnsynced = await getUnsyncedReports();
+    if (remainingUnsynced.length > 0) {
+      const cloudSyncedIds = await pushReportsToCloud(remainingUnsynced);
+      if (cloudSyncedIds.length > 0) {
+        await markReportsSynced(cloudSyncedIds);
+        totalSyncedCount += cloudSyncedIds.length;
+        anyChannelConnected = true;
+      }
+    }
+
+    // Downlink latest remote public reports from other devices in Qdrant Cloud
+    const cloudReports = await pullReportsFromCloud(64);
+    if (cloudReports.length > 0) {
+      const imp = await saveImportedReports(cloudReports);
+      remoteImportedCount += imp;
+      anyChannelConnected = true;
+    }
+
+    // Downlink verified clinical guides
+    const cloudGuides = await pullGuidesFromCloud(32);
+    if (cloudGuides.length > 0) {
+      await saveImportedGuides(cloudGuides);
+    }
+  } catch (cloudErr) {
+    console.warn('[AutoSync] Direct Cloud Sync pass notice:', cloudErr.message);
+  }
+
+  const remaining = (await getUnsyncedReports()).length;
+  if (!anyChannelConnected && remaining > 0) {
+    notifySync({ state: 'server_unreachable', pendingCount: remaining });
+  } else {
+    notifySync({ state: remaining === 0 ? 'synced' : 'partial', pendingCount: remaining });
+  }
+
+  return {
+    synced: totalSyncedCount,
+    imported: remoteImportedCount,
+    pending: remaining,
+    status: remaining === 0 ? 'synced' : 'partial',
+  };
 }
 
 // Attach automatic sync listeners to browser window events
@@ -545,8 +543,8 @@ if (typeof window !== 'undefined') {
     console.log('[OfflineBrain] Network connection restored. Triggering auto-sync...');
     triggerAutoSync();
   });
-  // Periodic background check every 30 seconds
+  // Rapid automated multi-device sync interval (every 8 seconds)
   setInterval(() => {
     triggerAutoSync();
-  }, 30000);
+  }, 8000);
 }

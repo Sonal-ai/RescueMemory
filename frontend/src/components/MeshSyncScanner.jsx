@@ -44,32 +44,30 @@ export default function MeshSyncScanner({
     }
   }, []);
 
-  useEffect(() => {
-    refreshPeersList();
-    const interval = setInterval(refreshPeersList, 8000);
-    return () => clearInterval(interval);
-  }, [refreshPeersList]);
-
-  // Scan and transfer data to all discovered peers
-  const handleScanAndTransfer = async () => {
-    setSyncingAll(true);
-    setScanning(true);
-    setStatusMessage('');
-    setErrorMessage('');
+  // Scan and transfer data to all discovered peers (supports silent auto-run)
+  const handleScanAndTransfer = useCallback(async (isSilent = false) => {
+    if (!isSilent) {
+      setSyncingAll(true);
+      setScanning(true);
+      setStatusMessage('');
+      setErrorMessage('');
+    }
 
     try {
-      // 1. Flush local IndexedDB reports to Edge Hub/Backend
+      // 1. Flush local IndexedDB reports to Edge Hub/Cloud
       let localFlushed = 0;
+      let remoteImported = 0;
       try {
         const syncRes = await triggerAutoSync();
         localFlushed = syncRes?.synced || 0;
+        remoteImported = syncRes?.imported || 0;
       } catch (syncErr) {
         console.warn('[MeshSync] Outbox flush notice:', syncErr);
       }
 
-      // 2. Discover nearby peers via local broadcast
+      // 2. Discover nearby peers
       const scanRes = await getDiscoveredPeers();
-      const currentPeers = scanRes?.peers || peers || [];
+      const currentPeers = scanRes?.peers || [];
       setPeers(currentPeers);
 
       // Check configured peer URL in settings (e.g. hotspot IP)
@@ -83,45 +81,50 @@ export default function MeshSyncScanner({
         });
       }
 
-      // 3. Keep visual radar sweep spinning for at least 1200ms so user has tactile feedback
-      await new Promise(r => setTimeout(r, 1200));
-
-      if (allPeers.length === 0) {
-        setStatusMessage(
-          localFlushed > 0
-            ? `✅ Synced ${localFlushed} local report(s) to edge node. Radar active: 0 nearby devices found. Turn on Wi-Fi/Hotspot to discover peers.`
-            : '📡 Mesh radar is active & scanning. 0 nearby devices detected. Connect nearby phones to the same Wi-Fi or Hotspot to sync automatically.'
-        );
-        if (onSyncComplete) onSyncComplete();
-        return;
+      if (!isSilent) {
+        await new Promise(r => setTimeout(r, 800));
       }
 
       let successCount = 0;
       for (const peer of allPeers) {
         try {
           await syncDiscoveredPeer({
-            peer_url: peer.url || `http://${peer.ip}:${peer.port}`,
+            peer_url: peer.url || (peer.ip ? `http://${peer.ip}:${peer.port}` : null),
             scope: 'public'
           });
           successCount++;
         } catch (peerErr) {
-          console.warn(`Sync with ${peer.node_id} failed:`, peerErr);
+          console.warn(`Sync with ${peer.node_id} notice:`, peerErr?.message);
         }
       }
 
-      if (successCount > 0) {
-        setStatusMessage(`✅ Mesh Sync Complete: Exchanged emergency reports with ${successCount} device(s)${localFlushed > 0 ? ` (${localFlushed} local reports synced)` : ''}.`);
+      if (allPeers.length > 0) {
+        setStatusMessage(`✅ Auto-Mesh Active: Connected to ${allPeers.length} device(s)${localFlushed > 0 ? ` · Uplinked ${localFlushed} SOS` : ''}${remoteImported > 0 ? ` · Received ${remoteImported} reports` : ''}`);
         if (onSyncComplete) onSyncComplete();
       } else {
-        setStatusMessage(`📡 Radar sweep active. Found ${allPeers.length} peer(s), waiting for peer response. Try manual connection below if needed.`);
+        setStatusMessage(localFlushed > 0
+          ? `✅ Synced ${localFlushed} report(s) to central cloud. Scanning for nearby devices...`
+          : '📡 Mesh radar active & scanning for devices automatically every 6s...'
+        );
       }
     } catch (err) {
-      setErrorMessage(`Sync notice: ${err.message || 'Network error'}`);
+      if (!isSilent) setErrorMessage(`Sync notice: ${err.message || 'Network error'}`);
     } finally {
-      setSyncingAll(false);
-      setScanning(false);
+      if (!isSilent) {
+        setSyncingAll(false);
+        setScanning(false);
+      }
     }
-  };
+  }, [onSyncComplete]);
+
+  // Automated background sync interval: runs on mount and every 6 seconds
+  useEffect(() => {
+    handleScanAndTransfer(true);
+    const interval = setInterval(() => {
+      handleScanAndTransfer(true);
+    }, 6000);
+    return () => clearInterval(interval);
+  }, [handleScanAndTransfer]);
 
   // Sync with a single specific peer
   const handleSyncSinglePeer = async (peer) => {
@@ -177,13 +180,19 @@ export default function MeshSyncScanner({
           <div className="h-7 w-7 rounded-lg bg-gradient-to-tr from-cyan-600 to-emerald-600 flex items-center justify-center text-white shadow-sm shrink-0">
             <Radio size={15} className={scanning || syncingAll ? 'animate-spin' : ''} />
           </div>
-          <div>
-            <h2 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
-              <span>Mesh Sync</span>
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            </h2>
-            <p className="text-[10.5px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-tight">
-              Sync emergency data with nearby devices without internet.
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <h2 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                <span>Mesh Sync</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              </h2>
+              <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
+                AUTO-SYNC ACTIVE (6s)
+              </span>
+            </div>
+            <p className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-tight">
+              Automatic background device discovery & real-time report exchange.
             </p>
           </div>
         </div>
@@ -330,7 +339,7 @@ export default function MeshSyncScanner({
             )}
           </button>
           <p className="text-[10px] text-center text-slate-500 dark:text-slate-400 mt-1.5 font-medium">
-            Connects via local Wi-Fi or phone hotspot
+            Automatic background sync active · Tap for instant sweep & sync
           </p>
         </div>
       </div>
