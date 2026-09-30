@@ -361,7 +361,7 @@ export default function SafePlace() {
             </span>
           </div>
           <div className="flex-1 p-3">
-            <MapPanel center={center} items={mapItems} onMarker={(item) => handleNavigate(item)} />
+            <MapPanel center={center} items={mapItems} onMarker={(item) => handleNavigate(item)} dark={true} />
           </div>
         </div>
       </div>
