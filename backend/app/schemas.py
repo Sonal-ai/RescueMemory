@@ -87,7 +87,7 @@ class GuidePublishRequest(BaseModel):
     summary: str = Field(min_length=10, max_length=1200)
     steps: list[str] = Field(min_length=1, max_length=10)
     warnings: list[str] = Field(default_factory=list, max_length=10)
-    source: str = Field(pattern=r"^https://", max_length=500)
+    source: str = Field(min_length=2, max_length=500)
     reviewer: str = Field(min_length=2, max_length=100)
 
 

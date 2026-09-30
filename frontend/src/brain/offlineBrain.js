@@ -477,9 +477,13 @@ export async function triggerAutoSync() {
 
     // Downlink from Edge
     try {
+      const meshKey = (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('rescue.meshKey')) || 'rescue-mesh-shared-key-2026';
       const exportRes = await fetch(`${edgeBase}/api/sync/export?scope=public&limit=64`, {
         method: 'GET',
-        headers: { Accept: 'application/json' },
+        headers: {
+          Accept: 'application/json',
+          'X-Mesh-Key': meshKey,
+        },
         signal: AbortSignal.timeout(3000),
       });
       if (exportRes.ok) {

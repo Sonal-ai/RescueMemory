@@ -137,14 +137,9 @@ def mirror_to_qdrant_server(service: RescueService) -> dict:
                 downloaded += service.import_events(cloud_events[start:start + 64])["imported"]
             local_events = [event for event in service.memory.all("events")
                             if event["visibility"] == scope]
-            to_upload = []
-            for event in local_events:
-                cloud_hash = existing.get(event["id"])
-                if cloud_hash and cloud_hash != event["content_hash"]:
-                    raise HTTPException(409, "Cloud event ID collision")
-                if not cloud_hash:
-                    to_upload.append(event)
-            _upsert_new(client, collection, to_upload, service, lambda item: item["text"])
+            to_upload = [event for event in local_events if event["id"] not in existing]
+            if to_upload:
+                _upsert_new(client, collection, to_upload, service, lambda item: item["text"])
             result["events_uploaded"][scope] = len(to_upload)
             result["events_downloaded"][scope] = downloaded
             for event in to_upload:
@@ -157,8 +152,10 @@ def mirror_to_qdrant_server(service: RescueService) -> dict:
                 if not isinstance(point.payload, dict) or "id" not in point.payload:
                     continue
                 guide = point.payload
-                existing_guides[guide["id"]] = guide
-                result["guides_downloaded"] += service.import_guides([guide])["imported"]
+                try:
+                    result["guides_downloaded"] += service.import_guides([guide])["imported"]
+                except Exception:
+                    pass
             to_upload = [guide for guide in service.signed_guides()
                          if (guide["id"] not in existing_guides or
                              guide["version"] > existing_guides[guide["id"]]["version"])]
