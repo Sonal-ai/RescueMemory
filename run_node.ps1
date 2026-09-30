@@ -8,6 +8,7 @@ param(
 
 $env:NODE_ID = $NodeId
 $env:NODE_ROLE = $Role
+$env:PORT = $Port
 $env:DATA_DIR = "data/$NodeId"
 $env:MODEL_CACHE = 'data/model_cache'
 if ($CentralUrl) { $env:CENTRAL_URL = $CentralUrl }

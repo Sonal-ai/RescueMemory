@@ -375,6 +375,13 @@ export async function recordReportLocal(reportData) {
 /**
  * Auto-Sync Engine: Syncs local IndexedDB outbox to server whenever connection is restored.
  */
+function resolveServerUrl(path) {
+  if (!path || path.startsWith('http://') || path.startsWith('https://')) return path;
+  const custom = (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('rescue.backendUrl')) || '';
+  if (custom) return `${custom.replace(/\/$/, '')}${path.startsWith('/') ? path : `/${path}`}`;
+  return path;
+}
+
 export async function triggerAutoSync() {
   if (!navigator.onLine) {
     notifySync({ state: 'offline', pendingCount: (await getUnsyncedReports()).length });
@@ -383,7 +390,7 @@ export async function triggerAutoSync() {
 
   try {
     // Check if FastAPI edge server is reachable
-    const healthCheck = await fetch('/health', { method: 'GET', signal: AbortSignal.timeout(3000) });
+    const healthCheck = await fetch(resolveServerUrl('/health'), { method: 'GET', signal: AbortSignal.timeout(3000) });
     if (!healthCheck.ok) {
       notifySync({ state: 'server_unreachable', pendingCount: (await getUnsyncedReports()).length });
       return;
@@ -408,7 +415,7 @@ export async function triggerAutoSync() {
           location: report.location,
           scope: report.scope || 'public',
         };
-        const res = await fetch('/api/reports', {
+        const res = await fetch(resolveServerUrl('/api/reports'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),

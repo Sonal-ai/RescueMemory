@@ -5,6 +5,7 @@ import {
   CloudUpload,
   Database,
   GitBranch,
+  Radio,
   RefreshCw,
   ShieldAlert,
   ShieldCheck,
@@ -24,6 +25,7 @@ export default function CommandInspector() {
   const [journey, setJourney] = useState(null);
   const [timeline, setTimeline] = useState(null);
   const [cloudResult, setCloudResult] = useState(null);
+  const [cloudStatus, setCloudStatus] = useState(null);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [working, setWorking] = useState(false);
@@ -78,6 +80,26 @@ export default function CommandInspector() {
       setTimeline(entity);
     } catch (err) {
       setError(err.message);
+    }
+  };
+
+  const testCloud = async () => {
+    setWorking(true);
+    setError('');
+    setMessage('');
+    try {
+      if (!setting('adminKey')) throw new Error('Set the central node admin key in Node settings.');
+      const res = await api('/api/sync/cloud-status', { admin: true });
+      setCloudStatus(res);
+      if (res.connected) {
+        setMessage(`Connected to Qdrant Cloud! Cluster reachable with ${res.collections?.length || 0} collection(s).`);
+      } else {
+        setError(`Qdrant Cloud unreachable: ${res.reason || res.error || 'Connection failed'}`);
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setWorking(false);
     }
   };
 
@@ -156,6 +178,22 @@ export default function CommandInspector() {
         <div role="status" className="mb-6 p-4 rounded-2xl border border-emerald-800/80 bg-emerald-950/40 text-emerald-200 text-sm flex items-center gap-2.5 shadow-md">
           <CheckCircle2 size={18} className="shrink-0 text-emerald-400" />
           <span>{message}</span>
+        </div>
+      )}
+
+      {!setting('adminKey') && (
+        <div className="mb-6 p-3 rounded-2xl border border-amber-500/30 bg-amber-950/30 text-amber-200 text-xs flex items-center justify-between shadow-sm">
+          <span>Central Admin Key required for verified overrides & cloud sync.</span>
+          <button
+            type="button"
+            onClick={() => {
+              saveSetting('adminKey', 'demo-admin-key');
+              refresh();
+            }}
+            className="font-bold underline text-amber-300 hover:text-white"
+          >
+            Use Demo Admin Key
+          </button>
         </div>
       )}
 
@@ -385,16 +423,43 @@ export default function CommandInspector() {
           <p className="text-xs text-slate-400 mb-4 leading-relaxed">
             Syncs verified memory between this edge cluster and central Qdrant Cloud when internet connectivity is restored.
           </p>
-          <button
-            onClick={mirror}
-            disabled={working}
-            className="btn-primary w-full py-4 flex justify-center items-center gap-2 text-base font-bold"
-          >
-            <CloudUpload size={18} />
-            <span>{working ? 'Syncing with Qdrant Cloud…' : 'Mirror Approved Memory to Cloud'}</span>
-          </button>
+          <div className="flex gap-2.5 mb-3">
+            <button
+              onClick={testCloud}
+              disabled={working}
+              type="button"
+              className="btn-secondary flex-1 py-3.5 flex justify-center items-center gap-2 text-sm font-semibold"
+            >
+              <Radio size={16} />
+              <span>{working ? 'Testing…' : 'Test Connection'}</span>
+            </button>
+            <button
+              onClick={mirror}
+              disabled={working}
+              type="button"
+              className="btn-primary flex-1 py-3.5 flex justify-center items-center gap-2 text-sm font-bold"
+            >
+              <CloudUpload size={16} />
+              <span>{working ? 'Syncing…' : 'Mirror to Cloud'}</span>
+            </button>
+          </div>
+          {cloudStatus && (
+            <div className={`p-3 rounded-xl border text-xs mb-3 font-mono ${
+              cloudStatus.connected
+                ? 'bg-emerald-950/40 border-emerald-800/80 text-emerald-300'
+                : 'bg-red-950/40 border-red-800/80 text-red-300'
+            }`}>
+              <div className="flex items-center justify-between mb-1">
+                <span className="font-bold">Status: {cloudStatus.connected ? 'ONLINE' : 'OFFLINE'}</span>
+                <span>{cloudStatus.collections?.length ?? 0} Collections</span>
+              </div>
+              <div className="text-[10px] text-slate-400 truncate">
+                {cloudStatus.url || cloudStatus.reason || cloudStatus.error}
+              </div>
+            </div>
+          )}
           {cloudResult && (
-            <pre className="text-[11px] text-emerald-300 bg-slate-950/80 p-3 rounded-2xl mt-4 overflow-auto border border-emerald-900/50 font-mono">
+            <pre className="text-[11px] text-emerald-300 bg-slate-950/80 p-3 rounded-2xl mt-2 overflow-auto border border-emerald-900/50 font-mono">
               {JSON.stringify(cloudResult, null, 2)}
             </pre>
           )}

@@ -319,6 +319,23 @@ export default function VolunteerBoard() {
               Nearby sync operates directly over local Wi-Fi / hotspot. Zero internet connectivity is required.
             </p>
 
+            {!setting('adminKey') && (
+              <div className="mb-3 p-2.5 rounded-xl border border-amber-500/30 bg-amber-950/30 text-amber-200 text-xs flex items-center justify-between">
+                <span>Admin key required for sync operations.</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    saveSetting('adminKey', 'demo-admin-key');
+                    saveSetting('responderKey', 'demo-responder-key');
+                    refresh();
+                  }}
+                  className="font-bold underline text-amber-300 hover:text-white"
+                >
+                  Use Demo Key
+                </button>
+              </div>
+            )}
+
             <div className="text-xs text-slate-300 mb-3 bg-[#07111e] border border-slate-800 p-3 rounded-xl flex items-center justify-between">
               <div>
                 <span className="text-slate-500 block text-[10px] uppercase font-mono">Target Node</span>

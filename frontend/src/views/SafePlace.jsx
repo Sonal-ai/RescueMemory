@@ -113,6 +113,30 @@ export default function SafePlace() {
           }
         }
 
+        // Merge any dynamic checkpoints or resource stations discovered in Qdrant Edge Memory
+        (mapData.items || []).forEach((item) => {
+          const kind = item.kind || '';
+          const status = (item.status || '').toLowerCase();
+          const isSafe = !['blocked', 'danger', 'flooded', 'closed', 'compromised'].includes(status);
+          if (['checkpoint', 'resource', 'shelter'].includes(kind) && isSafe) {
+            const exists = rawFacilities.some((f) => f.id === item.id || f.id === item.entity_id);
+            if (!exists) {
+              const dist = item.distance_m ? Math.round(item.distance_m) : 650;
+              rawFacilities.push({
+                id: item.id || item.entity_id,
+                name: item.summary || item.details?.name || `Checkpoint ${String(item.id).slice(0, 6)}`,
+                type: kind === 'checkpoint' ? 'Relief Checkpoint' : 'Supply Point',
+                dist_m: dist,
+                walk_min: Math.max(1, Math.round(dist / 75)),
+                status: item.status ? (item.status.charAt(0).toUpperCase() + item.status.slice(1)) : 'Operational',
+                facilities: item.details?.facilities || ['Shelter', 'Water'],
+                lat: item.lat || 28.7041,
+                lon: item.lon || 77.1025,
+              });
+            }
+          }
+        });
+
         // Filter based on selected needs
         const activeNeedNames = Object.entries(needs)
           .filter(([, v]) => v)

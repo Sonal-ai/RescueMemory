@@ -99,6 +99,11 @@ def test_scoped_qdrant_cloud_mirror_and_pull(tmp_path, monkeypatch):
         assert result.json()["events_uploaded"] == {"public": 1, "group": 1, "responders": 1}
         assert result.json()["guides_uploaded"] == 1
 
+        status_res = first.get("/api/sync/cloud-status", headers=ADMIN)
+        assert status_res.status_code == 200
+        assert status_res.json()["connected"] is True
+        assert "rescue_public_events" in status_res.json()["collections"]
+
     remote = QdrantClient(path=cloud_dir)
     try:
         for scope, collection in cloud.EVENT_COLLECTIONS.items():

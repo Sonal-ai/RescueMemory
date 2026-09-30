@@ -62,6 +62,21 @@ function setStandaloneMode(active) {
   }
 }
 
+export function getBackendBaseUrl() {
+  const custom = setting('backendUrl');
+  if (custom) return custom.replace(/\/$/, '');
+  const envUrl = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_BACKEND_URL) || '';
+  if (envUrl) return envUrl.replace(/\/$/, '');
+  return '';
+}
+
+export function buildBackendUrl(path) {
+  if (!path || path.startsWith('http://') || path.startsWith('https://')) return path;
+  const base = getBackendBaseUrl();
+  if (!base) return path;
+  return `${base}${path.startsWith('/') ? path : `/${path}`}`;
+}
+
 export async function api(path, options = {}) {
   const { method = 'GET', body, admin = false, responder = false, group = false } = options;
   const headers = { Accept: 'application/json' };
@@ -70,8 +85,10 @@ export async function api(path, options = {}) {
   if (responder && setting('responderKey')) headers['X-Responder-Key'] = setting('responderKey');
   if (group && setting('groupToken')) headers['X-Group-Token'] = setting('groupToken');
 
+  const targetUrl = buildBackendUrl(path);
+
   try {
-    const response = await fetch(path, {
+    const response = await fetch(targetUrl, {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -162,7 +179,7 @@ async function handleOfflineFallback(path, method, body) {
   // 2. Negative Vector Safe Facility Recommendation
   if (path === '/api/checkpoints/recommend-alternative') {
     const compromisedId = body?.compromised_id || 'cp_17';
-    const hazardText = body?.avoid_hazard_text || 'flooded entrance live wires';
+    const hazardText = body?.avoid_hazard || body?.avoid_hazard_text || 'flooded entrance live wires';
     const rec = await recommendAlternativeLocal(compromisedId, hazardText);
     return {
       ...rec,
@@ -417,6 +434,13 @@ export function formatTime(value) {
   if (!value) return 'Never';
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
+
+export async function assessCasualty(params = {}) {
+  return api('/api/assess', {
+    method: 'POST',
+    body: params,
+  });
 }
 
 /**
