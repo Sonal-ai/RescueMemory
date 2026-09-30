@@ -22,6 +22,22 @@ def tokenize(text: str) -> set[str]:
 
 # Built-in offline emergency protocols for immediate offline triage and guidance
 OFFLINE_PROTOCOLS = {
+    "severe_bleeding": {
+        "title": "Severe Hemorrhage & Deep Bleeding Control",
+        "citation": "Red Cross Emergency First Aid & TCCC Guidelines",
+        "immediate": "Apply firm, continuous direct pressure directly over the wound with a clean cloth or sterile dressing.",
+        "steps": [
+            "Do not remove the cloth if soaked through; place additional clean layers directly on top and press harder.",
+            "Keep the casualty lying flat and calm to slow heart rate and reduce blood loss.",
+            "For deep cavity wounds where pressure fails, pack clean fabric tightly into the wound cavity directly against the bleeding vessel.",
+            "For extremity arterial spurting or uncontrolled bleeding, apply a windlass tourniquet 2–3 inches above injury (never over a joint); tighten until bleeding stops.",
+            "Broadcast an Emergency SOS immediately to alert nearby medical responders."
+        ],
+        "warnings": [
+            "Never loosen or remove a tourniquet once placed in the field.",
+            "Do not attempt improvised suturing or wound exploration."
+        ]
+    },
     "mobility_trauma": {
         "title": "Suspected Fracture or Inability to Walk",
         "citation": "Red Cross Emergency First Aid",
@@ -534,7 +550,10 @@ def synthesize_offline_rag(
             "If possible, contact local emergency services or a nearby responder. Nothing was shared by this question alone."
         )
 
-        protocol = OFFLINE_PROTOCOLS["mobility_trauma"]
+        if resolved_bleeding in ("spurting", "arterial", "venous") or any(w in question.lower() for w in ("bleed", "blood", "lacerat", "hemorrh")):
+            protocol = OFFLINE_PROTOCOLS["severe_bleeding"]
+        else:
+            protocol = OFFLINE_PROTOCOLS["mobility_trauma"]
         p_lines = [
             f"**Immediate Action Protocol: {protocol['title']}**",
             f"• {protocol['immediate']}",

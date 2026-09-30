@@ -22,11 +22,20 @@ class Memory:
     def __init__(self, root: Path, model_cache: Path):
         root.mkdir(parents=True, exist_ok=True)
         self.lock = threading.RLock()
-        self.embedder = TextEmbedding(
-            model_name="sentence-transformers/all-MiniLM-L6-v2",
-            cache_dir=str(model_cache),
-            local_files_only=True,
-        )
+        model_cache.mkdir(parents=True, exist_ok=True)
+        try:
+            self.embedder = TextEmbedding(
+                model_name="sentence-transformers/all-MiniLM-L6-v2",
+                cache_dir=str(model_cache),
+                local_files_only=True,
+            )
+        except Exception:
+            # Fallback for cloud deployment (e.g. Render) to download model into cache
+            self.embedder = TextEmbedding(
+                model_name="sentence-transformers/all-MiniLM-L6-v2",
+                cache_dir=str(model_cache),
+                local_files_only=False,
+            )
         self.bm25 = Bm25()
         config = EdgeConfig(
             vectors={"dense": EdgeVectorParams(size=384, distance=Distance.Cosine)},

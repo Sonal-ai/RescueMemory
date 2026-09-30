@@ -19,8 +19,8 @@ services:
       - key: RESPONDER_SHARED_KEY
         value: rescue-responder-shared-key-2026
       - key: QDRANT_URL
-        value: https://7b3cb247-fa8e-4344-841e-190094e210f6.eu-west-2-0.aws.cloud.qdrant.io
+        value: https://59916dae-f8fa-454e-9b92-96755f1251d4.us-east-1-1.aws.cloud.qdrant.io
       - key: QDRANT_API_KEY
-        value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIiwic3ViamVjdCI6ImFwaS1rZXk6NDYyYjk1NTUtODMxYS00ZWQ5LTliYTItZDMwYjJiOTg4YzNhIn0.rCrI3kO--zNQbP5QlKmKst9l9aR7r3sXYf6M4y4oyeM
+        value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIiwic3ViamVjdCI6ImFwaS1rZXk6NGNmOGY1MDUtZjhhMi00ZTEzLWFhOGMtZjBlMjk0MjRmNzViIn0.Bw1GfzE8jD61Yx179dU4Oj7bMKaMzLNXZP5Z9Wj-o2E
       - key: GEMINI_MODEL
         value: gemini-flash-lite-latest

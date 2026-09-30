@@ -12,10 +12,10 @@ import {
   Users,
   Wifi
 } from 'lucide-react';
-import { api, formatTime, getDiscoveredPeers, saveSetting, setting, updateDeviceLocation, getNativeOrWebLocation } from '../api';
+import { api, formatTime, getDiscoveredPeers, saveSetting, setting, updateDeviceLocation, getNativeOrWebLocation, triggerAutoSync } from '../api';
 import { Card, Empty, Shell } from '../components';
 import MapPanel from '../MapPanel';
-import SurvivalRadar from '../SurvivalRadar';
+import UnifiedRadarMap from '../components/UnifiedRadarMap';
 
 const CENTER = { lat: 28.7041, lon: 77.1025 };
 
@@ -32,6 +32,17 @@ export default function VolunteerBoard() {
   const [working, setWorking] = useState('');
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
+
+  // Auto-acquire real GPS location on mount
+  useEffect(() => {
+    getNativeOrWebLocation().then((loc) => {
+      if (loc?.lat && loc?.lon) {
+        const coords = { lat: Number(loc.lat.toFixed(5)), lon: Number(loc.lon.toFixed(5)) };
+        setCenter(coords);
+        updateDeviceLocation({ ...coords, status: 'responder_active' }).catch(() => {});
+      }
+    }).catch(() => {});
+  }, []);
 
   const refresh = useCallback(async () => {
     try {

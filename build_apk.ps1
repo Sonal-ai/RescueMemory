@@ -1,6 +1,15 @@
+param(
+    [string]$BackendUrl = ""
+)
+
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host " Building RescueMemory Offline APK locally" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
+
+if ($BackendUrl) {
+    Write-Host "Configuring Cloud Backend URL: $BackendUrl" -ForegroundColor Green
+    $env:VITE_BACKEND_URL = $BackendUrl
+}
 
 $ROOT_DIR = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $FRONTEND_DIR = Join-Path $ROOT_DIR "frontend"

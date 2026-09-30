@@ -32,7 +32,7 @@ class Settings:
         role = os.getenv("NODE_ROLE", "survivor")
         if role not in {"survivor", "volunteer", "central"}:
             raise ValueError("NODE_ROLE must be survivor, volunteer or central")
-        if role == "central":
+        if Path(".env.central").exists():
             load_dotenv(".env.central", override=False)
         return cls(
             node_id=node_id,
@@ -42,8 +42,8 @@ class Settings:
             mesh_key=os.getenv("MESH_SHARED_KEY", ""),
             responder_key=os.getenv("RESPONDER_SHARED_KEY", ""),
             central_url=os.getenv("CENTRAL_URL"),
-            qdrant_url=os.getenv("QDRANT_URL") if role == "central" else None,
-            qdrant_api_key=os.getenv("QDRANT_API_KEY") if role == "central" else None,
+            qdrant_url=os.getenv("QDRANT_URL"),
+            qdrant_api_key=os.getenv("QDRANT_API_KEY"),
             node_admin_key=os.getenv("NODE_ADMIN_KEY", ""),
             guide_trust_key=os.getenv("GUIDE_TRUST_KEY", ""),
             gemini_api_key=os.getenv("GEMINI_API_KEY", ""),

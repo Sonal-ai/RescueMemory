@@ -129,6 +129,13 @@ export function cardinalDirection(b) {
 
 export async function api(path, options = {}) {
   const { method = 'GET', body, admin = false, responder = false, group = false } = options;
+
+  // Immediate offline fallback if device is known to be offline
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    setStandaloneMode(true);
+    return handleOfflineFallback(path, method, body);
+  }
+
   const headers = { Accept: 'application/json' };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   if (admin && setting('adminKey')) headers['X-Node-Admin-Key'] = setting('adminKey');
@@ -137,12 +144,17 @@ export async function api(path, options = {}) {
 
   const targetUrl = buildBackendUrl(path);
 
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timeoutId = controller ? setTimeout(() => controller.abort(), 7000) : null;
+
   try {
     const response = await fetch(targetUrl, {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal: controller ? controller.signal : undefined,
     });
+    if (timeoutId) clearTimeout(timeoutId);
 
     // Check if ServiceWorker intercepted with offline indicator
     if (response.status === 503 && response.headers.get('X-Rescue-Offline') === 'true') {
@@ -173,6 +185,7 @@ export async function api(path, options = {}) {
     setStandaloneMode(false);
     return data;
   } catch (err) {
+    if (timeoutId) clearTimeout(timeoutId);
     // Network failed or offline: activate Client-Side Offline Brain
     const isNetworkError =
       err.message === 'SW_OFFLINE_INDICATOR' ||

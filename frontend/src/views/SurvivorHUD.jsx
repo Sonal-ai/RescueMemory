@@ -151,17 +151,12 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
   const [text, setText] = useState('');
   const [answer, setAnswer] = useState(null);
   const [chatBusy, setChatBusy] = useState(false);
-  const [useAi, setUseAi] = useState(() => isOnlineMode());
 
   // Interactive Clinical Triage & Material Assessment states
   const [triageOpen, setTriageOpen] = useState(false);
   const [breathingStatus, setBreathingStatus] = useState(true);
   const [bleedingType, setBleedingType] = useState('none'); // 'none', 'venous', 'spurting'
   const [selectedMaterials, setSelectedMaterials] = useState([]); // ['cloth', 'stick', 'water', 'belt']
-
-  useEffect(() => {
-    return onOnlineModeChange(setUseAi);
-  }, []);
 
   const targetLoc = navTarget?.location || (navTarget?.lat != null && navTarget?.lon != null ? { lat: navTarget.lat, lon: navTarget.lon } : null);
   const [shareLocation, setShareLocation] = useState(true);
@@ -460,7 +455,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
         group: Boolean(groupId),
         body: {
           text: trimmed,
-          use_ai: useAi,
+          use_ai: true,
           survivor_id: setting('reporterId') || 'survivor-1',
           share_location: shareLocation,
           materials: selectedMaterials,
@@ -816,7 +811,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                       }`}
                     >
                       {/* Header meta */}
-                      <div className="flex items-center justify-between gap-2 mb-1 text-[9.5px] opacity-90">
+                      <div className="flex items-center justify-between gap-2 mb-1 text-[11px] opacity-90">
                         <span className={`font-semibold flex items-center gap-1 ${isUser ? 'text-white' : 'text-slate-600 dark:text-slate-400'}`}>
                           {isUser ? (
                             'You'
@@ -832,15 +827,15 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                             </>
                           )}
                         </span>
-                        <span className={`font-mono text-[9px] ${isUser ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>
+                        <span className={`font-mono text-[10.5px] ${isUser ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>
                           {msg.timestamp ? formatTime(msg.timestamp) : ''}
                         </span>
                       </div>
 
                       {/* Message Body with rich Markdown parsing */}
-                      <div className={isUser ? 'text-[11.5px] text-white font-medium whitespace-pre-wrap leading-snug' : 'text-[11.5px] leading-snug text-slate-900 dark:text-slate-100'}>
+                      <div className={isUser ? 'text-[13.5px] sm:text-sm text-white font-medium whitespace-pre-wrap leading-relaxed' : 'text-[13.5px] sm:text-sm leading-relaxed text-slate-900 dark:text-slate-100'}>
                         {isUser ? (
-                          <span className="text-white font-medium text-[11.5px] leading-snug block">{msg.text}</span>
+                          <span className="text-white font-medium text-[13.5px] sm:text-sm leading-relaxed block">{msg.text}</span>
                         ) : (
                           <MarkdownContent content={msg.text} />
                         )}
@@ -1047,13 +1042,13 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                         type="button"
                         key={q.text}
                         onClick={() => handleQuickPrompt(q.text)}
-                        className={`shrink-0 text-[10px] py-0.5 px-2 rounded-full border flex items-center gap-1 font-bold transition-all active:scale-95 touch-manipulation whitespace-nowrap ${
+                        className={`shrink-0 text-[11.5px] sm:text-xs py-0.5 px-2.5 rounded-full border flex items-center gap-1 font-bold transition-all active:scale-95 touch-manipulation whitespace-nowrap ${
                           q.urgent
                             ? 'border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/40 text-red-800 dark:text-red-300 hover:bg-red-100'
                             : 'border-[#cbdbe9] dark:border-slate-800 bg-white dark:bg-slate-900/60 text-slate-700 dark:text-slate-300 hover:bg-[#edf5fb]'
                         }`}
                       >
-                        <Icon size={10} className={q.urgent ? 'text-red-600 dark:text-red-400' : 'text-cyan-600 dark:text-cyan-400'} />
+                        <Icon size={11} className={q.urgent ? 'text-red-600 dark:text-red-400' : 'text-cyan-600 dark:text-cyan-400'} />
                         <span>{q.label}</span>
                       </button>
                     );
@@ -1062,14 +1057,12 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
               ) : (
                 <span
                   onClick={() => setShowQuickPrompts(true)}
-                  className="text-[10px] text-slate-500 dark:text-slate-400 truncate cursor-pointer hover:text-cyan-600 dark:hover:text-cyan-400 select-none flex-1 font-medium"
+                  className="text-[12px] sm:text-xs text-slate-500 dark:text-slate-400 truncate cursor-pointer hover:text-cyan-600 dark:hover:text-cyan-400 select-none flex-1 font-medium"
                 >
                   Emergency prompts (can't walk, bleeding, safe water)...
                 </span>
               )}
             </div>
-
-
 
             {/* Bottom Minimal Input Box */}
             <div className="p-1.5 sm:p-2 border-t border-[#cfe1f0] dark:border-slate-800 bg-[#e3eef7] dark:bg-[#0b1626] shrink-0">
@@ -1085,33 +1078,18 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                       : 'bg-[#dce8f3] dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-[#cbdbe9] dark:border-slate-700 hover:bg-[#d0e0ec] dark:hover:bg-slate-700'
                   }`}
                 >
-                  <Mic size={14} />
+                  <Mic size={15} />
                 </button>
 
                 {/* Shaded Input text bar */}
                 <input
                   type="text"
-                  className="flex-1 bg-[#f8fafc] dark:bg-slate-900 border border-[#cbd5e1] dark:border-slate-700 rounded-lg px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-red-500 focus:bg-white transition-all font-medium"
+                  className="flex-1 bg-[#f8fafc] dark:bg-slate-900 border border-[#cbd5e1] dark:border-slate-700 rounded-lg px-2.5 sm:px-3 py-1.5 sm:py-2 text-[13.5px] sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-red-500 focus:bg-white transition-all font-medium"
                   placeholder="Ask emergency question or triage..."
                   value={text}
                   onChange={(e) => setText(e.target.value)}
                   disabled={chatBusy}
                 />
-
-                {/* Inline Cloud AI Toggle Button */}
-                <button
-                  type="button"
-                  onClick={() => setUseAi(!useAi)}
-                  title={useAi ? "Cloud AI ON (Gemini). Tap to disable" : "Offline Mode ON (Local Qdrant). Tap to enable Cloud AI"}
-                  className={`p-1.5 sm:py-1.5 sm:px-2 rounded-lg border text-[10px] font-extrabold flex items-center gap-1 transition-all active:scale-95 shrink-0 cursor-pointer ${
-                    useAi
-                      ? 'bg-emerald-600 text-white border-emerald-500 shadow-xs'
-                      : 'bg-[#dce8f3] dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-[#cbdbe9] dark:border-slate-700 hover:bg-[#d0e0ec]'
-                  }`}
-                >
-                  <Sparkles size={12} className={useAi ? 'text-amber-200 animate-pulse' : 'text-slate-400'} />
-                  <span className="hidden sm:inline text-[9px] uppercase font-bold">{useAi ? 'Cloud' : 'Local'}</span>
-                </button>
 
                 {/* Send button */}
                 <button
@@ -1162,7 +1140,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
           >
             {/* 4 Clear High-Contrast Emergency Situation Tiles */}
             <div className="mb-2.5">
-              <label className="block text-[11px] text-slate-700 dark:text-slate-300 font-bold uppercase tracking-wider mb-1.5">
+              <label className="block text-xs sm:text-sm text-slate-700 dark:text-slate-300 font-bold uppercase tracking-wider mb-1.5">
                 Emergency Type:
               </label>
               <div className="grid grid-cols-2 gap-2">
@@ -1183,7 +1161,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                           visibility: type.visibility
                         });
                       }}
-                      className={`p-2 sm:p-2.5 rounded-xl border text-left transition-all active:scale-[0.98] cursor-pointer ${
+                      className={`p-2.5 sm:p-3 rounded-xl border text-left transition-all active:scale-[0.98] cursor-pointer ${
                         isSelected
                           ? type.selectedStyle
                           : 'border-[#dbe6f0] dark:border-slate-800 bg-[#f8fafc] dark:bg-[#0b1322]/80 hover:bg-[#edf5fb] dark:hover:bg-[#0f1b2d] hover:border-[#cbdbe9] dark:hover:border-slate-700 text-slate-800 dark:text-slate-300 shadow-xs'
@@ -1191,11 +1169,11 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                     >
                       <div className="flex items-center gap-1.5 mb-0.5">
                         <div className={`p-1.5 rounded-lg border ${type.badgeBg}`}>
-                          <TypeIcon size={14} />
+                          <TypeIcon size={15} />
                         </div>
-                        <span className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white tracking-tight truncate">{type.title}</span>
+                        <span className="font-bold text-sm sm:text-base text-slate-900 dark:text-white tracking-tight truncate">{type.title}</span>
                       </div>
-                      <p className="text-[10px] text-slate-600 dark:text-slate-400 line-clamp-1 leading-tight ml-0.5 font-medium">
+                      <p className="text-[11.5px] sm:text-xs text-slate-600 dark:text-slate-400 line-clamp-1 leading-tight ml-0.5 font-medium">
                         {type.subtitle}
                       </p>
                     </button>
@@ -1208,12 +1186,12 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
             <form onSubmit={submitReport} className="space-y-2.5">
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="text-[11px] text-slate-700 dark:text-slate-300 font-bold uppercase tracking-wider">
+                  <label className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 font-bold uppercase tracking-wider">
                     Situation Details:
                   </label>
                 </div>
                 <textarea
-                  className="field min-h-16 w-full text-xs sm:text-sm font-sans py-1.5 px-2.5"
+                  className="field min-h-16 w-full text-sm font-sans py-2 px-3"
                   value={report.text}
                   onChange={(e) => setReport({ ...report, text: e.target.value })}
                   required
@@ -1225,7 +1203,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
               {/* Clinical Casualty Triage & Materials Assessment */}
               <div className="rounded-xl border border-red-200 dark:border-red-900/60 bg-[#edf5fc] dark:bg-[#07111e] p-2.5 sm:p-3 space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="flex items-center gap-1.5 text-[11px] font-bold text-red-700 dark:text-rose-400">
+                  <span className="flex items-center gap-1.5 text-xs sm:text-sm font-bold text-red-700 dark:text-rose-400">
                     <HeartPulse size={13} className="animate-pulse text-red-600" />
                     <span>Clinical Casualty Triage & Materials</span>
                   </span>
@@ -1251,14 +1229,14 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {/* Breathing state */}
                   <div>
-                    <span className="block text-[9px] uppercase font-bold text-slate-700 dark:text-slate-400 mb-0.5 tracking-wider">
+                    <span className="block text-[10.5px] sm:text-xs uppercase font-bold text-slate-700 dark:text-slate-400 mb-1 tracking-wider">
                       1. Casualty Breathing:
                     </span>
-                    <div className="grid grid-cols-2 gap-1">
+                    <div className="grid grid-cols-2 gap-1.5">
                       <button
                         type="button"
                         onClick={() => setBreathingStatus(true)}
-                        className={`py-1 px-1.5 rounded-lg border text-[10px] font-bold transition-all ${
+                        className={`py-1.5 px-2 rounded-lg border text-[11.5px] sm:text-xs font-bold transition-all ${
                           breathingStatus
                             ? 'bg-emerald-600 text-white border-emerald-500 shadow-xs'
                             : 'bg-white dark:bg-slate-900 border-[#cbdbe9] dark:border-slate-800 text-slate-700 dark:text-slate-300'
@@ -1277,7 +1255,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                             }));
                           }
                         }}
-                        className={`py-1 px-1.5 rounded-lg border text-[10px] font-bold transition-all ${
+                        className={`py-1.5 px-2 rounded-lg border text-[11.5px] sm:text-xs font-bold transition-all ${
                           !breathingStatus
                             ? 'bg-red-600 text-white border-red-500 shadow-xs'
                             : 'bg-white dark:bg-slate-900 border-[#cbdbe9] dark:border-slate-800 text-red-700 dark:text-red-400'
@@ -1290,10 +1268,10 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
 
                   {/* Bleeding status */}
                   <div>
-                    <span className="block text-[9px] uppercase font-bold text-slate-700 dark:text-slate-400 mb-0.5 tracking-wider">
+                    <span className="block text-[10.5px] sm:text-xs uppercase font-bold text-slate-700 dark:text-slate-400 mb-1 tracking-wider">
                       2. Bleeding Severity:
                     </span>
-                    <div className="grid grid-cols-3 gap-1">
+                    <div className="grid grid-cols-3 gap-1.5">
                       {[
                         ['none', 'No Bleed'],
                         ['venous', 'Venous'],
@@ -1311,7 +1289,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                               }));
                             }
                           }}
-                          className={`py-1 px-1 rounded-lg border text-[10px] font-bold transition-all ${
+                          className={`py-1.5 px-1 rounded-lg border text-[11.5px] sm:text-xs font-bold transition-all ${
                             bleedingType === val
                               ? val === 'spurting'
                                 ? 'bg-red-600 text-white border-red-500 shadow-xs'
@@ -1330,10 +1308,10 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
 
                 {/* Improvised Materials selection */}
                 <div>
-                  <span className="block text-[9px] uppercase font-bold text-slate-700 dark:text-slate-400 mb-0.5 tracking-wider">
+                  <span className="block text-[10.5px] sm:text-xs uppercase font-bold text-slate-700 dark:text-slate-400 mb-1 tracking-wider">
                     3. Improvised Materials Available:
                   </span>
-                  <div className="flex flex-wrap gap-1">
+                  <div className="flex flex-wrap gap-1.5">
                     {[
                       ['stick', 'Stick / Splint'],
                       ['cloth', 'Cloth / Shirt'],
@@ -1351,7 +1329,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                               isSelected ? prev.filter((m) => m !== id) : [...prev, id]
                             );
                           }}
-                          className={`text-[10px] py-0.5 px-2 rounded-lg border font-bold transition-all ${
+                          className={`text-[11.5px] sm:text-xs py-1 px-2.5 rounded-lg border font-bold transition-all ${
                             isSelected
                               ? 'bg-cyan-600 text-white border-cyan-500 shadow-xs'
                               : 'bg-white dark:bg-slate-900 border-[#cbdbe9] dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-cyan-400'
@@ -1365,7 +1343,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                       <button
                         type="button"
                         onClick={() => setSelectedMaterials([])}
-                        className="text-[9px] text-slate-500 hover:text-red-600 underline font-semibold ml-1 self-center"
+                        className="text-[10px] text-slate-500 hover:text-red-600 underline font-semibold ml-1 self-center"
                       >
                         Clear
                       </button>
@@ -1375,19 +1353,19 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
               </div>
 
               {/* Real-time GPS Location Status Badge */}
-              <div className="rounded-lg bg-[#eef6fb] dark:bg-[#07111e] border border-cyan-400/40 p-2 text-xs text-slate-800 dark:text-slate-300 flex items-center justify-between">
+              <div className="rounded-lg bg-[#eef6fb] dark:bg-[#07111e] border border-cyan-400/40 p-2 text-xs sm:text-sm text-slate-800 dark:text-slate-300 flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse"></span>
-                  <span className="font-mono text-cyan-950 dark:text-cyan-300 font-bold text-[11px]">
+                  <span className="font-mono text-cyan-950 dark:text-cyan-300 font-bold text-xs sm:text-[13px]">
                     Location: {pin.lat.toFixed(3)}, {pin.lon.toFixed(3)}
                   </span>
                 </div>
                 <button
                   type="button"
                   onClick={useGps}
-                  className="text-cyan-700 dark:text-cyan-400 hover:text-cyan-900 dark:hover:text-cyan-300 text-[11px] font-bold flex items-center gap-1 transition-colors"
+                  className="text-cyan-700 dark:text-cyan-400 hover:text-cyan-900 dark:hover:text-cyan-300 text-xs sm:text-[13px] font-bold flex items-center gap-1 transition-colors"
                 >
-                  <Cross size={11} /> Update
+                  <Cross size={12} /> Update
                 </button>
               </div>
 
@@ -1396,20 +1374,20 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                 <button
                   type="button"
                   onClick={() => setShowSosDetails(!showSosDetails)}
-                  className="w-full py-1.5 px-2.5 rounded-lg bg-[#edf4f9] dark:bg-slate-900/60 hover:bg-[#e2edf6] dark:hover:bg-slate-800/70 border border-[#d2e2ef] dark:border-slate-800 text-slate-800 dark:text-slate-400 hover:text-slate-950 dark:hover:text-slate-200 text-xs font-bold flex items-center justify-between transition-colors"
+                  className="w-full py-2 px-3 rounded-lg bg-[#edf4f9] dark:bg-slate-900/60 hover:bg-[#e2edf6] dark:hover:bg-slate-800/70 border border-[#d2e2ef] dark:border-slate-800 text-slate-800 dark:text-slate-400 hover:text-slate-950 dark:hover:text-slate-200 text-xs sm:text-sm font-bold flex items-center justify-between transition-colors"
                 >
                   <span className="flex items-center gap-1.5">
-                    <MapPin size={13} className="text-cyan-600 dark:text-cyan-400" />
+                    <MapPin size={14} className="text-cyan-600 dark:text-cyan-400" />
                     <span>Customize Severity, Visibility & Map Pin</span>
                   </span>
-                  <ChevronDown size={13} className={`transition-transform duration-200 ${showSosDetails ? 'rotate-180' : ''}`} />
+                  <ChevronDown size={14} className={`transition-transform duration-200 ${showSosDetails ? 'rotate-180' : ''}`} />
                 </button>
 
                 {showSosDetails && (
-                  <div className="mt-2 space-y-2.5 p-2.5 sm:p-3 rounded-xl bg-[#f8fafc] dark:bg-[#07111e]/90 border border-[#dbe6f0] dark:border-slate-800 animate-in fade-in">
+                  <div className="mt-2 space-y-3 p-3 rounded-xl bg-[#f8fafc] dark:bg-[#07111e]/90 border border-[#dbe6f0] dark:border-slate-800 animate-in fade-in">
                     {/* Severity Level Buttons */}
                     <div>
-                      <label className="block text-[10px] text-slate-700 dark:text-slate-400 font-bold uppercase tracking-wider mb-1">
+                      <label className="block text-xs text-slate-700 dark:text-slate-400 font-bold uppercase tracking-wider mb-1.5">
                         Severity Level
                       </label>
                       <div className="grid grid-cols-3 gap-1.5">
@@ -1425,11 +1403,11 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                               key={s.id}
                               type="button"
                               onClick={() => setReport({ ...report, severity: s.id })}
-                              className={`p-1.5 rounded-lg border text-[11px] font-bold flex items-center justify-center gap-1 transition-all ${
+                              className={`p-2 rounded-lg border text-xs sm:text-[13px] font-bold flex items-center justify-center gap-1.5 transition-all ${
                                 isSel ? s.activeClass : 'border-[#cbdbe9] dark:border-slate-800 bg-white dark:bg-slate-900/60 text-slate-700 dark:text-slate-400 hover:bg-[#edf5fb] dark:hover:bg-slate-800'
                               }`}
                             >
-                              <SIcon size={12} />
+                              <SIcon size={13} />
                               <span>{s.label}</span>
                             </button>
                           );
@@ -1439,27 +1417,27 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
 
                     {/* Visibility Scope */}
                     <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="block text-[10px] text-slate-700 dark:text-slate-400 font-bold uppercase tracking-wider">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="block text-xs text-slate-700 dark:text-slate-400 font-bold uppercase tracking-wider">
                           Visibility Scope
                         </label>
                         {report.kind === 'incident' && (
-                          <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                            <ShieldAlert size={10} /> Locked to Responders
+                          <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                            <ShieldAlert size={11} /> Locked to Responders
                           </span>
                         )}
                       </div>
-                      <div className="grid grid-cols-2 gap-1.5">
+                      <div className="grid grid-cols-2 gap-2">
                         <button
                           type="button"
                           onClick={() => setReport({ ...report, visibility: 'responders' })}
-                          className={`p-1.5 rounded-lg border text-[11px] font-bold flex items-center justify-center gap-1 transition-all ${
+                          className={`p-2 rounded-lg border text-xs sm:text-[13px] font-bold flex items-center justify-center gap-1.5 transition-all ${
                             report.visibility === 'responders'
                               ? 'border-cyan-500 bg-cyan-600 text-white shadow-xs'
                               : 'border-[#cbdbe9] dark:border-slate-800 bg-white dark:bg-slate-900/60 text-slate-700 dark:text-slate-400 hover:bg-[#edf5fb] dark:hover:bg-slate-800'
                           }`}
                         >
-                          <ShieldAlert size={13} />
+                          <ShieldAlert size={14} />
                           <span>Responders Only</span>
                         </button>
                         <button
@@ -1467,7 +1445,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                           disabled={report.kind === 'incident'}
                           onClick={() => setReport({ ...report, visibility: 'public' })}
                           title={report.kind === 'incident' ? 'Medical/Trapped SOS is restricted to verified Responders to protect victim privacy and safety.' : 'Broadcast publicly to all mesh nodes'}
-                          className={`p-1.5 rounded-lg border text-[11px] font-bold flex items-center justify-center gap-1 transition-all ${
+                          className={`p-2 rounded-lg border text-xs sm:text-[13px] font-bold flex items-center justify-center gap-1.5 transition-all ${
                             report.kind === 'incident'
                               ? 'opacity-40 cursor-not-allowed border-slate-200 dark:border-slate-900 bg-slate-100 dark:bg-slate-950 text-slate-400 dark:text-slate-600'
                               : report.visibility === 'public'
@@ -1475,7 +1453,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                               : 'border-[#cbdbe9] dark:border-slate-800 bg-white dark:bg-slate-900/60 text-slate-700 dark:text-slate-400 hover:bg-[#edf5fb] dark:hover:bg-slate-800'
                           }`}
                         >
-                          <Wifi size={13} />
+                          <Wifi size={14} />
                           <span>Public Mesh</span>
                         </button>
                       </div>
@@ -1483,7 +1461,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
 
                     {/* Interactive Map Crosshair */}
                     <div className="pt-1">
-                      <label className="block text-[10px] text-slate-700 dark:text-slate-400 font-bold uppercase tracking-wider mb-1">
+                      <label className="block text-xs text-slate-700 dark:text-slate-400 font-bold uppercase tracking-wider mb-1">
                         Tap Map to Place Location Pin
                       </label>
                       <div className="rounded-lg overflow-hidden border border-slate-200 dark:border-slate-800">
@@ -1559,7 +1537,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
       {/* Thumb-friendly, accessible, compact ergonomic navigation */}
       {/* ========================================================================= */}
       <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#f4f8fb]/95 dark:bg-[#0a1324]/95 border-t border-[#dbe6f0] dark:border-slate-700/80 backdrop-blur-xl pb-safe shadow-xl">
-        <div className="grid grid-cols-4 h-12">
+        <div className="grid grid-cols-4 h-14">
           {TABS.map(([id, label, Icon]) => {
             const isActive = tab === id;
             const activeColors = {
@@ -1571,6 +1549,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
             return (
               <button
                 key={id}
+                type="button"
                 onClick={() => {
                   setTab(id);
                   setError('');
@@ -1582,7 +1561,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                 }`}
               >
                 <div className="relative">
-                  <Icon size={17} className={isActive ? 'stroke-[2.5]' : 'stroke-[1.8]'} />
+                  <Icon size={19} className={isActive ? 'stroke-[2.5]' : 'stroke-[1.8]'} />
                   {id === 'map' && (nearestCasualty || peers.length > 0) && (
                     <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
                   )}
@@ -1590,7 +1569,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                     <span className="absolute -top-0.5 -right-1 w-1.5 h-1.5 rounded-full bg-sky-500 animate-ping" />
                   )}
                 </div>
-                <span className="text-[9.5px] tracking-tight font-bold">{label.split(' ')[0]}</span>
+                <span className="text-[11.5px] tracking-tight font-bold mt-0.5">{label.split(' ')[0]}</span>
               </button>
             );
           })}

@@ -178,11 +178,11 @@ export default function MeshSyncScanner({
             <Radio size={15} className={scanning || syncingAll ? 'animate-spin' : ''} />
           </div>
           <div>
-            <h2 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+            <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
               <span>Mesh Sync</span>
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
             </h2>
-            <p className="text-[10.5px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-tight">
+            <p className="text-xs sm:text-[13px] text-slate-500 dark:text-slate-400 mt-0.5 leading-tight font-medium">
               Sync emergency data with nearby devices without internet.
             </p>
           </div>
@@ -201,19 +201,19 @@ export default function MeshSyncScanner({
 
       {/* Alert Notifications */}
       {statusMessage && (
-        <div className="p-2.5 rounded-xl border border-emerald-300 dark:border-emerald-800/80 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 text-xs flex items-center justify-between shadow-xs">
-          <div className="flex items-center gap-1.5">
-            <CheckCircle2 size={14} className="shrink-0 text-emerald-500" />
-            <span>{statusMessage}</span>
+        <div className="p-2.5 sm:p-3 rounded-xl border border-emerald-300 dark:border-emerald-800/80 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 text-xs sm:text-sm flex items-center justify-between shadow-xs">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 size={16} className="shrink-0 text-emerald-500" />
+            <span className="font-medium">{statusMessage}</span>
           </div>
-          <button onClick={() => setStatusMessage('')} className="text-[11px] underline font-semibold ml-2">Dismiss</button>
+          <button onClick={() => setStatusMessage('')} className="text-xs underline font-semibold ml-2">Dismiss</button>
         </div>
       )}
 
       {errorMessage && (
-        <div className="p-2.5 rounded-xl border border-red-300 dark:border-red-800/80 bg-red-50 dark:bg-red-950/40 text-red-800 dark:text-red-200 text-xs flex items-center justify-between shadow-xs">
-          <span>{errorMessage}</span>
-          <button onClick={() => setErrorMessage('')} className="text-[11px] underline font-semibold ml-2">Dismiss</button>
+        <div className="p-2.5 sm:p-3 rounded-xl border border-red-300 dark:border-red-800/80 bg-red-50 dark:bg-red-950/40 text-red-800 dark:text-red-200 text-xs sm:text-sm flex items-center justify-between shadow-xs">
+          <span className="font-medium">{errorMessage}</span>
+          <button onClick={() => setErrorMessage('')} className="text-xs underline font-semibold ml-2">Dismiss</button>
         </div>
       )}
 
@@ -310,42 +310,42 @@ export default function MeshSyncScanner({
         </div>
 
         {/* Sync Button */}
-        <div className="w-full max-w-sm mt-2.5 sm:mt-3">
+        <div className="w-full max-w-sm mt-3">
           <button
             type="button"
             onClick={handleScanAndTransfer}
             disabled={syncingAll}
-            className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-xs sm:text-sm shadow-md shadow-emerald-600/25 flex items-center justify-center gap-1.5 transition-all active:scale-98 disabled:opacity-75 cursor-pointer"
+            className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-sm sm:text-base shadow-md shadow-emerald-600/25 flex items-center justify-center gap-2 transition-all active:scale-98 disabled:opacity-75 cursor-pointer"
           >
             {syncingAll ? (
               <>
-                <RefreshCw size={14} className="animate-spin" />
+                <RefreshCw size={16} className="animate-spin" />
                 <span>Syncing Data…</span>
               </>
             ) : (
               <>
-                <Zap size={14} />
+                <Zap size={16} />
                 <span>Sync Nearby Devices {peers.length > 0 ? `(${peers.length})` : ''}</span>
               </>
             )}
           </button>
-          <p className="text-[10px] text-center text-slate-500 dark:text-slate-400 mt-1.5 font-medium">
+          <p className="text-[11.5px] sm:text-xs text-center text-slate-500 dark:text-slate-400 mt-2 font-medium">
             Connects via local Wi-Fi or phone hotspot
           </p>
         </div>
       </div>
 
       {/* Discovered Devices List */}
-      <div className="bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 rounded-2xl p-2.5 sm:p-3.5 shadow-xs">
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-            <Wifi size={13} className="text-emerald-500" />
+      <div className="bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 rounded-2xl p-3 sm:p-4 shadow-xs">
+        <div className="flex items-center justify-between mb-2.5">
+          <h3 className="text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+            <Wifi size={14} className="text-emerald-500" />
             <span>Nearby Devices ({peers.length})</span>
           </h3>
         </div>
 
         {peers.length > 0 ? (
-          <div className="space-y-1.5 sm:space-y-2">
+          <div className="space-y-2">
             {peers.map((peer, idx) => {
               const isVol = peer.role === 'volunteer' || peer.role === 'central';
               const isSyncingThis = syncingNodeId === peer.node_id;
@@ -353,15 +353,15 @@ export default function MeshSyncScanner({
               return (
                 <div
                   key={peer.node_id || idx}
-                  className="p-2 sm:p-2.5 rounded-xl border border-[#dbe6f0] dark:border-slate-800 bg-[#f8fafc] dark:bg-slate-900/60 flex items-center justify-between gap-2.5"
+                  className="p-2.5 sm:p-3 rounded-xl border border-[#dbe6f0] dark:border-slate-800 bg-[#f8fafc] dark:bg-slate-900/60 flex items-center justify-between gap-3"
                 >
                   <div className="min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className={`w-1.5 h-1.5 rounded-full ${peer.is_online !== false ? 'bg-emerald-500' : 'bg-slate-400'}`} />
-                      <span className="font-bold text-slate-900 dark:text-slate-100 text-xs truncate">
+                    <div className="flex items-center gap-2">
+                      <span className={`w-2 h-2 rounded-full ${peer.is_online !== false ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+                      <span className="font-bold text-slate-900 dark:text-slate-100 text-[13.5px] sm:text-sm truncate">
                         {peer.node_id || `Device ${idx + 1}`}
                       </span>
-                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                         isVol
                           ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300'
                           : 'bg-cyan-100 dark:bg-cyan-950 text-cyan-800 dark:text-cyan-300'
@@ -375,12 +375,12 @@ export default function MeshSyncScanner({
                     type="button"
                     onClick={() => handleSyncSinglePeer(peer)}
                     disabled={isSyncingThis || syncingAll}
-                    className="py-1 px-2.5 rounded-lg border border-cyan-500/50 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 font-bold text-[11px] flex items-center gap-1 transition-all shrink-0 active:scale-95"
+                    className="py-1.5 px-3 rounded-lg border border-cyan-500/50 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 font-bold text-xs flex items-center gap-1.5 transition-all shrink-0 active:scale-95 cursor-pointer"
                   >
                     {isSyncingThis ? (
-                      <RefreshCw size={11} className="animate-spin" />
+                      <RefreshCw size={12} className="animate-spin" />
                     ) : (
-                      <Zap size={11} />
+                      <Zap size={12} />
                     )}
                     <span>Sync</span>
                   </button>
@@ -389,9 +389,9 @@ export default function MeshSyncScanner({
             })}
           </div>
         ) : (
-          <div className="p-3.5 sm:p-4 rounded-xl border border-dashed border-[#cbdbe9] dark:border-slate-800 text-center bg-[#f8fafc]/60 dark:bg-slate-900/30">
-            <Radio size={18} className="mx-auto text-slate-400 mb-1 animate-pulse" />
-            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+          <div className="p-4 rounded-xl border border-dashed border-[#cbdbe9] dark:border-slate-800 text-center bg-[#f8fafc]/60 dark:bg-slate-900/30">
+            <Radio size={20} className="mx-auto text-slate-400 mb-1.5 animate-pulse" />
+            <p className="text-xs sm:text-[13px] text-slate-500 dark:text-slate-400 font-medium">
               No nearby devices found yet. Ensure both phones are on the same Wi-Fi or hotspot.
             </p>
           </div>
@@ -403,18 +403,18 @@ export default function MeshSyncScanner({
         <button
           type="button"
           onClick={() => setShowManualConnect(!showManualConnect)}
-          className="text-[11px] text-slate-500 dark:text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-400 font-medium inline-flex items-center gap-1 py-0.5 cursor-pointer"
+          className="text-xs text-slate-500 dark:text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-400 font-semibold inline-flex items-center gap-1 py-1 cursor-pointer"
         >
           <span>Advanced connection</span>
-          {showManualConnect ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+          {showManualConnect ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
         </button>
 
         {showManualConnect && (
-          <div className="mt-1.5 bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 rounded-xl p-2.5 shadow-xs text-left animate-in fade-in">
+          <div className="mt-2 bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 rounded-xl p-3 shadow-xs text-left animate-in fade-in">
             <form onSubmit={handleDirectIpSync} className="flex gap-2">
               <input
                 type="text"
-                className="field flex-1 text-xs py-1.5 px-2.5"
+                className="field flex-1 text-sm py-2 px-3"
                 placeholder="Device IP or URL (e.g. 192.168.43.12:8001)"
                 value={directIp}
                 onChange={(e) => setDirectIp(e.target.value)}
@@ -422,9 +422,9 @@ export default function MeshSyncScanner({
               <button
                 type="submit"
                 disabled={!directIp.trim() || syncingAll}
-                className="py-1.5 px-3 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center gap-1 shrink-0 transition-all"
+                className="py-2 px-3.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs sm:text-sm flex items-center gap-1 shrink-0 transition-all cursor-pointer"
               >
-                <Send size={11} />
+                <Send size={12} />
                 <span>Connect</span>
               </button>
             </form>

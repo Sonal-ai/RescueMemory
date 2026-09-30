@@ -661,19 +661,26 @@ class RescueService:
                 override_ev = recent_statuses.get(cp.get("id"))
                 status = override_ev.get("status") if override_ev else cp.get("status", "operational")
                 is_danger = status in {"danger", "flooded", "blocked", "danger_warning"}
-                hazard_desc = override_ev.get("text") if (override_ev and is_danger) else cp.get("hazard")
-                cat = "hazard" if is_danger else "shelter"
+                facilities = cp.get("facilities", [])
+                is_resource = any("water" in str(f).lower() or "food" in str(f).lower() or "resource" in str(f).lower() for f in facilities) or "water" in cp.get("id", "").lower()
+                cat = "hazard" if is_danger else ("resource" if is_resource else "shelter")
 
-                if request.filter_category == "all" or (request.filter_category == "shelters" and not is_danger) or (request.filter_category == "hazards" and is_danger):
+                if request.filter_category == "all" or (request.filter_category == "shelters" and not is_danger and not is_resource) or (request.filter_category == "resources" and is_resource) or (request.filter_category == "hazards" and is_danger):
                     key = (cat, cp["id"])
                     if key not in seen_keys:
                         seen_keys.add(key)
+                        if is_danger:
+                            desc_text = hazard_desc or "Hazard warning: Take caution and follow alternate bypass."
+                        elif is_resource:
+                            desc_text = cp.get("summary") or f"Drinkable water & essential resources. Facilities: {', '.join(facilities) if facilities else 'Clean Water Supply'}"
+                        else:
+                            desc_text = cp.get("summary") or f"Verified disaster shelter with facilities: {', '.join(facilities) if facilities else 'Safe Shelter'}"
                         radar_items.append({
                             "id": cp["id"],
                             "name": cp.get("title") or cp.get("name") or cp["id"],
                             "category": cat,
                             "triage_level": "hazard_warning" if is_danger else "safe_green",
-                            "text": hazard_desc or cp.get("summary") or f"Verified disaster shelter with facilities: {', '.join(cp.get('facilities', []))}",
+                            "text": desc_text,
                             "status": status,
                             "severity": "red" if is_danger else "green",
                             "distance_m": round(dist),

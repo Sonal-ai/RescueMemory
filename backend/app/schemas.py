@@ -13,7 +13,7 @@ class Location(BaseModel):
 
 class ChatRequest(BaseModel):
     text: str = Field(min_length=2, max_length=2000)
-    use_ai: bool = False
+    use_ai: bool = True
     survivor_id: str | None = Field(default=None, max_length=100)
     location: Location | None = None
     share_location: bool = False

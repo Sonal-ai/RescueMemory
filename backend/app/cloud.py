@@ -67,8 +67,6 @@ def _upsert_new(client: QdrantClient, name: str, records: list[dict],
 
 def check_cloud_connection(service: RescueService) -> dict:
     """Read-only health check for Qdrant Cloud connectivity."""
-    if service.settings.role != "central":
-        return {"connected": False, "configured": False, "reason": "Node role is not central"}
     if not service.settings.qdrant_url:
         return {"connected": False, "configured": False, "reason": "QDRANT_URL missing"}
     client = QdrantClient(url=service.settings.qdrant_url,

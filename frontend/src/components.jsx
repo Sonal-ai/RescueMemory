@@ -240,7 +240,7 @@ export function Shell({ title, subtitle, children }) {
   }, [theme]);
 
   return (
-    <div className="app-shell min-h-screen bg-[#f0f5fa] dark:bg-[#080d19] text-slate-900 dark:text-slate-100 flex flex-col pb-12 sm:pb-0">
+    <div className="app-shell min-h-screen bg-[#f0f5fa] dark:bg-[#080d19] text-slate-900 dark:text-slate-100 flex flex-col pb-16 sm:pb-0">
       {/* Top Tactical Navigation Header */}
       <header className="app-header border-b border-[#dbe6f0] dark:border-cyan-500/15 bg-white/95 dark:bg-[#0b1528]/95 sticky top-0 z-40 backdrop-blur-xl shadow-xs">
         <div className="h-0.5 w-full bg-gradient-to-r from-red-500 via-cyan-400 to-emerald-400 opacity-90" />
