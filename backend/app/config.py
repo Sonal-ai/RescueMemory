@@ -41,7 +41,7 @@ class Settings:
             model_cache=Path(os.getenv("MODEL_CACHE", "data/model_cache")),
             mesh_key=os.getenv("MESH_SHARED_KEY", ""),
             responder_key=os.getenv("RESPONDER_SHARED_KEY", ""),
-            central_url=os.getenv("CENTRAL_URL"),
+            central_url=os.getenv("CENTRAL_URL", "https://rescuememory-backend.onrender.com"),
             qdrant_url=os.getenv("QDRANT_URL") if role == "central" else None,
             qdrant_api_key=os.getenv("QDRANT_API_KEY") if role == "central" else None,
             node_admin_key=os.getenv("NODE_ADMIN_KEY", ""),

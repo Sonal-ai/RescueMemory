@@ -6,7 +6,12 @@ import {
   triggerAutoSync,
   onSyncStateChange,
 } from './brain/offlineBrain.js';
-import { getAllLocalReports, getUnsyncedReports, markReportsSynced } from './brain/offlineStorage.js';
+import { getAllLocalReports, getUnsyncedReports, markReportsSynced, getAllLocalGuides } from './brain/offlineStorage.js';
+import {
+  QDRANT_CLOUD_URL,
+  QDRANT_CLOUD_KEY,
+  universalRequest,
+} from './brain/cloudSync.js';
 export {
   distM,
   bearingDeg,
@@ -16,6 +21,8 @@ export {
   pushReportsToCloud,
   pullReportsFromCloud,
   universalRequest,
+  QDRANT_CLOUD_URL,
+  QDRANT_CLOUD_KEY,
 } from './brain/cloudSync.js';
 
 const PREFIX = 'rescue.';

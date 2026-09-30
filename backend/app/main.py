@@ -4,7 +4,7 @@ import hmac
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -31,6 +31,19 @@ class ImportGuides(BaseModel):
 
 class ImportReceipts(BaseModel):
     receipts: list[dict] = Field(max_length=128)
+
+
+def async_uplink_sos(s: RescueService, central_url: str):
+    try:
+        if s.settings.role == "survivor":
+            uplink_sos(s, central_url)
+        else:
+            sync_with_peer(s, central_url, "public")
+            if s.settings.responder_key:
+                sync_with_peer(s, central_url, "responders")
+    except Exception as exc:
+        import logging
+        logging.getLogger("rescue.sync").info("Background SOS uplink notice: %s", exc)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -97,14 +110,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
 
     @app.post("/api/reports")
-    def report(request: ReportRequest, x_group_token: str | None = Header(default=None),
+    def report(request: ReportRequest,
+               background_tasks: BackgroundTasks,
+               x_group_token: str | None = Header(default=None),
                x_node_admin_key: str | None = Header(default=None),
                s: RescueService = Depends(service)):
         if request.group_id and not valid_group_token(s, request.group_id, x_group_token):
             raise HTTPException(403, "group token required")
         if request.verified:
             require_admin(x_node_admin_key)
-        return s.report(request)
+        res = s.report(request)
+        if settings.central_url and settings.role != "central":
+            background_tasks.add_task(async_uplink_sos, s, settings.central_url)
+        return res
 
     @app.get("/api/guides")
     def guides(s: RescueService = Depends(service)):
@@ -125,7 +143,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 raise HTTPException(403, "group token required")
         if request.include_responders:
             if not valid_responder_token(x_responder_key):
-                raise HTTPException(403, "responder key required")
+                request.include_responders = False
         return {"items": s.nearby(request)}
 
     @app.post("/api/survival-finder/radar")
