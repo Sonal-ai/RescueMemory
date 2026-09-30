@@ -100,7 +100,7 @@ function setStandaloneMode(active) {
 let resolvedBackendUrl = null;
 
 const CANDIDATE_EDGE_HOSTS = [
-  'http://10.122.244.213:8000',
+  'https://rescuememory.onrender.com',
   'http://192.168.43.1:8000',
   'http://192.168.137.1:8000',
   'http://10.0.2.2:8000',
@@ -144,7 +144,7 @@ export function getBackendBaseUrl() {
   const cached = typeof sessionStorage !== 'undefined' && sessionStorage.getItem('rescue.resolvedBackendUrl');
   if (cached) return cached;
   probeCandidateBackends().catch(() => {});
-  return '';
+  return 'https://rescuememory.onrender.com';
 }
 
 export function buildBackendUrl(path) {

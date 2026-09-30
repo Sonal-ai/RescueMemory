@@ -1,5 +1,5 @@
 param(
-    [string]$BackendUrl = ""
+    [string]$BackendUrl = "https://rescuememory.onrender.com"
 )
 
 Write-Host "========================================" -ForegroundColor Cyan
