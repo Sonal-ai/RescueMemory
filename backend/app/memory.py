@@ -130,18 +130,18 @@ class Memory:
         to_seed = [card for card in cards if self.get("reference", card["id"]) != card]
         if not to_seed:
             return
-        texts = [f"{c['title']} {c.get('keywords', '')} {c.get('summary', '')}" for c in to_seed]
-        dense_vectors = [v.tolist() for v in self.embedder.embed(texts)]
-        sparse_vectors = [self.bm25.embed_document(t) for t in texts]
-        points = [
-            Point(point_id(c["id"]), {"dense": d, "bm25": s}, c)
-            for c, d, s in zip(to_seed, dense_vectors, sparse_vectors)
-        ]
-        batch_size = 50
+        batch_size = 16
         with self.lock:
-            for i in range(0, len(points), batch_size):
-                chunk = points[i:i + batch_size]
-                self.shards["reference"].update(UpdateOperation.upsert_points(chunk))
+            for i in range(0, len(to_seed), batch_size):
+                chunk = to_seed[i:i + batch_size]
+                texts = [f"{c['title']} {c.get('keywords', '')} {c.get('summary', '')}" for c in chunk]
+                dense_vectors = [v.tolist() for v in self.embedder.embed(texts, batch_size=batch_size)]
+                sparse_vectors = [self.bm25.embed_document(t) for t in texts]
+                points = [
+                    Point(point_id(c["id"]), {"dense": d, "bm25": s}, c)
+                    for c, d, s in zip(chunk, dense_vectors, sparse_vectors)
+                ]
+                self.shards["reference"].update(UpdateOperation.upsert_points(points))
 
     def recommend_alternative(
         self,

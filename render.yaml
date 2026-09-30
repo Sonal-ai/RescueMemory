@@ -24,3 +24,7 @@ services:
         value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIiwic3ViamVjdCI6ImFwaS1rZXk6NGNmOGY1MDUtZjhhMi00ZTEzLWFhOGMtZjBlMjk0MjRmNzViIn0.Bw1GfzE8jD61Yx179dU4Oj7bMKaMzLNXZP5Z9Wj-o2E
       - key: GEMINI_MODEL
         value: gemini-flash-lite-latest
+      - key: OMP_NUM_THREADS
+        value: "1"
+      - key: MKL_NUM_THREADS
+        value: "1"

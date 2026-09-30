@@ -7,6 +7,7 @@ import re
 import secrets
 from datetime import datetime, timedelta, timezone
 import math
+import threading
 from math import asin, cos, radians, sin, sqrt
 from pathlib import Path
 
@@ -89,7 +90,14 @@ class RescueService:
         self.memory = Memory(settings.data_dir, settings.model_cache)
         with open(Path(__file__).resolve().parent.parent / "data" / "knowledge.json", encoding="utf-8") as stream:
             knowledge_data = json.load(stream)
-            self.memory.seed(knowledge_data)
+            threading.Thread(target=self._background_seed, args=(knowledge_data,), daemon=True).start()
+
+    def _background_seed(self, data: list[dict]):
+        try:
+            self.memory.seed(data)
+        except Exception as exc:
+            import logging
+            logging.getLogger("rescue.seed").warning("Background seed notice: %s", exc)
 
     @property
     def events_count(self) -> int:
