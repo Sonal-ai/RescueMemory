@@ -409,7 +409,8 @@ function resolveServerUrl(path) {
   if (envUrl) return `${envUrl.replace(/\/$/, '')}${path ? (path.startsWith('/') ? path : `/${path}`) : ''}`;
   const resolved = (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('rescue.resolvedBackendUrl')) || '';
   if (resolved) return `${resolved.replace(/\/$/, '')}${path ? (path.startsWith('/') ? path : `/${path}`) : ''}`;
-  return '';
+  const fallback = 'https://rescuememory.onrender.com';
+  return `${fallback}${path ? (path.startsWith('/') ? path : `/${path}`) : ''}`;
 }
 
 export async function triggerAutoSync() {

@@ -187,7 +187,7 @@ export default function CommandInspector() {
           <button
             type="button"
             onClick={() => {
-              saveSetting('adminKey', 'demo-admin-key');
+              saveSetting('adminKey', 'rescue-admin-key-2026');
               refresh();
             }}
             className="font-bold underline text-amber-300 hover:text-white"

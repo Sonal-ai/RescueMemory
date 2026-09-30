@@ -123,7 +123,7 @@ export default function VolunteerBoard() {
         peerUrl = 'http://10.0.2.2:8000';
       }
       if (!setting('adminKey')) {
-        saveSetting('adminKey', 'demo-node-admin-key');
+        saveSetting('adminKey', 'rescue-admin-key-2026');
       }
 
       // Proactively trigger autonomous background outbox/peer sync
@@ -352,8 +352,8 @@ export default function VolunteerBoard() {
                 <button
                   type="button"
                   onClick={() => {
-                    saveSetting('adminKey', 'demo-admin-key');
-                    saveSetting('responderKey', 'demo-responder-key');
+                    saveSetting('adminKey', 'rescue-admin-key-2026');
+                    saveSetting('responderKey', 'rescue-responder-shared-key-2026');
                     refresh();
                   }}
                   className="font-bold underline text-amber-300 hover:text-white"

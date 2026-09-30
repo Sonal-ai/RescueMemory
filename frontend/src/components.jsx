@@ -124,8 +124,8 @@ export function SettingsPanel({ onClose }) {
                   peerUrl: 'http://10.0.2.2:8000',
                   groupId: 'camp-alpha',
                   groupToken: 'demo-mesh-shared-key',
-                  adminKey: 'demo-node-admin-key',
-                  responderKey: 'demo-responder-shared-key'
+                  adminKey: 'rescue-admin-key-2026',
+                  responderKey: 'rescue-responder-shared-key-2026'
                 });
               }}
             >

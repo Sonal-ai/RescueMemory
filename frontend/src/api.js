@@ -28,10 +28,10 @@ export {
 const PREFIX = 'rescue.';
 
 const DEFAULT_KEYS = {
-  adminKey: 'ypGA1DcDaXxPvWWR6DRTDaKx4fWp7HP/EIRZFMzDN4A=',
-  responderKey: '+JdIifCIxusFwQ0vyx6xwP3o2A2nFM2cgtZBZUt7ocg=',
-  meshKey: 'dZZqDdbs8uvMAZfekVqWa0GeMZ01w6Ul1cVkqyPrjX4=',
-  guideTrustKey: 'smHUoNH2tQYAFkAhUnU1KijghR4AzrKs0QgLpDzRUpw='
+  adminKey: 'rescue-admin-key-2026',
+  responderKey: 'rescue-responder-shared-key-2026',
+  meshKey: 'rescue-mesh-shared-key-2026',
+  guideTrustKey: 'rescue-guide-trust-key-2026'
 };
 
 export function setting(name) {
@@ -764,6 +764,9 @@ export async function getDiscoveredPeers() {
     // silent
   }
 
+  // 0. Proactively announce our own presence beacon so other devices can discover us immediately
+  updateDeviceLocation(myLocation).catch(() => {});
+
   const allPeers = [];
   const seenIds = new Set();
 
@@ -782,11 +785,14 @@ export async function getDiscoveredPeers() {
     console.warn('[Discovery] Cloud beacon query notice:', cloudErr.message);
   }
 
-  // 2. Local Edge Node UDP / Subnet Discovery (if connected to local Wi-Fi backend)
+  // 2. Central Backend Mesh Relay Discovery (Render or Local Hotspot Hub)
   const base = getBackendBaseUrl();
   if (base) {
     try {
-      const edgeRes = await universalRequest(`${base}/api/discovery/peers`, { method: 'GET', timeout: 2000 });
+      const edgeRes = await universalRequest(
+        `${base}/api/discovery/peers?node_id=${encodeURIComponent(myDeviceId)}&lat=${myLocation.lat}&lon=${myLocation.lon}`,
+        { method: 'GET', timeout: 3000 }
+      );
       if (edgeRes.ok) {
         const edgeData = await edgeRes.json();
         if (Array.isArray(edgeData?.peers)) {
@@ -795,10 +801,12 @@ export async function getDiscoveredPeers() {
               seenIds.add(ep.node_id);
               allPeers.push({
                 ...ep,
+                name: ep.name || ep.device_name || `Android Device (${ep.node_id.slice(-4)})`,
                 distance_m: ep.distance_m ?? 50,
                 bearing_deg: ep.bearing_deg ?? 0,
                 cardinal: ep.cardinal ?? 'N',
-                source: 'edge_hub',
+                walk_time_min: Math.max(1, Math.round((ep.distance_m ?? 50) / 75)),
+                source: ep.ip && ep.ip !== '0.0.0.0' ? 'hotspot_mesh' : 'relay_mesh',
                 sync_ready: true,
               });
             }
@@ -810,7 +818,7 @@ export async function getDiscoveredPeers() {
     }
   }
 
-  // 3. Fallback: If 0 peers discovered (e.g. initial launch or pure offline test mode), provide active tactical anchor
+  // 3. Fallback: If 0 peers discovered (e.g. pure offline initial launch), provide tactical beacon
   if (allPeers.length === 0) {
     const simBearing = 42;
     allPeers.push({
@@ -833,20 +841,30 @@ export async function getDiscoveredPeers() {
     peers: allPeers,
     count: allPeers.length,
     enabled: true,
-    mode: allPeers.some(p => p.source === 'cloud_mesh') ? 'cloud_mesh' : 'local_mesh',
+    mode: allPeers.some(p => p.source === 'cloud_mesh' || p.source === 'relay_mesh' || p.source === 'hotspot_mesh')
+      ? 'mesh_connected'
+      : 'local_mesh',
   };
 }
 
 export async function updateDeviceLocation(locationData) {
+  const loc = locationData?.location || locationData;
+  const lat = Number(loc?.lat ?? 28.7041);
+  const lon = Number(loc?.lon ?? 77.1025);
+  const myDeviceId = getDeviceId();
+  const myRole = setting('role') || 'survivor';
+  const myDeviceName = `Survivor Android (${myDeviceId.slice(-4)})`;
+  const batteryLevel = locationData?.battery ?? 88;
+  const statusStr = locationData?.status || 'active';
+
   try {
-    const loc = locationData?.location || locationData;
     const unsynced = await getUnsyncedReports();
     await publishPresenceBeacon({
-      deviceId: getDeviceId(),
-      role: setting('role') || 'survivor',
-      deviceName: `Survivor Android (${getDeviceId().slice(-4)})`,
-      location: loc,
-      battery: 88,
+      deviceId: myDeviceId,
+      role: myRole,
+      deviceName: myDeviceName,
+      location: { lat, lon },
+      battery: batteryLevel,
       unsyncedCount: unsynced.length,
     });
   } catch {
@@ -859,8 +877,16 @@ export async function updateDeviceLocation(locationData) {
       await universalRequest(`${base}/api/discovery/location`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: locationData,
-        timeout: 2000,
+        body: {
+          lat,
+          lon,
+          status: statusStr,
+          battery: batteryLevel,
+          node_id: myDeviceId,
+          role: myRole,
+          device_name: myDeviceName,
+        },
+        timeout: 3000,
       });
     } catch {
       // silent
