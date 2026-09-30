@@ -209,9 +209,12 @@ export default function SafePlace() {
           </div>
 
           <div className="mb-3">
-            <h4 className="text-[10px] text-slate-500 dark:text-slate-400 font-bold tracking-widest uppercase mb-2 font-mono">
-              YOUR NEEDS
-            </h4>
+            <div className="flex items-baseline justify-between mb-2">
+              <h4 className="text-[10px] text-slate-500 dark:text-slate-400 font-bold tracking-widest uppercase font-mono">
+                YOUR NEEDS
+              </h4>
+              <span className="text-[9.5px] text-emerald-600 dark:text-emerald-400 font-medium">Matches supplies</span>
+            </div>
             <div className="space-y-1.5">
               {[
                 ['water', 'Water & Purification', Droplet],
@@ -240,9 +243,12 @@ export default function SafePlace() {
           </div>
 
           <div className="mb-3">
-            <h4 className="text-[10px] text-slate-500 dark:text-slate-400 font-bold tracking-widest uppercase mb-2 font-mono">
-              AVOID HAZARDS
-            </h4>
+            <div className="flex items-baseline justify-between mb-2">
+              <h4 className="text-[10px] text-slate-500 dark:text-slate-400 font-bold tracking-widest uppercase font-mono">
+                AVOID HAZARDS
+              </h4>
+              <span className="text-[9.5px] text-rose-500 font-mono">Negative Vectors</span>
+            </div>
             <div className="space-y-1.5">
               {[
                 ['flooded', 'Flooded areas & deep water'],

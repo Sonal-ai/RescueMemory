@@ -7,6 +7,7 @@ import {
   Cloud,
   CloudOff,
   Database,
+  Globe,
   HeartPulse,
   Menu,
   Moon,
@@ -29,7 +30,7 @@ const NAV_LINKS = [
   { path: '/safeplace', label: 'Safe Evacuation', icon: ShieldCheck, desc: 'Negative Vector Routing', badge: 'Route' },
   { path: '/hq', label: 'Command HQ', icon: Radio, desc: 'Incident Ledger Relay', badge: 'Central' },
   { path: '/command', label: 'Inspector', icon: Activity, desc: 'Qdrant Cloud & Proofs', badge: 'Dev' },
-  { path: '/about', label: 'Architecture', icon: CircleHelp, desc: 'Decentralized Specs', badge: 'Docs' },
+  { path: '/about', label: 'Overview', icon: Globe, desc: 'Landing Page & System Specs', badge: 'Landing' },
 ];
 
 export function SettingsPanel({ onClose }) {
@@ -205,7 +206,7 @@ export function QuietTelemetryPill({ health, sync, error }) {
               onClick={() => setOpen(false)}
               className="text-cyan-400 hover:underline font-bold"
             >
-              System Architecture →
+              Project Overview & Specs →
             </Link>
             {health?.role === 'central' && (
               <Link

@@ -29,8 +29,10 @@ function App() {
         <Route path="/hq" element={<CentralHQ />} />
         <Route path="/safeplace" element={<SafePlace />} />
         
-        {/* Project Architecture & Mesh Info */}
+        {/* Project Landing Page & Overview */}
         <Route path="/about" element={<ActivationScreen />} />
+        <Route path="/overview" element={<ActivationScreen />} />
+        <Route path="/landing" element={<ActivationScreen />} />
 
         {/* Universal Fallback: Unmatched paths always resolve to Home */}
         <Route path="*" element={<Navigate to="/" replace />} />
