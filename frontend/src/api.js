@@ -82,11 +82,16 @@ export async function api(path, options = {}) {
       throw new Error('SW_OFFLINE_INDICATOR');
     }
 
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('text/html')) {
+      throw new Error('SERVER_UNREACHABLE_HTML_RESPONSE');
+    }
+
     let data;
     try {
       data = await response.json();
-    } catch {
-      data = {};
+    } catch (parseErr) {
+      throw new Error(`SERVER_UNREACHABLE_NON_JSON: ${parseErr.message}`);
     }
 
     if (!response.ok) {
@@ -468,6 +473,6 @@ if (typeof window !== 'undefined') {
     .catch(() => {});
 }
 
-export { triggerAutoSync, onSyncStateChange };
+export { triggerAutoSync, onSyncStateChange, recommendAlternativeLocal };
 
 
