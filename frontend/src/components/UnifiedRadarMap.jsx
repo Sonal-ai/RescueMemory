@@ -84,10 +84,13 @@ export default function UnifiedRadarMap({
   onSelectLocation = null,
   onNavigateTarget = null,
   onRefreshGps = null,
+  selectedTarget = null,
   role = 'survivor'
 }) {
   const [radarData, setRadarData] = useState(null);
-  const [selectedTargetId, setSelectedTargetId] = useState('');
+  const [selectedTargetId, setSelectedTargetId] = useState(() => {
+    return selectedTarget?.id || selectedTarget?.entity_id || '';
+  });
   const [showSettings, setShowSettings] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -251,18 +254,48 @@ export default function UnifiedRadarMap({
     return () => clearInterval(interval);
   }, [fetchRadar]);
 
-  const radarItems = radarData?.radar_items || [];
-  const summary = radarData?.summary || {
+  const radarItems = useMemo(() => radarData?.radar_items || [], [radarData]);
+  const summary = useMemo(() => radarData?.summary || {
     urgent_casualties: 0,
     total_casualties: 0,
     operational_shelters: 0,
     active_peers: 0
-  };
+  }, [radarData]);
+
+  // Synchronize with external selectedTarget updates (e.g. from SafePlace or nearest casualty)
+  useEffect(() => {
+    if (selectedTarget) {
+      const targetId = selectedTarget.id || selectedTarget.entity_id;
+      if (targetId) {
+        setSelectedTargetId(targetId);
+      }
+    }
+  }, [selectedTarget]);
 
   // Build unified destinations list for dropdown:
   // Combines casualties, safe shelters, water stations, and checkpoints
   const destinationOptions = useMemo(() => {
     const list = [...radarItems];
+
+    // If external target passed (e.g. from SafePlace reroute or casualty), inject it at the top
+    if (selectedTarget) {
+      const targetId = selectedTarget.id || selectedTarget.entity_id || 'selected_target';
+      if (!list.some((item) => item.id === targetId)) {
+        list.unshift({
+          id: targetId,
+          name: selectedTarget.name || selectedTarget.title || 'Selected Facility',
+          category: selectedTarget.category || (selectedTarget.kind === 'incident' ? 'casualty' : selectedTarget.kind === 'hazard' ? 'hazard' : 'shelter'),
+          distance_m: selectedTarget.dist_m || selectedTarget.distance_m || 500,
+          bearing_deg: selectedTarget.bearing_deg || 315,
+          cardinal: selectedTarget.cardinal || 'NW',
+          walk_time_min: selectedTarget.walk_min || selectedTarget.walk_time_min || 7,
+          location: selectedTarget.location || { lat: selectedTarget.lat ?? 28.712, lon: selectedTarget.lon ?? 77.098 },
+          triage_level: selectedTarget.status === 'Operational' ? 'safe_green' : (selectedTarget.severity === 'red' ? 'immediate_red' : 'hazard_warning'),
+          text: selectedTarget.text || (Array.isArray(selectedTarget.facilities) ? selectedTarget.facilities.join(', ') : 'Rerouted safe location')
+        });
+      }
+    }
+
     // Baseline safe shelters if not already in radar
     const baseline = [
       {
@@ -310,7 +343,7 @@ export default function UnifiedRadarMap({
     });
 
     return list;
-  }, [radarItems]);
+  }, [radarItems, selectedTarget]);
 
   // Compute Active Target for Compass Pointer
   const activeTarget = useMemo(() => {

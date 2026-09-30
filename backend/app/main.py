@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .cloud import mirror_to_qdrant_server
+from .cloud import check_cloud_connection, mirror_to_qdrant_server
 from .config import Settings
 from .discovery import PeerDiscovery
 from .schemas import (AssessRequest, ChatRequest, CreateGroupRequest, DeviceLocationUpdate,
@@ -42,6 +42,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         disc = PeerDiscovery(
             node_id=settings.node_id,
             role=settings.role,
+            http_port=settings.http_port,
             broadcast_port=settings.discovery_port,
         )
         app.state.discovery = disc
@@ -342,13 +343,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             results.append(sync_with_peer(s, settings.central_url, "group", group["group_id"], register_group=True))
         return {"results": results}
 
+    @app.get("/api/sync/cloud-status")
+    def cloud_status(s: RescueService = Depends(service), _admin: None = Depends(require_admin)):
+        return check_cloud_connection(s)
+
     @app.post("/api/sync/cloud-mirror")
     def cloud_mirror(s: RescueService = Depends(service), _admin: None = Depends(require_admin)):
         if settings.role != "central":
             raise HTTPException(403, "central node only")
         if not settings.qdrant_url:
             raise HTTPException(400, "QDRANT_URL required")
-        return mirror_to_qdrant_server(s)
+        try:
+            return mirror_to_qdrant_server(s)
+        except HTTPException:
+            raise
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+        except Exception as exc:
+            raise HTTPException(502, f"Qdrant Cloud communication failed: {exc}")
 
     @app.get("/api/discovery/peers")
     def get_discovered_peers():
@@ -395,6 +407,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         @app.get("/crisis", include_in_schema=False)
         @app.get("/volunteer", include_in_schema=False)
         @app.get("/command", include_in_schema=False)
+        @app.get("/hq", include_in_schema=False)
+        @app.get("/safeplace", include_in_schema=False)
+        @app.get("/about", include_in_schema=False)
+        @app.get("/compass", include_in_schema=False)
+        @app.get("/radar", include_in_schema=False)
+        @app.get("/find", include_in_schema=False)
+        @app.get("/report", include_in_schema=False)
+        @app.get("/beacon", include_in_schema=False)
+        @app.get("/chat", include_in_schema=False)
         def frontend_page():
             return FileResponse(frontend / "index.html")
 

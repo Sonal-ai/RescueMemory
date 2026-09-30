@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   AlertOctagon,
   ArrowRight,
@@ -123,33 +124,42 @@ const EMERGENCY_TYPES = [
 ];
 
 export default function SurvivorHUD({ initialTab = 'ask' }) {
-  const [tab, setTab] = useState(initialTab);
-  const [nearestCasualty, setNearestCasualty] = useState(null);
+  const location = useLocation();
+  const navTarget = location.state?.target;
 
-  useEffect(() => {
-    if (initialTab) {
-      setTab(initialTab);
-    }
-  }, [initialTab]);
+  const normalizeTab = (t) => {
+    if (['compass', 'radar', 'find'].includes(t)) return 'map';
+    return t || 'ask';
+  };
+
+  const [tab, setTab] = useState(() => (navTarget ? 'map' : normalizeTab(initialTab)));
+  const [nearestCasualty, setNearestCasualty] = useState(null);
 
   const [text, setText] = useState('');
   const [answer, setAnswer] = useState(null);
   const [chatBusy, setChatBusy] = useState(false);
   const [useAi, setUseAi] = useState(() => isOnlineMode());
 
+  // Interactive Clinical Triage & Material Assessment states
+  const [triageOpen, setTriageOpen] = useState(false);
+  const [breathingStatus, setBreathingStatus] = useState(true);
+  const [bleedingType, setBleedingType] = useState('none'); // 'none', 'venous', 'spurting'
+  const [selectedMaterials, setSelectedMaterials] = useState([]); // ['cloth', 'stick', 'water', 'belt']
+
   useEffect(() => {
     return onOnlineModeChange(setUseAi);
   }, []);
 
+  const targetLoc = navTarget?.location || (navTarget?.lat != null && navTarget?.lon != null ? { lat: navTarget.lat, lon: navTarget.lon } : null);
   const [shareLocation, setShareLocation] = useState(true);
-  const [center, setCenter] = useState(DEFAULT_CENTER);
-  const [pin, setPin] = useState(DEFAULT_CENTER);
+  const [center, setCenter] = useState(() => targetLoc || DEFAULT_CENTER);
+  const [pin, setPin] = useState(() => targetLoc || DEFAULT_CENTER);
   const [items, setItems] = useState([]);
   const [peers, setPeers] = useState([]);
   const [selectedPeer, setSelectedPeer] = useState(null);
   const [syncingPeer, setSyncingPeer] = useState(false);
   const [mapUpdatedAt, setMapUpdatedAt] = useState(null);
-  const [selected, setSelected] = useState(null);
+  const [selected, setSelected] = useState(() => navTarget || null);
   const [alternativeRec, setAlternativeRec] = useState(null);
   const [loadingAltRec, setLoadingAltRec] = useState(false);
   const [checkedSteps, setCheckedSteps] = useState({});
@@ -158,7 +168,21 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
   const [showQuickPrompts, setShowQuickPrompts] = useState(false);
   const [showNearestExpanded, setShowNearestExpanded] = useState(false);
 
-  const [messages, setMessages] = useState([
+  const prevTargetRef = useRef(navTarget);
+  useEffect(() => {
+    if (navTarget && navTarget !== prevTargetRef.current) {
+      prevTargetRef.current = navTarget;
+      setTab('map');
+      setSelected(navTarget);
+      const loc = navTarget.location || (navTarget.lat != null && navTarget.lon != null ? { lat: navTarget.lat, lon: navTarget.lon } : null);
+      if (loc) {
+        setCenter(loc);
+        setPin(loc);
+      }
+    }
+  }, [navTarget]);
+
+  const [messages, setMessages] = useState(() => [
     {
       id: 'welcome',
       role: 'assistant',
@@ -219,9 +243,6 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
   const [error, setError] = useState('');
   const [savingSos, setSavingSos] = useState(false);
   const [sosSuccess, setSosSuccess] = useState(false);
-  const [syncingBeacon, setSyncingBeacon] = useState(false);
-  const [directBeaconUrl, setDirectBeaconUrl] = useState('');
-  const [mapFilter, setMapFilter] = useState('all');
   const [isOfflineBrain, setIsOfflineBrain] = useState(false);
   const [syncInfo, setSyncInfo] = useState({ state: 'idle', pendingCount: 0 });
 
@@ -424,6 +445,9 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
           use_ai: useAi,
           survivor_id: setting('reporterId') || 'survivor-1',
           share_location: shareLocation,
+          materials: selectedMaterials,
+          breathing: breathingStatus,
+          bleeding_type: bleedingType,
           ...(shareLocation ? { location: pin } : {}),
           ...(groupId ? { group_id: groupId } : {})
         }
@@ -587,71 +611,6 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
       setSavingSos(false);
     }
   };
-
-  // 1-Tap Sync with Nearest Beacon
-  const handleSyncNearestBeacon = async () => {
-    setSyncingBeacon(true);
-    setMessage('');
-    setError('');
-    try {
-      const validPeers = (Array.isArray(peers) ? peers : []).filter((p) => p && (p.url || p.ip));
-      const sortedPeers = [...validPeers].sort((a, b) => (a.distance_m ?? 99999) - (b.distance_m ?? 99999));
-      const nearest = sortedPeers[0];
-
-      if (nearest) {
-        const peerUrl = nearest.url || `http://${nearest.ip}:${nearest.port}`;
-        await syncDiscoveredPeer({
-          peer_url: peerUrl,
-          scope: 'public'
-        });
-        setMessage(`Successfully synced with nearest beacon ${nearest.node_id} (~${nearest.distance_m ?? 0}m away). Knowledge and reports exchanged.`);
-        refreshMap();
-        refreshPeers();
-      } else {
-        await triggerAutoSync();
-        refreshPeers();
-        setMessage('Beacon heartbeat broadcasted over UDP (port 8888). Local memory outbox synced. Scanning Wi-Fi subnet for nearby beacons.');
-      }
-    } catch (err) {
-      setError(`Beacon sync failed: ${err.message}`);
-    } finally {
-      setSyncingBeacon(false);
-    }
-  };
-
-  const handleDirectBeaconSync = async (e) => {
-    if (e) e.preventDefault();
-    if (!directBeaconUrl.trim()) return;
-    setSyncingBeacon(true);
-    setMessage('');
-    setError('');
-    try {
-      let url = directBeaconUrl.trim();
-      if (!url.startsWith('http://') && !url.startsWith('https://')) {
-        url = `http://${url}`;
-      }
-      await syncDiscoveredPeer({
-        peer_url: url,
-        scope: 'public'
-      });
-      setMessage(`Successfully synced with beacon at ${url}. Local memory updated.`);
-      setDirectBeaconUrl('');
-      refreshMap();
-      refreshPeers();
-    } catch (err) {
-      setError(`Direct beacon sync failed: ${err.message}`);
-    } finally {
-      setSyncingBeacon(false);
-    }
-  };
-
-  const filteredItems = (Array.isArray(items) ? items : []).filter((item) => {
-    if (mapFilter === 'all') return true;
-    if (mapFilter === 'sos') return item.kind === 'incident' || item.kind === 'presence';
-    if (mapFilter === 'hazard') return item.kind === 'hazard' || item.kind === 'checkpoint';
-    if (mapFilter === 'resource') return item.kind === 'resource';
-    return true;
-  });
 
   return (
     <Shell
@@ -871,32 +830,42 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                           <p className="text-xs text-red-900 dark:text-red-200 mb-3">
                             Mobility assistance needed. Tap below to log emergency SOS and broadcast to nearby responder nodes.
                           </p>
-                          <button
-                            onClick={() => saveSosToLocalDatabase()}
-                            disabled={savingSos || sosSuccess}
-                            className={`w-full py-2.5 px-3 rounded-xl font-bold flex items-center justify-center gap-2 text-xs transition-all active:scale-98 ${
-                              sosSuccess
-                                ? 'bg-emerald-600 text-white shadow-md cursor-default'
-                                : 'bg-red-600 hover:bg-red-500 text-white shadow-md'
-                            }`}
-                          >
-                            {savingSos ? (
-                              <>
-                                <RefreshCw size={14} className="animate-spin" />
-                                <span>Logging SOS to Qdrant...</span>
-                              </>
-                            ) : sosSuccess ? (
-                              <>
-                                <CheckCircle2 size={16} />
-                                <span>SOS Active & Alerted Responders</span>
-                              </>
-                            ) : (
-                              <>
-                                <Send size={14} />
-                                <span>1-Tap Save to Qdrant & Broadcast SOS</span>
-                              </>
-                            )}
-                          </button>
+                          <div className="flex flex-col sm:flex-row gap-2">
+                            <button
+                              onClick={() => saveSosToLocalDatabase(msg.suggested_action?.auto_report?.text || msg.suggested_action?.prefill || msg.text)}
+                              disabled={savingSos || sosSuccess}
+                              className={`flex-1 py-2.5 px-3 rounded-xl font-bold flex items-center justify-center gap-2 text-xs transition-all active:scale-98 ${
+                                sosSuccess
+                                  ? 'bg-emerald-600 text-white shadow-md cursor-default'
+                                  : 'bg-red-600 hover:bg-red-500 text-white shadow-md'
+                              }`}
+                            >
+                              {savingSos ? (
+                                <>
+                                  <RefreshCw size={14} className="animate-spin" />
+                                  <span>Logging SOS to Qdrant...</span>
+                                </>
+                              ) : sosSuccess ? (
+                                <>
+                                  <CheckCircle2 size={16} />
+                                  <span>SOS Active & Alerted Responders</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Send size={14} />
+                                  <span>1-Tap Save to Qdrant & Broadcast SOS</span>
+                                </>
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => followAction(msg.suggested_action)}
+                              className="py-2.5 px-3.5 rounded-xl border border-red-300 dark:border-red-700 bg-white/80 dark:bg-red-900/30 text-red-800 dark:text-red-200 hover:bg-red-100 dark:hover:bg-red-900/50 text-xs font-bold flex items-center justify-center gap-1.5 transition-all"
+                            >
+                              <span>Review SOS Form</span>
+                              <ArrowRight size={13} />
+                            </button>
+                          </div>
                         </div>
                       )}
 
@@ -1050,6 +1019,159 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
               )}
             </div>
 
+            {/* Collapsible Clinical Triage & Improvised Materials Bar */}
+            <div className="border-t border-[#cfe1f0] dark:border-slate-800 bg-[#e3eef7] dark:bg-[#0b1626] shrink-0">
+              <div className="px-3 sm:px-4 py-2 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => setTriageOpen(!triageOpen)}
+                  className="flex items-center gap-1.5 text-xs font-bold text-red-700 dark:text-rose-400 hover:text-red-900 transition-colors"
+                >
+                  <HeartPulse size={14} className="animate-pulse text-red-600" />
+                  <span>Clinical Casualty Triage & Materials</span>
+                  <ChevronDown size={13} className={`transition-transform duration-200 ${triageOpen ? 'rotate-180' : ''}`} />
+                </button>
+                <div className="flex items-center gap-2">
+                  {selectedMaterials.length > 0 && (
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 font-bold">
+                      {selectedMaterials.length} Mat{selectedMaterials.length > 1 ? 's' : ''} Active
+                    </span>
+                  )}
+                  {bleedingType === 'spurting' && (
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-red-600 text-white font-bold animate-pulse">
+                      ARTERIAL BLEED
+                    </span>
+                  )}
+                  {!breathingStatus && (
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-red-600 text-white font-bold animate-pulse">
+                      CPR NEEDED
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {triageOpen && (
+                <div className="px-3.5 sm:px-5 py-3 border-t border-[#cfe1f0] dark:border-slate-800 bg-[#edf5fc] dark:bg-[#07111e] space-y-3 animate-in fade-in">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* Breathing state */}
+                    <div>
+                      <span className="block text-[10px] uppercase font-bold text-slate-700 dark:text-slate-400 mb-1 tracking-wider">
+                        1. Casualty Breathing:
+                      </span>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setBreathingStatus(true)}
+                          className={`py-1.5 px-2.5 rounded-lg border text-xs font-bold transition-all ${
+                            breathingStatus
+                              ? 'bg-emerald-600 text-white border-emerald-500 shadow-xs'
+                              : 'bg-white dark:bg-slate-900 border-[#cbdbe9] dark:border-slate-800 text-slate-700 dark:text-slate-300'
+                          }`}
+                        >
+                          Breathing Normally
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setBreathingStatus(false);
+                            setText("Unresponsive casualty not breathing in rubble, need immediate CPR");
+                          }}
+                          className={`py-1.5 px-2.5 rounded-lg border text-xs font-bold transition-all ${
+                            !breathingStatus
+                              ? 'bg-red-600 text-white border-red-500 shadow-xs'
+                              : 'bg-white dark:bg-slate-900 border-[#cbdbe9] dark:border-slate-800 text-red-700 dark:text-red-400'
+                          }`}
+                        >
+                          NOT Breathing (CPR)
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Bleeding status */}
+                    <div>
+                      <span className="block text-[10px] uppercase font-bold text-slate-700 dark:text-slate-400 mb-1 tracking-wider">
+                        2. Bleeding Severity:
+                      </span>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {[
+                          ['none', 'No Bleed'],
+                          ['venous', 'Venous Trickle'],
+                          ['spurting', 'Arterial / Spurting']
+                        ].map(([val, lbl]) => (
+                          <button
+                            key={val}
+                            type="button"
+                            onClick={() => {
+                              setBleedingType(val);
+                              if (val === 'spurting' && !text.includes('spurting')) {
+                                setText("Severe arterial bleeding from leg, blood spurting under pressure");
+                              }
+                            }}
+                            className={`py-1.5 px-1.5 rounded-lg border text-[11px] font-bold transition-all ${
+                              bleedingType === val
+                                ? val === 'spurting'
+                                ? 'bg-red-600 text-white border-red-500 shadow-xs'
+                                : val === 'venous'
+                                ? 'bg-amber-600 text-white border-amber-500 shadow-xs'
+                                : 'bg-emerald-600 text-white border-emerald-500 shadow-xs'
+                                : 'bg-white dark:bg-slate-900 border-[#cbdbe9] dark:border-slate-800 text-slate-700 dark:text-slate-300'
+                            }`}
+                          >
+                            {lbl}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Improvised Materials selection */}
+                  <div>
+                    <span className="block text-[10px] uppercase font-bold text-slate-700 dark:text-slate-400 mb-1 tracking-wider">
+                      3. Available Improvised Materials on Hand (Adaptive AI Reranking):
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {[
+                        ['stick', 'Rigid Stick / Splint'],
+                        ['cloth', 'Clean Cloth / Shirt'],
+                        ['belt', 'Belt / Tourniquet Strap'],
+                        ['water', 'Clean Water Bottle'],
+                        ['plastic', 'Plastic Wrap / Bag']
+                      ].map(([id, label]) => {
+                        const isSelected = selectedMaterials.includes(id);
+                        return (
+                          <button
+                            key={id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedMaterials((prev) =>
+                                isSelected ? prev.filter((m) => m !== id) : [...prev, id]
+                              );
+                            }}
+                            className={`text-[11px] py-1 px-2.5 rounded-lg border font-bold transition-all ${
+                              isSelected
+                                ? 'bg-cyan-600 text-white border-cyan-500 shadow-xs'
+                                : 'bg-white dark:bg-slate-900 border-[#cbdbe9] dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-cyan-400'
+                            }`}
+                          >
+                            {isSelected ? '✓ ' : '+ '}{label}
+                          </button>
+                        );
+                      })}
+                      {selectedMaterials.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedMaterials([])}
+                          className="text-[10px] text-slate-500 hover:text-red-600 underline font-semibold ml-1 self-center"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* Bottom Minimal Input Box */}
             <div className="p-2 sm:p-2.5 border-t border-[#cfe1f0] dark:border-slate-800 bg-[#e3eef7] dark:bg-[#0b1626] shrink-0 pb-safe">
               <form onSubmit={onFormSubmit} className="relative flex items-center gap-1.5 sm:gap-2">
@@ -1115,6 +1237,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
           items={items}
           peers={peers}
           onRefreshGps={useGps}
+          selectedTarget={selected || nearestCasualty}
           onSelectLocation={(loc) => {
             setPin(loc);
             setCenter(loc);
@@ -1217,17 +1340,6 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                 </button>
               </div>
 
-              {/* Big Panic-Proof 1-Tap SOS Broadcast Button */}
-              <button
-                type="submit"
-                disabled={savingSos}
-                className="btn-sos-broadcast w-full py-3.5 rounded-2xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-rose-600 text-white font-black text-base shadow-xl shadow-red-700/40 flex items-center justify-center gap-2.5 transition-all active:scale-[0.98] disabled:opacity-50 cursor-pointer"
-              >
-                <AlertOctagon size={20} className="animate-pulse text-white" />
-                <span className="text-white">{savingSos ? 'Broadcasting…' : 'SEND EMERGENCY SOS'}</span>
-                <ArrowRight size={18} className="text-white" />
-              </button>
-
               {/* Optional Collapsed Accordion for Severity, Scope & Map Crosshair */}
               <div className="pt-2 border-t border-[#dbe6f0] dark:border-slate-800/80">
                 <button
@@ -1276,27 +1388,35 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
 
                     {/* Visibility Scope */}
                     <div>
-                      <label className="block text-[11px] text-slate-700 dark:text-slate-400 font-bold uppercase tracking-wider mb-1.5">
-                        Visibility Scope
-                      </label>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="block text-[11px] text-slate-700 dark:text-slate-400 font-bold uppercase tracking-wider">
+                          Visibility Scope
+                        </label>
+                        {report.kind === 'incident' && (
+                          <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                            <ShieldAlert size={11} /> Locked to Responders
+                          </span>
+                        )}
+                      </div>
                       <div className="grid grid-cols-2 gap-2">
                         <button
                           type="button"
                           onClick={() => setReport({ ...report, visibility: 'responders' })}
-                          className={`p-2 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all ${
+                          className={`p-2.5 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all ${
                             report.visibility === 'responders'
                               ? 'border-cyan-500 bg-cyan-600 text-white shadow-sm'
                               : 'border-[#cbdbe9] dark:border-slate-800 bg-white dark:bg-slate-900/60 text-slate-700 dark:text-slate-400 hover:bg-[#edf5fb] dark:hover:bg-slate-800'
                           }`}
                         >
-                          <ShieldAlert size={13} />
+                          <ShieldAlert size={14} />
                           <span>Responders Only</span>
                         </button>
                         <button
                           type="button"
                           disabled={report.kind === 'incident'}
                           onClick={() => setReport({ ...report, visibility: 'public' })}
-                          className={`p-2 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all ${
+                          title={report.kind === 'incident' ? 'Medical/Trapped SOS is restricted to verified Responders to protect victim privacy and safety.' : 'Broadcast publicly to all mesh nodes'}
+                          className={`p-2.5 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all ${
                             report.kind === 'incident'
                               ? 'opacity-40 cursor-not-allowed border-slate-200 dark:border-slate-900 bg-slate-100 dark:bg-slate-950 text-slate-400 dark:text-slate-600'
                               : report.visibility === 'public'
@@ -1304,10 +1424,15 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                               : 'border-[#cbdbe9] dark:border-slate-800 bg-white dark:bg-slate-900/60 text-slate-700 dark:text-slate-400 hover:bg-[#edf5fb] dark:hover:bg-slate-800'
                           }`}
                         >
-                          <Wifi size={13} />
+                          <Wifi size={14} />
                           <span>Public Mesh</span>
                         </button>
                       </div>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1.5 leading-relaxed">
+                        {report.kind === 'incident'
+                          ? '🔒 Responders Only: Protects sensitive casualty and trapped victim locations from unauthenticated airwaves. Sent exclusively to Volunteer & Command HQ triage. (To share publicly on mesh, select "Route Hazard" or "Water & Supplies").'
+                          : '🌐 Public Mesh: Broadcasts openly across all nearby devices for public community awareness.'}
+                      </p>
                     </div>
 
                     {/* Interactive Map Crosshair */}
@@ -1331,6 +1456,40 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                   </div>
                 )}
               </div>
+
+              {/* Big Panic-Proof 1-Tap SOS Broadcast Button (Placed after options for logical flow) */}
+              <button
+                type="submit"
+                disabled={savingSos}
+                className="btn-sos-broadcast w-full py-4 px-4 rounded-2xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-rose-600 text-white font-black text-sm sm:text-base tracking-wide shadow-xl shadow-red-700/40 flex items-center justify-center gap-2.5 transition-all active:scale-[0.98] disabled:opacity-50 cursor-pointer"
+              >
+                <AlertOctagon size={20} className="shrink-0 animate-pulse text-white" />
+                <span className="text-white uppercase truncate">
+                  {savingSos ? 'Broadcasting to Mesh…' : 'Broadcast Emergency SOS Now'}
+                </span>
+                <ArrowRight size={18} className="shrink-0 text-white" />
+              </button>
+
+              {/* Active Local SOS Broadcast Status */}
+              {sosSuccess && (
+                <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/40 text-emerald-950 dark:text-emerald-200 text-xs space-y-2 animate-in fade-in">
+                  <div className="flex items-center justify-between font-bold">
+                    <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+                      <CheckCircle2 size={16} /> SOS Active in Local Mesh Memory
+                    </span>
+                    <span className="font-mono text-[10px] uppercase px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-700 dark:text-emerald-300">
+                      {report.visibility === 'responders' ? 'Responders Only' : 'Public Mesh'}
+                    </span>
+                  </div>
+                  <div className="bg-white/70 dark:bg-black/30 p-2.5 rounded-xl font-mono text-[11px] leading-relaxed text-slate-800 dark:text-slate-200 border border-emerald-500/20">
+                    "{report.text}"
+                  </div>
+                  <div className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
+                    <span>Receiver Target: {report.visibility === 'responders' ? 'Field Volunteers & Central HQ' : 'All Nearby Mesh Nodes'}</span>
+                    <span>GPS: {pin.lat.toFixed(4)}, {pin.lon.toFixed(4)}</span>
+                  </div>
+                </div>
+              )}
             </form>
           </Card>
         </div>

@@ -23,6 +23,7 @@ class Settings:
     gemini_model: str = "gemini-flash-lite-latest"
     discovery_port: int = 8888
     enable_discovery: bool = False
+    http_port: int = 8000
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -49,4 +50,5 @@ class Settings:
             gemini_model=os.getenv("GEMINI_MODEL", "gemini-flash-lite-latest"),
             discovery_port=int(os.getenv("DISCOVERY_PORT", "8888")),
             enable_discovery=os.getenv("ENABLE_DISCOVERY", "true").lower() in {"1", "true", "yes"},
+            http_port=int(os.getenv("PORT", "8000")),
         )

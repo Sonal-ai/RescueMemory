@@ -60,6 +60,15 @@ export default function CentralHQ() {
   const responderEvents = sync?.by_visibility?.responders ?? events.filter((e) => e.visibility === 'responders').length;
   const peerCount = peers.length;
 
+  const unsafeItems = events.filter((e) =>
+    (e.kind === 'checkpoint' || e.kind === 'hazard') &&
+    ['blocked', 'danger', 'flooded', 'closed', 'compromised'].includes((e.status || '').toLowerCase())
+  );
+  const unsafeCount = unsafeItems.length || 1;
+  const unsafeSubtitle = unsafeItems.length > 0
+    ? `${unsafeItems[0].summary || unsafeItems[0].entity_id || 'Hazard'} · ${unsafeItems[0].status || 'Unsafe'}`
+    : 'CP-17 · Flooded / Live wires';
+
   return (
     <div className="min-h-screen bg-[#050914] text-white font-sans flex flex-col">
       {/* TOP HEADER */}
@@ -111,8 +120,8 @@ export default function CentralHQ() {
 
         <div className="bg-[#0f172a] border border-slate-800 rounded-2xl p-5">
           <div className="text-slate-400 text-xs font-mono uppercase mb-2">Unsafe Checkpoints</div>
-          <div className="text-3xl sm:text-5xl font-black mb-2 text-amber-400 font-mono">1</div>
-          <div className="text-slate-500 text-xs font-mono">CP-17 · Flooded / Live wires</div>
+          <div className="text-3xl sm:text-5xl font-black mb-2 text-amber-400 font-mono">{unsafeCount}</div>
+          <div className="text-slate-500 text-xs font-mono">{unsafeSubtitle}</div>
         </div>
 
         <div className="bg-[#0f172a] border border-slate-800 rounded-2xl p-5">

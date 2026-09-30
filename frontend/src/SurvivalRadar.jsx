@@ -61,6 +61,14 @@ const RANGES = [
   { label: '5 km', value: 5000 }
 ];
 
+const EMPTY_ITEMS = [];
+const DEFAULT_SUMMARY = {
+  urgent_casualties: 0,
+  total_casualties: 0,
+  operational_shelters: 0,
+  active_peers: 0
+};
+
 /**
  * Computes a 3D tilt-compensated compass heading (0-360 degrees, clockwise from North)
  * from device orientation Euler angles (alpha, beta, gamma).
@@ -309,20 +317,14 @@ export default function SurvivalRadar({
     playChirp(item.category === 'casualty' ? 1200 : 750);
   };
 
-  const items = radarData?.radar_items || [];
-  const summary = radarData?.summary || {
-    urgent_casualties: 0,
-    total_casualties: 0,
-    operational_shelters: 0,
-    active_peers: 0
-  };
+  const items = radarData?.radar_items || EMPTY_ITEMS;
+  const summary = radarData?.summary || DEFAULT_SUMMARY;
 
-  const safeItems = Array.isArray(items) ? items : [];
-  const casualties = useMemo(() => safeItems.filter((i) => i.category === 'casualty'), [safeItems]);
-  const shelters = useMemo(() => safeItems.filter((i) => i.category === 'shelter'), [safeItems]);
-  const resources = useMemo(() => safeItems.filter((i) => i.category === 'resource'), [safeItems]);
-  const peers = useMemo(() => safeItems.filter((i) => i.category === 'peer'), [safeItems]);
-  const hazards = useMemo(() => safeItems.filter((i) => i.category === 'hazard'), [safeItems]);
+  const casualties = useMemo(() => items.filter((i) => i.category === 'casualty'), [items]);
+  const shelters = useMemo(() => items.filter((i) => i.category === 'shelter'), [items]);
+  const resources = useMemo(() => items.filter((i) => i.category === 'resource'), [items]);
+  const peers = useMemo(() => items.filter((i) => i.category === 'peer'), [items]);
+  const hazards = useMemo(() => items.filter((i) => i.category === 'hazard'), [items]);
 
   // Compute Active Target for Compass HUD:
   // Defaults to Nearest Casualty (from local Qdrant memory synced from central),

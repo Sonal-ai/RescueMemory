@@ -65,6 +65,35 @@ def _upsert_new(client: QdrantClient, name: str, records: list[dict],
         ], wait=True)
 
 
+def check_cloud_connection(service: RescueService) -> dict:
+    """Read-only health check for Qdrant Cloud connectivity."""
+    if service.settings.role != "central":
+        return {"connected": False, "configured": False, "reason": "Node role is not central"}
+    if not service.settings.qdrant_url:
+        return {"connected": False, "configured": False, "reason": "QDRANT_URL missing"}
+    client = QdrantClient(url=service.settings.qdrant_url,
+                          api_key=service.settings.qdrant_api_key, timeout=10)
+    try:
+        collections = [c.name for c in client.get_collections().collections]
+        return {
+            "connected": True,
+            "configured": True,
+            "url": service.settings.qdrant_url,
+            "collections": collections,
+            "event_collections_found": [c for c in EVENT_COLLECTIONS.values() if c in collections],
+            "guides_collection_found": GUIDES_COLLECTION in collections,
+        }
+    except Exception as exc:
+        return {
+            "connected": False,
+            "configured": True,
+            "url": service.settings.qdrant_url,
+            "error": str(exc),
+        }
+    finally:
+        client.close()
+
+
 def mirror_to_qdrant_server(service: RescueService) -> dict:
     """Exchange scoped events and centrally authenticated guides with Cloud."""
     if service.settings.role != "central" or not service.settings.qdrant_url:
@@ -81,12 +110,23 @@ def mirror_to_qdrant_server(service: RescueService) -> dict:
             cloud_events: list[dict] = []
             expired_points: list[str] = []
             for point in _cloud_payloads(client, collection):
+                if not isinstance(point.payload, dict):
+                    continue
                 event = point.payload
                 if event.get("visibility") != scope:
                     raise HTTPException(422, f"Cloud collection {collection} contains wrong scope")
                 expiry = event.get("expires_at")
-                if expiry and datetime.fromisoformat(expiry) < datetime.now(timezone.utc):
-                    expired_points.append(point.id)
+                if expiry:
+                    try:
+                        dt = datetime.fromisoformat(expiry)
+                        if dt.tzinfo is None:
+                            dt = dt.replace(tzinfo=timezone.utc)
+                        if dt < datetime.now(timezone.utc):
+                            expired_points.append(point.id)
+                            continue
+                    except (ValueError, TypeError):
+                        pass
+                if not event.get("id") or not event.get("content_hash"):
                     continue
                 existing[event["id"]] = event["content_hash"]
                 if scope != "group" or service.memory.get("groups", event.get("group_id") or ""):
@@ -116,6 +156,8 @@ def mirror_to_qdrant_server(service: RescueService) -> dict:
             _ensure_collection(client, GUIDES_COLLECTION, events=False)
             existing_guides: dict[str, dict] = {}
             for point in _cloud_payloads(client, GUIDES_COLLECTION):
+                if not isinstance(point.payload, dict) or "id" not in point.payload:
+                    continue
                 guide = point.payload
                 existing_guides[guide["id"]] = guide
                 result["guides_downloaded"] += service.import_guides([guide])["imported"]
