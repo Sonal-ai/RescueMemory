@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { CheckSquare, Square, Droplet, AlertCircle, Route, ArrowLeft, ShieldCheck, HeartPulse, RefreshCw } from 'lucide-react';
+import { CheckSquare, Square, Droplet, AlertCircle, Route, ShieldCheck, HeartPulse, RefreshCw, Crosshair } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { api, recommendAlternativeLocal, getNativeOrWebLocation } from '../api';
+import { api, recommendAlternativeLocal, getNativeOrWebLocation, distM } from '../api';
+import { Shell } from '../components';
 import MapPanel from '../MapPanel';
 
 const DEFAULT_CENTER = { lat: 28.7041, lon: 77.1025 };
@@ -24,6 +25,15 @@ export default function SafePlace() {
   const [excluded, setExcluded] = useState(null);
   const [mapItems, setMapItems] = useState([]);
   const [loading, setLoading] = useState(false);
+
+  // Auto-acquire live GPS position on mount
+  useEffect(() => {
+    getNativeOrWebLocation().then((pos) => {
+      if (pos?.lat && pos?.lon) {
+        setCenter({ lat: Number(pos.lat.toFixed(5)), lon: Number(pos.lon.toFixed(5)) });
+      }
+    }).catch(() => {});
+  }, []);
 
   // Load dynamic data from Qdrant Edge Memory & Negative Vector Engine
   useEffect(() => {
@@ -57,7 +67,10 @@ export default function SafePlace() {
           setExcluded(recResult.compromised);
         }
 
-        // Build list of operational shelters filtered by active needs
+        // Dynamically anchor facilities relative to current center
+        const baseLat = center.lat;
+        const baseLon = center.lon;
+
         let rawFacilities = [
           {
             id: 'shelter_alpha',
@@ -67,8 +80,8 @@ export default function SafePlace() {
             walk_min: 7,
             status: 'Operational',
             facilities: ['Water', 'Food', 'Shelter', '300 Beds'],
-            lat: 28.7120,
-            lon: 77.0980,
+            lat: Number((baseLat + 0.0035).toFixed(5)),
+            lon: Number((baseLon - 0.0028).toFixed(5)),
           },
           {
             id: 'clinic_beta',
@@ -78,8 +91,8 @@ export default function SafePlace() {
             walk_min: 7,
             status: 'Operational',
             facilities: ['Medical', 'Water', 'Resuscitation'],
-            lat: 28.7090,
-            lon: 77.0940,
+            lat: Number((baseLat + 0.0021).toFixed(5)),
+            lon: Number((baseLon - 0.0042).toFixed(5)),
           },
           {
             id: 'water_tanker_4',
@@ -89,8 +102,8 @@ export default function SafePlace() {
             walk_min: 8,
             status: 'Operational',
             facilities: ['Water', 'Clean Supply'],
-            lat: 28.7060,
-            lon: 77.1080,
+            lat: Number((baseLat - 0.0025).toFixed(5)),
+            lon: Number((baseLon + 0.0036).toFixed(5)),
           },
         ];
 
@@ -107,13 +120,13 @@ export default function SafePlace() {
               walk_min: 9,
               status: 'Operational',
               facilities: rec.facilities || ['Shelter', 'Water', 'Medical'],
-              lat: 28.7100,
-              lon: 77.1000,
+              lat: Number((baseLat + 0.0045).toFixed(5)),
+              lon: Number((baseLon + 0.0022).toFixed(5)),
             });
           }
         }
 
-        // Merge any dynamic checkpoints or resource stations discovered in Qdrant Edge Memory
+        // Merge dynamic checkpoints or resource stations from Edge Memory
         (mapData.items || []).forEach((item) => {
           const kind = item.kind || '';
           const status = (item.status || '').toLowerCase();
@@ -121,7 +134,8 @@ export default function SafePlace() {
           if (['checkpoint', 'resource', 'shelter'].includes(kind) && isSafe) {
             const exists = rawFacilities.some((f) => f.id === item.id || f.id === item.entity_id);
             if (!exists) {
-              const dist = item.distance_m ? Math.round(item.distance_m) : 650;
+              const itemCoords = { lat: item.lat || baseLat, lon: item.lon || baseLon };
+              const dist = Math.round(distM(center, itemCoords)) || 650;
               rawFacilities.push({
                 id: item.id || item.entity_id,
                 name: item.summary || item.details?.name || `Checkpoint ${String(item.id).slice(0, 6)}`,
@@ -130,8 +144,8 @@ export default function SafePlace() {
                 walk_min: Math.max(1, Math.round(dist / 75)),
                 status: item.status ? (item.status.charAt(0).toUpperCase() + item.status.slice(1)) : 'Operational',
                 facilities: item.details?.facilities || ['Shelter', 'Water'],
-                lat: item.lat || 28.7041,
-                lon: item.lon || 77.1025,
+                lat: itemCoords.lat,
+                lon: itemCoords.lon,
               });
             }
           }
@@ -168,7 +182,7 @@ export default function SafePlace() {
   const acquireGps = async () => {
     try {
       const pos = await getNativeOrWebLocation();
-      setCenter({ lat: Number(pos.lat.toFixed(4)), lon: Number(pos.lon.toFixed(4)) });
+      setCenter({ lat: Number(pos.lat.toFixed(5)), lon: Number(pos.lon.toFixed(5)) });
     } catch (err) {
       console.warn('GPS unavailable:', err);
     }
@@ -179,44 +193,25 @@ export default function SafePlace() {
   };
 
   return (
-    <div className="min-h-screen bg-[#050914] text-white font-sans flex flex-col">
-      {/* TOP HEADER */}
-      <header className="flex justify-between items-center px-3 sm:px-6 py-2.5 sm:py-3.5 border-b border-slate-800 bg-[#091122]">
-        <div className="flex items-center gap-2.5 sm:gap-4">
-          <button
-            onClick={() => navigate('/')}
-            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
-            title="Back to Crisis HUD"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <div>
-            <h2 className="text-xs sm:text-base font-bold text-white flex items-center gap-1.5">
-              <ShieldCheck className="text-emerald-400 w-5 h-5" />
-              Find a Safe Location
-            </h2>
-            <p className="text-[10px] sm:text-xs text-slate-400 font-mono mt-0.5">
-              Qdrant Edge Vector Rerouting · 100% Offline
-            </p>
-          </div>
-        </div>
-        <div className="bg-emerald-950/60 border border-emerald-700/80 text-emerald-400 px-2.5 py-1 rounded-full text-[10px] sm:text-xs font-bold flex items-center gap-1.5">
-          <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></div>
-          OFFLINE BRAIN
-        </div>
-      </header>
-
-      {/* MAIN CONTENT */}
-      <div className="flex-grow p-2 sm:p-4 grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4">
+    <Shell
+      title="Safe Evacuation & Negative Routing"
+      subtitle="Qdrant Edge Vector Rerouting & Autonomous Shelter Navigation"
+    >
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4">
         {/* LEFT COLUMN: Interactive Filters */}
-        <div className="lg:col-span-3 bg-[#0f172a] border border-slate-800 rounded-xl p-3 sm:p-4 flex flex-col">
-          <h3 className="text-xs sm:text-sm font-bold mb-3 text-slate-100 flex items-center justify-between">
-            <span>Filter Criteria</span>
-            {loading && <RefreshCw className="w-3.5 h-3.5 text-cyan-400 animate-spin" />}
-          </h3>
+        <div className="lg:col-span-3 bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 rounded-2xl p-3 sm:p-4 flex flex-col shadow-xs">
+          <div className="flex items-center justify-between mb-3 border-b border-[#eef2f6] dark:border-slate-800 pb-2">
+            <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+              <span className="w-1 h-3 rounded-full bg-cyan-600 inline-block"></span>
+              <span>Filter Criteria</span>
+            </h3>
+            {loading && <RefreshCw className="w-3.5 h-3.5 text-cyan-500 animate-spin" />}
+          </div>
 
           <div className="mb-3">
-            <h4 className="text-[10px] text-slate-400 font-bold tracking-widest uppercase mb-2">YOUR NEEDS</h4>
+            <h4 className="text-[10px] text-slate-500 dark:text-slate-400 font-bold tracking-widest uppercase mb-2 font-mono">
+              YOUR NEEDS
+            </h4>
             <div className="space-y-1.5">
               {[
                 ['water', 'Water & Purification', Droplet],
@@ -227,16 +222,16 @@ export default function SafePlace() {
                 <button
                   key={key}
                   onClick={() => toggleNeed(key)}
-                  className={`w-full flex items-center gap-2 p-1.5 sm:p-2 rounded-lg border text-left text-xs transition-all ${
+                  className={`w-full flex items-center gap-2 p-2 rounded-xl border text-left text-xs transition-all ${
                     needs[key]
-                      ? 'bg-emerald-950/40 border-emerald-500 text-emerald-200 font-semibold'
-                      : 'bg-[#07111e] border-slate-800 text-slate-400 hover:border-slate-700'
+                      ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-400 dark:border-emerald-500 text-emerald-900 dark:text-emerald-200 font-bold shadow-xs'
+                      : 'bg-[#f7fafc] dark:bg-[#07111e] border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-700'
                   }`}
                 >
                   {needs[key] ? (
-                    <CheckSquare className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <CheckSquare className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                   ) : (
-                    <Square className="w-4 h-4 text-slate-600 shrink-0" />
+                    <Square className="w-4 h-4 text-slate-400 shrink-0" />
                   )}
                   <span>{label}</span>
                 </button>
@@ -245,7 +240,9 @@ export default function SafePlace() {
           </div>
 
           <div className="mb-3">
-            <h4 className="text-[10px] text-slate-400 font-bold tracking-widest uppercase mb-2">AVOID HAZARDS</h4>
+            <h4 className="text-[10px] text-slate-500 dark:text-slate-400 font-bold tracking-widest uppercase mb-2 font-mono">
+              AVOID HAZARDS
+            </h4>
             <div className="space-y-1.5">
               {[
                 ['flooded', 'Flooded areas & deep water'],
@@ -254,16 +251,16 @@ export default function SafePlace() {
                 <button
                   key={key}
                   onClick={() => toggleAvoid(key)}
-                  className={`w-full flex items-center gap-2 p-1.5 sm:p-2 rounded-lg border text-left text-xs transition-all ${
+                  className={`w-full flex items-center gap-2 p-2 rounded-xl border text-left text-xs transition-all ${
                     avoid[key]
-                      ? 'bg-rose-950/40 border-rose-500 text-rose-200 font-semibold'
-                      : 'bg-[#07111e] border-slate-800 text-slate-400 hover:border-slate-700'
+                      ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-400 dark:border-rose-500 text-rose-900 dark:text-rose-200 font-bold shadow-xs'
+                      : 'bg-[#f7fafc] dark:bg-[#07111e] border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-700'
                   }`}
                 >
                   {avoid[key] ? (
-                    <CheckSquare className="w-4 h-4 text-rose-400 shrink-0" />
+                    <CheckSquare className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
                   ) : (
-                    <Square className="w-4 h-4 text-slate-600 shrink-0" />
+                    <Square className="w-4 h-4 text-slate-400 shrink-0" />
                   )}
                   <span>{label}</span>
                 </button>
@@ -271,18 +268,20 @@ export default function SafePlace() {
             </div>
           </div>
 
-          <div className="mt-auto pt-2.5 border-t border-slate-800">
+          <div className="mt-auto pt-3 border-t border-[#eef2f6] dark:border-slate-800">
             <div className="flex justify-between items-center mb-1">
-              <h4 className="text-[10px] text-slate-400 font-bold tracking-widest uppercase">WALKING RADIUS</h4>
-              <button onClick={acquireGps} className="text-[11px] text-cyan-400 hover:underline font-mono">
-                GPS
+              <h4 className="text-[10px] text-slate-500 dark:text-slate-400 font-bold tracking-widest uppercase font-mono">
+                WALKING RADIUS
+              </h4>
+              <button onClick={acquireGps} className="text-[11px] text-cyan-600 dark:text-cyan-400 hover:underline font-mono font-bold flex items-center gap-1">
+                <Crosshair size={12} /> Sync GPS
               </button>
             </div>
             <div className="flex justify-between items-end mb-1">
-              <span className="text-base sm:text-lg font-bold font-mono text-cyan-300">
-                {radiusKm} <span className="text-xs text-slate-400">km</span>
+              <span className="text-base sm:text-lg font-bold font-mono text-cyan-700 dark:text-cyan-300">
+                {radiusKm} <span className="text-xs text-slate-500">km</span>
               </span>
-              <span className="text-slate-400 text-[10px] font-mono">~{Math.round(radiusKm * 14)} min walk</span>
+              <span className="text-slate-500 dark:text-slate-400 text-[10px] font-mono">~{Math.round(radiusKm * 14)} min walk</span>
             </div>
             <input
               type="range"
@@ -291,40 +290,43 @@ export default function SafePlace() {
               step="0.5"
               value={radiusKm}
               onChange={(e) => setRadiusKm(parseFloat(e.target.value))}
-              className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+              className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-600 dark:accent-cyan-400"
             />
           </div>
         </div>
 
         {/* MIDDLE COLUMN: Dynamic Shelter Cards */}
         <div className="lg:col-span-4 flex flex-col gap-2.5 sm:gap-3">
-          <h4 className="text-[10px] text-slate-400 font-bold tracking-widest uppercase">
-            SUGGESTED SAFE SHELTERS ({shelters.length})
-          </h4>
+          <div className="flex items-center justify-between">
+            <h4 className="text-[10px] text-slate-500 dark:text-slate-400 font-bold tracking-widest uppercase font-mono">
+              SUGGESTED SAFE SHELTERS ({shelters.length})
+            </h4>
+            <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-bold">● Operational</span>
+          </div>
 
           {shelters.map((shelter, idx) => (
             <div
               key={shelter.id}
-              className={`bg-[#0f172a] border rounded-xl p-2.5 sm:p-3.5 transition-all shadow-sm ${
+              className={`border rounded-2xl p-3 sm:p-3.5 transition-all shadow-xs ${
                 idx === 0
-                  ? 'border-cyan-500 shadow-cyan-900/20 bg-gradient-to-br from-[#0f172a] to-[#071325]'
-                  : 'border-slate-800 hover:border-slate-700'
+                  ? 'border-cyan-400 dark:border-cyan-500 bg-white dark:bg-gradient-to-br dark:from-[#0b1626] dark:to-[#071325]'
+                  : 'border-[#dbe6f0] dark:border-slate-800 bg-white dark:bg-[#0b1626] hover:border-slate-300 dark:hover:border-slate-700'
               }`}
             >
               <div className="flex justify-between items-start mb-1">
-                <h3 className="text-xs sm:text-sm font-bold text-slate-100">{shelter.name}</h3>
-                <span className="bg-emerald-950/80 text-emerald-400 border border-emerald-700/60 px-2 py-0.5 rounded-full text-[10px] font-bold">
+                <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100">{shelter.name}</h3>
+                <span className="bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700/60 px-2 py-0.5 rounded-full text-[10px] font-bold">
                   {shelter.status}
                 </span>
               </div>
-              <p className="text-slate-400 text-[11px] mb-2 font-mono">
+              <p className="text-slate-500 dark:text-slate-400 text-[11px] mb-2 font-mono">
                 {shelter.type} · {shelter.dist_m} m away · ~{shelter.walk_min} min walk
               </p>
               <div className="flex gap-1 mb-2.5 flex-wrap">
                 {shelter.facilities.map((fac) => (
                   <span
                     key={fac}
-                    className="bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded-full text-[10px] font-medium"
+                    className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded-md text-[10px] font-medium"
                   >
                     {fac}
                   </span>
@@ -332,7 +334,7 @@ export default function SafePlace() {
               </div>
               <button
                 onClick={() => handleNavigate(shelter)}
-                className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs py-2 rounded-lg flex items-center justify-center gap-1.5 transition shadow-sm"
+                className="w-full bg-cyan-600 hover:bg-cyan-500 active:scale-98 text-white font-bold text-xs py-2 rounded-xl flex items-center justify-center gap-1.5 transition shadow-sm cursor-pointer"
               >
                 <Route className="w-3.5 h-3.5" /> Navigate on Compass HUD
               </button>
@@ -341,8 +343,8 @@ export default function SafePlace() {
 
           {/* Exclusion Warning (Negative Vector output) */}
           {excluded && (
-            <div className="bg-rose-950/40 border border-rose-800 rounded-xl p-2.5 flex items-center gap-2 text-rose-300 text-xs">
-              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+            <div className="bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800 rounded-2xl p-2.5 flex items-center gap-2 text-rose-900 dark:text-rose-300 text-xs shadow-xs">
+              <AlertCircle className="w-4 h-4 text-rose-500 dark:text-rose-400 shrink-0" />
               <span className="leading-snug">
                 <strong>{excluded.name || excluded.entity_id || 'CP-17'} Excluded:</strong> {excluded.hazard || 'Flooded entrance, live electrical wires detected.'} Rerouted automatically.
               </span>
@@ -350,21 +352,21 @@ export default function SafePlace() {
           )}
         </div>
 
-        {/* RIGHT COLUMN: Map View */}
-        <div className="lg:col-span-5 bg-[#0b1120] border border-slate-800 rounded-xl overflow-hidden min-h-[220px] sm:min-h-[340px] flex flex-col">
-          <div className="p-2 sm:p-2.5 border-b border-slate-800 bg-[#07111e] flex justify-between items-center">
-            <span className="text-[11px] font-bold font-mono text-cyan-300 uppercase tracking-wider">
+        {/* RIGHT COLUMN: Tactical Map View */}
+        <div className="lg:col-span-5 bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 rounded-2xl overflow-hidden min-h-[260px] sm:min-h-[380px] flex flex-col shadow-xs">
+          <div className="p-2.5 border-b border-[#dbe6f0] dark:border-slate-800 bg-[#f7fafc] dark:bg-[#07111e] flex justify-between items-center">
+            <span className="text-[11px] font-bold font-mono text-cyan-700 dark:text-cyan-300 uppercase tracking-wider">
               TACTICAL FIELD MAP
             </span>
-            <span className="text-[10px] font-mono text-slate-400">
+            <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400">
               Center: {center.lat.toFixed(4)}, {center.lon.toFixed(4)}
             </span>
           </div>
           <div className="flex-1 p-2">
-            <MapPanel center={center} items={mapItems} onMarker={(item) => handleNavigate(item)} dark={true} />
+            <MapPanel center={center} items={mapItems} onMarker={(item) => handleNavigate(item)} />
           </div>
         </div>
       </div>
-    </div>
+    </Shell>
   );
 }
