@@ -1127,6 +1127,25 @@ class RescueService:
         self.memory.delete("events", expired)
         return len(expired)
 
+    def reset_all_data(self, purge_cloud: bool = True) -> dict:
+        events_deleted = self.memory.clear("events")
+        receipts_deleted = self.memory.clear("receipts")
+        groups_deleted = self.memory.clear("groups")
+        cloud_info = {}
+        if purge_cloud and self.settings.qdrant_url:
+            try:
+                from .cloud import purge_cloud_data
+                cloud_info = purge_cloud_data(self)
+            except Exception as exc:
+                cloud_info = {"purged": False, "error": str(exc)}
+        return {
+            "status": "cleared",
+            "events_cleared": events_deleted,
+            "receipts_cleared": receipts_deleted,
+            "groups_cleared": groups_deleted,
+            "cloud": cloud_info,
+        }
+
 
 def distance_m(a: dict, b: dict) -> float:
     r = 6371000

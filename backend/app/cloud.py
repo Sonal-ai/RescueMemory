@@ -106,6 +106,47 @@ def check_cloud_connection(service: RescueService) -> dict:
         client.close()
 
 
+def purge_cloud_data(service: RescueService) -> dict:
+    """Purge all points from all Qdrant Cloud collections and return updated 0 counts."""
+    if not service.settings.qdrant_url:
+        return {"purged": False, "reason": "QDRANT_URL missing"}
+    client = QdrantClient(url=service.settings.qdrant_url,
+                          api_key=service.settings.qdrant_api_key, timeout=20)
+    purged_counts = {}
+    try:
+        collections = list(EVENT_COLLECTIONS.values()) + [GUIDES_COLLECTION]
+        for c in collections:
+            purged_counts[c] = 0
+            if client.collection_exists(c):
+                while True:
+                    pts, _ = client.scroll(c, limit=500)
+                    if not pts:
+                        break
+                    ids = [p.id for p in pts]
+                    client.delete(c, points_selector=models.PointIdsList(points=ids), wait=True)
+                    purged_counts[c] += len(ids)
+
+        shards = {}
+        total_points = 0
+        for c in collections:
+            try:
+                info = client.get_collection(c)
+                pts = info.points_count or 0
+                shards[c] = pts
+                total_points += pts
+            except Exception:
+                shards[c] = 0
+
+        return {
+            "purged": True,
+            "purged_counts": purged_counts,
+            "shards": shards,
+            "total_points": total_points,
+        }
+    finally:
+        client.close()
+
+
 def mirror_to_qdrant_server(service: RescueService) -> dict:
     """Exchange scoped events and centrally authenticated guides with Cloud."""
     if not service.settings.qdrant_url:

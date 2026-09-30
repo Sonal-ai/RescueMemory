@@ -89,6 +89,23 @@ class Memory:
             with self.lock:
                 self.shards[collection].update(UpdateOperation.delete_points([point_id(key) for key in keys]))
 
+    def clear(self, collection: str) -> int:
+        deleted = 0
+        with self.lock:
+            offset = None
+            while True:
+                records, next_offset = self.shards[collection].scroll(ScrollRequest(
+                    offset=offset, limit=128, with_payload=False, with_vector=False
+                ))
+                if records:
+                    ids = [r.id for r in records]
+                    self.shards[collection].update(UpdateOperation.delete_points(ids))
+                    deleted += len(ids)
+                if next_offset is None or not records:
+                    break
+                offset = next_offset
+        return deleted
+
     def all(self, collection: str, filter_: Filter | None = None):
         offset = None
         while True:
