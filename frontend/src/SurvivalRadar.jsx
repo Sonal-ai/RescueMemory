@@ -1250,7 +1250,7 @@ export default function SurvivalRadar({
                         {/* Tactical Lock Reticle Brackets if Selected */}
                         {isSelected && (
                           <g>
-                            <circle cx={cx} cy={cy} r="16" fill="none" stroke="#22d3ee" strokeWidth="1.5" strokeDasharray="6 4" className="animate-spin" />
+                            <circle cx={cx} cy={cy} r="16" fill="none" stroke="#22d3ee" strokeWidth="1.5" strokeDasharray="6 4" className="animate-pulse" />
                             <line x1={cx - 10} y1={cy - 10} x2={cx - 5} y2={cy - 10} stroke="#22d3ee" strokeWidth="1.5" />
                             <line x1={cx - 10} y1={cy - 10} x2={cx - 10} y2={cy - 5} stroke="#22d3ee" strokeWidth="1.5" />
                             <line x1={cx + 10} y1={cy - 10} x2={cx + 5} y2={cy - 10} stroke="#22d3ee" strokeWidth="1.5" />

@@ -98,6 +98,13 @@ export default function UnifiedRadarMap({
   // Update liveCoords if parent explicitly overrides location significantly (>5m)
   useEffect(() => {
     if (userLocation?.lat != null && userLocation?.lon != null) {
+      if (
+        baselineAnchorRef.current &&
+        distM(baselineAnchorRef.current.lat, baselineAnchorRef.current.lon, 28.7041, 77.1025) < 50 &&
+        distM(userLocation.lat, userLocation.lon, 28.7041, 77.1025) >= 50
+      ) {
+        baselineAnchorRef.current = { lat: userLocation.lat, lon: userLocation.lon };
+      }
       setLiveCoords((prev) => {
         if (!prev) return { lat: userLocation.lat, lon: userLocation.lon };
         const delta = distM(prev.lat, prev.lon, userLocation.lat, userLocation.lon);
@@ -348,9 +355,6 @@ export default function UnifiedRadarMap({
     const aLat = baselineAnchorRef.current?.lat ?? uLat;
     const aLon = baselineAnchorRef.current?.lon ?? uLon;
 
-    // Check if anchor is near Delhi operations zone (< 50 km)
-    const isAnchorDelhi = distM(aLat, aLon, 28.7041, 77.1025) < 50000;
-
     // If external target passed (e.g. from SafePlace reroute or casualty), inject it at the top
     if (selectedTarget) {
       const targetId = selectedTarget.id || selectedTarget.entity_id || 'selected_target';
@@ -373,13 +377,13 @@ export default function UnifiedRadarMap({
       }
     }
 
-    // Baseline facilities: realistically anchored at fixed physical world coordinates near the starting position
+    // Baseline facilities: realistically anchored at fixed physical world coordinates in 4 distinct quadrants around the user
     const baseline = [
       {
         id: 'priority_casualty',
         name: 'Urgent Casualty (Fracture & Trauma SOS)',
         category: 'casualty',
-        location: isAnchorDelhi ? { lat: 28.7085, lon: 77.1002 } : { lat: aLat + 0.0018, lon: aLon - 0.0012 },
+        location: { lat: aLat + 0.0022, lon: aLon - 0.0018 },
         triage_level: 'immediate_red',
         text: 'Survivor unable to walk unassisted, severe fracture requiring splinting & rapid evacuation.'
       },
@@ -387,7 +391,7 @@ export default function UnifiedRadarMap({
         id: 'water_point_4',
         name: 'Clean Water Depot (North Gate Tanker 4)',
         category: 'resource',
-        location: isAnchorDelhi ? { lat: 28.7060, lon: 77.1080 } : { lat: aLat + 0.0012, lon: aLon + 0.0021 },
+        location: { lat: aLat + 0.0018, lon: aLon + 0.0025 },
         triage_level: 'safe_green',
         text: 'Drinkable water distribution depot with verified emergency purification supply guarded by relief corps.'
       },
@@ -395,7 +399,7 @@ export default function UnifiedRadarMap({
         id: 'shelter_alpha',
         name: 'Shelter Alpha (Central High - Safe Haven)',
         category: 'shelter',
-        location: isAnchorDelhi ? { lat: 28.7120, lon: 77.0980 } : { lat: aLat + 0.0035, lon: aLon - 0.0028 },
+        location: { lat: aLat - 0.0030, lon: aLon + 0.0022 },
         triage_level: 'safe_green',
         text: 'Verified safe high-ground shelter with food, emergency surgery & power generator.'
       },
@@ -403,7 +407,7 @@ export default function UnifiedRadarMap({
         id: 'cp_17',
         name: 'Checkpoint CP-17 (North Bridge)',
         category: 'hazard',
-        location: isAnchorDelhi ? { lat: 28.7041, lon: 77.1065 } : { lat: aLat + 0.0006, lon: aLon + 0.0010 },
+        location: { lat: aLat - 0.0016, lon: aLon - 0.0018 },
         triage_level: 'hazard_warning',
         text: 'Caution: Submerged entrance & downed live wires. Exercise caution and follow northern detour.'
       }

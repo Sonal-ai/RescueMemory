@@ -189,7 +189,16 @@ export default function MapPanel({
                 
                 {/* Target Pulsing Halo when active */}
                 {isTarget && (
-                  <circle cx={point.x} cy={point.y} r="22" fill="none" stroke="#38bdf8" strokeWidth="2" strokeDasharray="3 3" className="animate-spin" />
+                  <circle
+                    cx={point.x}
+                    cy={point.y}
+                    r="20"
+                    fill="none"
+                    stroke="#38bdf8"
+                    strokeWidth="2"
+                    strokeDasharray="4 2"
+                    className="animate-pulse"
+                  />
                 )}
 
                 <circle cx={point.x} cy={point.y} r="12" fill={fill} opacity=".35" />
@@ -203,7 +212,10 @@ export default function MapPanel({
                   fontWeight="bold"
                   style={{ textShadow: '0 1px 4px rgba(0,0,0,0.95)' }}
                 >
-                  {item.entity_id || item.title || item.kind}
+                  {(() => {
+                    const raw = item.title || item.name || (item.entity_id && item.entity_id.length <= 16 ? item.entity_id : null) || item.kind || 'Point';
+                    return raw.length > 18 ? raw.slice(0, 16) + '…' : raw;
+                  })()}
                 </text>
               </g>
             );
