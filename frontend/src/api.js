@@ -6,7 +6,7 @@ import {
   triggerAutoSync,
   onSyncStateChange,
 } from './brain/offlineBrain.js';
-import { getAllLocalReports, getUnsyncedReports, markReportsSynced, getAllLocalGuides } from './brain/offlineStorage.js';
+import { getAllLocalReports, getUnsyncedReports, getAllLocalGuides } from './brain/offlineStorage.js';
 import {
   distM,
   bearingDeg,
@@ -23,6 +23,9 @@ import {
   getActiveBlePeers,
   syncWithBlePeer,
   isBluetoothSupported,
+  isNativeBle,
+  startBleReceiver,
+  scanForNearbyPhones,
   requestBleDevice,
   registerSimulatedBlePeer
 } from './brain/bleMesh.js';
@@ -39,6 +42,9 @@ export {
   QDRANT_CLOUD_URL,
   QDRANT_CLOUD_KEY,
   isBluetoothSupported,
+  isNativeBle,
+  startBleReceiver,
+  scanForNearbyPhones,
   requestBleDevice,
   registerSimulatedBlePeer
 };
@@ -1031,11 +1037,11 @@ export async function getDiscoveredPeers() {
                 allPeers.push({
                   ...ep,
                   name: ep.name || ep.device_name || `Android Device (${ep.node_id.slice(-4)})`,
-                  distance_m: ep.distance_m ?? 50,
-                  bearing_deg: ep.bearing_deg ?? 0,
-                  cardinal: ep.cardinal ?? 'N',
-                  walk_time_min: Math.max(1, Math.round((ep.distance_m ?? 50) / 75)),
-                  source: 'ble_mesh',
+                  distance_m: ep.distance_m,
+                  bearing_deg: ep.bearing_deg,
+                  cardinal: ep.cardinal,
+                  walk_time_min: ep.distance_m == null ? undefined : Math.max(1, Math.round(ep.distance_m / 75)),
+                  source: 'server',
                   sync_ready: true,
                 });
               }
@@ -1051,8 +1057,8 @@ export async function getDiscoveredPeers() {
   return {
     peers: allPeers,
     count: allPeers.length,
-    enabled: true,
-    mode: allPeers.some(p => p.source === 'ble_mesh') ? 'bluetooth_mesh' : (allPeers.length > 0 ? 'mesh_connected' : 'local_mesh'),
+    enabled: isBluetoothSupported(),
+    mode: allPeers.some(p => p.source === 'native_ble' || p.source === 'web_ble') ? 'bluetooth' : (allPeers.length > 0 ? 'online_peers' : 'none'),
   };
 }
 
@@ -1118,9 +1124,9 @@ export async function updateDeviceLocation(locationData) {
 
 export async function syncDiscoveredPeer(syncData = {}) {
   // 1. If syncing a Bluetooth Low Energy device, perform direct BLE GATT transfer
-  if (syncData?.device_ref || syncData?.source === 'ble_mesh' || syncData?.node_id?.startsWith('ble_')) {
+  if (syncData?.device_ref || syncData?.source === 'native_ble' || syncData?.source === 'web_ble' || syncData?.node_id?.startsWith('ble_')) {
     try {
-      const unsynced = await getUnsyncedReports();
+      const reports = await getAllLocalReports();
       const myDeviceId = getDeviceId();
       let myLocation = { lat: 28.7041, lon: 77.1025 };
       try {
@@ -1130,20 +1136,18 @@ export async function syncDiscoveredPeer(syncData = {}) {
         // silent
       }
 
-      const bleOutcome = await syncWithBlePeer(syncData, unsynced, myDeviceId, myLocation);
-      if (unsynced.length > 0 && bleOutcome.synced > 0) {
-        await markReportsSynced(unsynced.map(r => r.id));
-      }
+      const bleOutcome = await syncWithBlePeer(syncData, reports, myDeviceId, myLocation);
       return {
         success: true,
         synced: bleOutcome.synced,
         imported: bleOutcome.imported,
         mode: 'bluetooth_ble',
-        speed: bleOutcome.speed || '< 50ms',
+        speed: bleOutcome.speed,
         status: 'synced',
       };
     } catch (bleErr) {
       console.warn('[Discovery] Direct BLE sync notice:', bleErr.message);
+      throw bleErr;
     }
   }
 
@@ -1154,7 +1158,7 @@ export async function syncDiscoveredPeer(syncData = {}) {
     success: true,
     synced: syncResult.synced,
     imported: syncResult.imported,
-    mode: 'bluetooth_mesh',
+    mode: 'online_sync',
     status: 'synced',
   };
 }

@@ -10,12 +10,8 @@ import {
   ChevronUp,
   Compass,
   Copy,
-  Info,
   QrCode,
-  Radio,
   RefreshCw,
-  Send,
-  Smartphone,
   X,
   Zap
 } from 'lucide-react';
@@ -23,16 +19,16 @@ import QRCode from 'qrcode';
 import {
   getDiscoveredPeers,
   syncDiscoveredPeer,
-  setting,
   triggerAutoSync,
   getDeviceId,
   updateDeviceLocation,
   getNativeOrWebLocation,
-  requestBleDevice,
   isBluetoothSupported,
-  registerSimulatedBlePeer
+  isNativeBle,
+  startBleReceiver,
+  scanForNearbyPhones,
 } from '../api';
-import { getAllLocalReports, getUnsyncedReports, saveImportedReports } from '../brain/offlineStorage.js';
+import { getAllLocalReports, saveImportedReports } from '../brain/offlineStorage.js';
 
 const GRID_SIZE = 260;
 const GRID_CENTER = GRID_SIZE / 2;
@@ -50,7 +46,8 @@ export default function MeshSyncScanner({
   const [errorMessage, setErrorMessage] = useState('');
   const [showBleGuide, setShowBleGuide] = useState(false);
   const [isBleScanning, setIsBleScanning] = useState(false);
-  const [hasBleHardware, setHasBleHardware] = useState(true);
+  const hasBleHardware = isBluetoothSupported();
+  const [bleReady, setBleReady] = useState(false);
 
   // QR Mesh Sync Modal States
   const [showQrModal, setShowQrModal] = useState(false);
@@ -62,8 +59,21 @@ export default function MeshSyncScanner({
   const [qrLoading, setQrLoading] = useState(false);
 
   useEffect(() => {
-    setHasBleHardware(isBluetoothSupported());
+    if (isNativeBle()) {
+      startBleReceiver().then(() => setBleReady(true)).catch((err) => {
+        setErrorMessage(`Bluetooth discovery unavailable: ${err.message || 'Could not start receiver'}`);
+      });
+    }
   }, []);
+
+  useEffect(() => {
+    const onReceived = (event) => {
+      setStatusMessage(`Stored ${event.detail.imported} SOS report(s) from a nearby phone for local relay.`);
+      if (onSyncComplete) onSyncComplete();
+    };
+    window.addEventListener('rescue:ble-received', onReceived);
+    return () => window.removeEventListener('rescue:ble-received', onReceived);
+  }, [onSyncComplete]);
 
   const refreshPeersList = useCallback(async () => {
     setScanning(true);
@@ -125,44 +135,25 @@ export default function MeshSyncScanner({
         await new Promise((r) => setTimeout(r, 400));
       }
 
-      let bleTransfers = 0;
       for (const peer of currentPeers) {
+        if (peer.source === 'native_ble' || peer.source === 'web_ble') continue;
         try {
-          const outcome = await syncDiscoveredPeer(peer);
-          if (outcome?.synced || outcome?.imported) {
-            bleTransfers++;
-          }
+          await syncDiscoveredPeer(peer);
         } catch (peerErr) {
           console.warn(`Sync with ${peer.node_id} notice:`, peerErr?.message);
         }
       }
 
-      if (currentPeers.length > 0) {
+      if (!isSilent && currentPeers.length > 0) {
         setErrorMessage('');
         setStatusMessage(
-          `⚡ Mesh Active: Connected to ${currentPeers.length} device(s)${localFlushed > 0 ? ` · Uplinked ${localFlushed} SOS` : ''}${remoteImported > 0 ? ` · Received ${remoteImported} reports` : ''}`
+          `Found ${currentPeers.length} known peer(s)${localFlushed > 0 ? ` · Uplinked ${localFlushed} SOS` : ''}${remoteImported > 0 ? ` · Received ${remoteImported} reports` : ''}`
         );
         if (onSyncComplete) onSyncComplete();
-      } else {
-        // Only set status in background if no active error is displayed
-        setErrorMessage((prevErr) => {
-          if (!prevErr) {
-            if (hasBleHardware) {
-              setStatusMessage(
-                localFlushed > 0
-                  ? `✅ Synced ${localFlushed} report(s). Bluetooth radar active & scanning for nearby devices...`
-                  : '📡 Bluetooth LE radar active & scanning nearby devices automatically...'
-              );
-            } else {
-              setStatusMessage(
-                localFlushed > 0
-                  ? `✅ Synced ${localFlushed} report(s). Local off-grid mesh active.`
-                  : '🌐 Off-grid mesh active (Web Bluetooth unavailable on this browser · Use QR Fallback or Wi-Fi).'
-              );
-            }
-          }
-          return prevErr;
-        });
+      } else if (!isSilent) {
+        setStatusMessage(localFlushed > 0
+          ? `Uploaded ${localFlushed} local report(s). No nearby phone has been found yet.`
+          : 'No known peers. Tap Find Nearby Phones to run a Bluetooth scan.');
       }
     } catch (err) {
       if (!isSilent) {
@@ -175,7 +166,7 @@ export default function MeshSyncScanner({
         setScanning(false);
       }
     }
-  }, [onSyncComplete, hasBleHardware]);
+  }, [onSyncComplete]);
 
   // Automated background sync interval: runs on mount and every 6 seconds
   useEffect(() => {
@@ -190,22 +181,21 @@ export default function MeshSyncScanner({
   const handleScanBluetooth = async () => {
     if (!hasBleHardware) {
       setStatusMessage('');
-      setErrorMessage('Web Bluetooth is not supported in this browser environment (requires Chrome on Android or a Native BLE plugin). Please use QR Fallback or Wi-Fi Mesh for off-grid transfer.');
+      setErrorMessage('Phone-to-phone Bluetooth discovery requires the RescueMemory Android app. In a browser, use QR transfer.');
       return;
     }
     setIsBleScanning(true);
     setErrorMessage('');
     try {
-      const dev = await requestBleDevice();
-      setErrorMessage('');
-      setStatusMessage(`⚡ Connected to Bluetooth device: ${dev.name || dev.id}. Syncing data...`);
+      const found = await scanForNearbyPhones();
+      setBleReady(true);
       await refreshPeersList();
-      await handleScanAndTransfer(false);
+      setStatusMessage(found.length
+        ? `Found ${found.length} nearby RescueMemory phone(s). Tap Send SOS on a phone to share your reports.`
+        : 'No RescueMemory phones found. Keep Mesh Sync open on both phones, allow Nearby devices, and scan again.');
     } catch (err) {
-      if (err.name !== 'NotFoundError' && !err.message?.includes('User cancelled')) {
-        setStatusMessage('');
-        setErrorMessage(`Bluetooth: ${err.message || 'Scan cancelled'}`);
-      }
+      setStatusMessage('');
+      setErrorMessage(`Bluetooth: ${err.message || 'Scan failed'}`);
     } finally {
       setIsBleScanning(false);
     }
@@ -220,20 +210,13 @@ export default function MeshSyncScanner({
       const res = await syncDiscoveredPeer(peer);
       const peerName = peer.name || peer.device_name || peer.node_id;
       const speedStr = res.speed ? ` in ${res.speed}` : '';
-      setStatusMessage(`⚡ Synced data with ${peerName}${speedStr}. (${res.imported || 0} imported, ${res.synced || 0} uplinked)`);
+      setStatusMessage(`Sent ${res.synced || 0} SOS report(s) to ${peerName}${speedStr}.`);
       if (onSyncComplete) onSyncComplete();
     } catch (err) {
       setErrorMessage(`Sync with ${peer.node_id} failed: ${err.message || 'Peer unreachable'}`);
     } finally {
       setSyncingNodeId(null);
     }
-  };
-
-  // Add simulated BLE peer for zero-hardware desktop testing
-  const handleAddSimulatedPeer = async () => {
-    registerSimulatedBlePeer();
-    await refreshPeersList();
-    setStatusMessage('⚡ Connected to simulated Bluetooth BLE peer node.');
   };
 
   // Generate QR Code for Pure Offline P2P Mesh Fallback
@@ -307,7 +290,7 @@ export default function MeshSyncScanner({
         created_at: e.ts || new Date().toISOString()
       }));
 
-      const count = await saveImportedReports(eventsToImport);
+      const count = await saveImportedReports(eventsToImport, { markForRelay: true });
       setStatusMessage(`✅ Successfully imported ${count} SOS emergency report(s) from QR packet!`);
       setShowQrModal(false);
       setImportInput('');
@@ -336,16 +319,16 @@ export default function MeshSyncScanner({
           <div className="min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
               <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
-                <span>Bluetooth Mesh</span>
-                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                <span>Nearby Phone Transfer</span>
+                <span className={`w-1.5 h-1.5 rounded-full ${bleReady ? 'bg-cyan-400' : 'bg-slate-400'}`} />
               </h2>
               <span className="text-[10px] sm:text-[11px] font-mono font-bold px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 border border-cyan-500/30 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
-                BLE ACTIVE (6s)
+                <span className={`w-1.5 h-1.5 rounded-full ${bleReady ? 'bg-cyan-400' : 'bg-slate-400'}`} />
+                {bleReady ? 'READY TO SCAN' : 'BLE NOT READY'}
               </span>
             </div>
             <p className="text-xs sm:text-[13px] text-slate-500 dark:text-slate-400 mt-0.5 leading-tight font-medium">
-              Zero-setup Bluetooth Low Energy mesh · Lightning-fast SOS exchange in &lt; 50ms.
+              Discover RescueMemory phones and send SOS reports over Bluetooth without saving a pairing.
             </p>
           </div>
         </div>
@@ -356,10 +339,10 @@ export default function MeshSyncScanner({
             onClick={handleScanBluetooth}
             disabled={isBleScanning}
             className="p-1.5 rounded-lg border border-cyan-500/40 bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 hover:bg-cyan-500/25 transition-colors flex items-center gap-1 text-xs font-bold cursor-pointer"
-            title="Scan for Nearby Bluetooth Devices"
+            title="Find nearby RescueMemory phones"
           >
             <BluetoothSearching size={14} className={isBleScanning ? 'animate-spin' : ''} />
-            <span className="hidden xs:inline">Pair BLE</span>
+            <span className="hidden xs:inline">Find Phones</span>
           </button>
 
           <button
@@ -377,7 +360,7 @@ export default function MeshSyncScanner({
             onClick={refreshPeersList}
             disabled={scanning}
             className="p-1.5 rounded-lg border border-[#cbdbe9] dark:border-slate-800 bg-[#f0f5fa] dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-[#e2ecf5] dark:hover:bg-slate-800 transition-colors"
-            title="Scan Again"
+            title="Refresh known peers"
           >
             <RefreshCw size={13} className={scanning ? 'animate-spin' : ''} />
           </button>
@@ -439,7 +422,7 @@ export default function MeshSyncScanner({
             <line x1={GRID_CENTER} y1={GRID_CENTER - MAX_RADIUS} x2={GRID_CENTER} y2={GRID_CENTER + MAX_RADIUS} stroke="#0369a1" strokeWidth="0.8" />
 
             {/* Sweeping Bluetooth Radar Beam */}
-            {hasBleHardware ? (
+            {isBleScanning ? (
               <g className="animate-[spin_4s_linear_infinite]" style={{ transformOrigin: `${GRID_CENTER}px ${GRID_CENTER}px` }}>
                 <line
                   x1={GRID_CENTER}
@@ -506,38 +489,38 @@ export default function MeshSyncScanner({
         <div className="w-full max-w-sm mt-3 flex flex-col gap-2">
           <button
             type="button"
-            onClick={() => handleScanAndTransfer(false)}
-            disabled={syncingAll}
+              onClick={handleScanBluetooth}
+              disabled={isBleScanning}
             className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-cyan-600 via-blue-600 to-indigo-600 hover:from-cyan-500 hover:to-blue-500 text-white font-extrabold text-sm sm:text-base shadow-md shadow-cyan-600/25 flex items-center justify-center gap-2 transition-all active:scale-98 disabled:opacity-75 cursor-pointer"
           >
-            {syncingAll ? (
+            {isBleScanning ? (
               <>
                 <RefreshCw size={16} className="animate-spin" />
-                <span>Syncing Bluetooth Mesh…</span>
+                <span>Scanning nearby phones…</span>
               </>
             ) : (
               <>
                 <Zap size={16} />
-                <span>Sync Nearby Bluetooth Devices {peers.length > 0 ? `(${peers.length})` : ''}</span>
+                <span>Find Nearby Phones</span>
               </>
             )}
           </button>
 
           <div className="flex items-center justify-between px-1">
             <div className="flex items-center gap-1.5">
-              <span className={`w-2 h-2 rounded-full ${hasBleHardware ? 'bg-cyan-400 animate-pulse' : 'bg-slate-400'}`} />
+              <span className={`w-2 h-2 rounded-full ${bleReady ? 'bg-cyan-400' : 'bg-slate-400'}`} />
               <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 font-medium">
-                {hasBleHardware ? 'BLE Radio Active · Zero Passwords Required' : 'Off-Grid Mesh Mode · Local DB Ready'}
+                {bleReady ? 'Discoverable in the Android app' : 'Bluetooth receiver not ready'}
               </p>
             </div>
 
             <button
               type="button"
-              onClick={handleScanBluetooth}
-              className={`text-[11px] font-bold hover:underline cursor-pointer ${hasBleHardware ? 'text-cyan-600 dark:text-cyan-400' : 'text-slate-500 dark:text-slate-400'}`}
-              title={hasBleHardware ? 'Pair a new Bluetooth phone' : 'Web Bluetooth is not supported in this browser'}
+              onClick={openQrModal}
+              className="text-[11px] font-bold hover:underline cursor-pointer text-cyan-600 dark:text-cyan-400"
+              title="Transfer SOS reports by QR"
             >
-              {hasBleHardware ? '+ Pair New Phone' : 'ℹ️ No Web BLE'}
+              Use QR instead
             </button>
           </div>
         </div>
@@ -548,9 +531,9 @@ export default function MeshSyncScanner({
         <div className="flex items-center justify-between mb-2.5">
           <h3 className="text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
             <Bluetooth size={14} className="text-cyan-500" />
-            <span>Nearby Bluetooth Devices ({peers.length})</span>
+            <span>Known Phones ({peers.length})</span>
           </h3>
-          <span className="text-[11px] text-slate-500 dark:text-slate-400">Tap Sync to exchange SOS</span>
+          <span className="text-[11px] text-slate-500 dark:text-slate-400">Bluetooth phones can receive your SOS</span>
         </div>
 
         {peers.length > 0 ? (
@@ -561,10 +544,10 @@ export default function MeshSyncScanner({
               const displayName = peer.name || peer.device_name || `Survivor Phone (${peer.node_id.slice(-4)})`;
               const distText =
                 peer.distance_m !== undefined && peer.distance_m !== null
-                  ? `${peer.distance_m}m`
-                  : 'Near';
+                  ? `~${peer.distance_m}m`
+                  : 'Distance unknown';
               const dirText = peer.cardinal ? `${peer.cardinal} (${peer.bearing_deg || 0}°)` : '';
-              const rssiText = peer.rssi ? `${peer.rssi} dBm` : 'BLE Signal';
+              const rssiText = peer.rssi != null ? `${peer.rssi} dBm` : '';
 
               return (
                 <div
@@ -588,7 +571,7 @@ export default function MeshSyncScanner({
                       </span>
                       <span className="text-[9.5px] font-mono px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300 flex items-center gap-0.5">
                         <Bluetooth size={10} />
-                        <span>BLE Mesh</span>
+                        <span>{peer.source === 'native_ble' ? 'Nearby BLE' : peer.node_id?.startsWith('ble_sim_') ? 'Demo' : 'Online peer'}</span>
                       </span>
                     </div>
 
@@ -618,7 +601,7 @@ export default function MeshSyncScanner({
                     className="py-1.5 px-3 rounded-lg border border-cyan-500/50 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 font-bold text-xs flex items-center gap-1.5 transition-all shrink-0 active:scale-95 cursor-pointer"
                   >
                     {isSyncingThis ? <RefreshCw size={12} className="animate-spin" /> : <Zap size={12} />}
-                    <span>Sync</span>
+                    <span>{peer.source === 'native_ble' ? 'Send SOS' : 'Sync Online'}</span>
                   </button>
                 </div>
               );
@@ -626,20 +609,13 @@ export default function MeshSyncScanner({
           </div>
         ) : (
           <div className="p-4 rounded-xl border border-dashed border-[#cbdbe9] dark:border-slate-800 text-center bg-[#f8fafc]/60 dark:bg-slate-900/30">
-            <BluetoothSearching size={22} className="mx-auto text-cyan-500 mb-1.5 animate-pulse" />
+            <BluetoothSearching size={22} className="mx-auto text-cyan-500 mb-1.5" />
             <p className="text-xs sm:text-[13px] text-slate-600 dark:text-slate-300 font-medium">
-              Scanning for nearby Bluetooth devices...
+              No phones found yet.
             </p>
             <p className="text-[11px] text-slate-400 mt-0.5">
-              Tap <strong>"Pair BLE"</strong> above to discover and connect with other phones instantly.
+              Open this screen on both Android phones, allow Nearby devices, then tap <strong>Find Nearby Phones</strong>.
             </p>
-            <button
-              type="button"
-              onClick={handleAddSimulatedPeer}
-              className="mt-2 text-[11px] text-cyan-600 dark:text-cyan-400 font-bold hover:underline cursor-pointer"
-            >
-              + Add Simulated Peer Node (Demo / Test)
-            </button>
           </div>
         )}
       </div>
@@ -653,7 +629,7 @@ export default function MeshSyncScanner({
         >
           <div className="flex items-center gap-2">
             <BluetoothConnected size={15} className="text-cyan-500" />
-            <span>How to Connect Phones via Bluetooth Mesh (Zero Setup)</span>
+            <span>How nearby phone transfer works</span>
           </div>
           {showBleGuide ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         </button>
@@ -661,26 +637,26 @@ export default function MeshSyncScanner({
         {showBleGuide && (
           <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-800 text-xs sm:text-[13px] space-y-2.5 text-slate-600 dark:text-slate-300">
             <div className="p-2.5 rounded-xl bg-cyan-50 dark:bg-cyan-950/30 border border-cyan-200 dark:border-cyan-900/50">
-              <p className="font-bold text-cyan-900 dark:text-cyan-200 mb-1">Step 1: Turn ON Bluetooth</p>
-              <p>Turn ON <strong>Bluetooth</strong> on both phones. No Wi-Fi passwords, hotspot SSIDs, or typing required.</p>
+              <p className="font-bold text-cyan-900 dark:text-cyan-200 mb-1">Step 1: Open RescueMemory on both Android phones</p>
+              <p>Turn on Bluetooth, open this screen, and allow the Nearby devices permission. Each phone advertises this app while the screen is open.</p>
             </div>
 
             <div className="p-2.5 rounded-xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/50">
-              <p className="font-bold text-blue-900 dark:text-blue-200 mb-1">Step 2: Tap "Pair BLE" on Either Phone</p>
-              <p>Tap <strong>Pair BLE</strong> at the top. The nearby phone appears in the list within seconds.</p>
+              <p className="font-bold text-blue-900 dark:text-blue-200 mb-1">Step 2: Find nearby phones</p>
+              <p>Tap <strong>Find Nearby Phones</strong> on the sending phone. The scan looks for this app's BLE advertisement for 8 seconds. Android pairing is not required.</p>
             </div>
 
             <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/50">
-              <p className="font-bold text-emerald-900 dark:text-emerald-200 mb-1">Step 3: Lightning-Fast Transfer (&lt; 50ms)</p>
+              <p className="font-bold text-emerald-900 dark:text-emerald-200 mb-1">Step 3: Send SOS reports</p>
               <p>
-                Tap <strong>Sync Nearby Devices</strong>. Emergency SOS reports and triage data transfer over high-speed BLE LE-2M radio instantly!
+                Tap <strong>Send SOS</strong> for a found phone. The receiver stores the reports locally. To send reports in the other direction, scan and send from that phone too.
               </p>
             </div>
 
             <div className="p-2.5 rounded-xl bg-teal-50 dark:bg-teal-950/30 border border-teal-200 dark:border-teal-900/50">
-              <p className="font-bold text-teal-900 dark:text-teal-200 mb-1">Step 4: Navigate on Compass HUD</p>
+              <p className="font-bold text-teal-900 dark:text-teal-200 mb-1">Step 4: Check received reports</p>
               <p>
-                Any survivor SOS received over Bluetooth will immediately lock onto your <strong>Compass Radar</strong> with exact distance and direction!
+                Reports received by Bluetooth are saved on the phone. Bluetooth signal strength gives only a rough proximity estimate; it cannot tell direction.
               </p>
             </div>
           </div>

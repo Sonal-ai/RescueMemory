@@ -69,7 +69,7 @@ export async function getAllLocalReports() {
   });
 }
 
-export async function saveImportedReports(reports) {
+export async function saveImportedReports(reports, { markForRelay = false } = {}) {
   if (!Array.isArray(reports) || reports.length === 0) return 0;
   const db = await openDB();
   return new Promise((resolve, reject) => {
@@ -82,10 +82,10 @@ export async function saveImportedReports(reports) {
       getReq.onsuccess = () => {
         const existing = getReq.result;
         // Don't overwrite unsynced local changes with older remote copy
-        if (!existing || existing.synced) {
+        if (!existing || (!markForRelay && existing.synced)) {
           store.put({
             ...rep,
-            synced: true,
+            synced: !markForRelay,
             imported: true,
             imported_at: new Date().toISOString(),
           });

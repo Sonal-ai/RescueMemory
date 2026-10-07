@@ -1,13 +1,17 @@
 /**
  * RescueMemory Bluetooth Low Energy (BLE) Mesh Engine
  * 
- * High-speed offline peer-to-peer discovery and bidirectional data synchronization
- * over Bluetooth GATT characteristics. Replaces brittle Wi-Fi hotspots with zero-config
- * BLE radio transfer capable of synchronizing SOS packets in < 50ms.
+ * Android BLE service discovery and one-way SOS delivery, with Web Bluetooth
+ * helpers retained for supported peripheral browsers.
  */
 
-import { distM, bearingDeg, cardinalDirection } from './cloudSync.js';
 import { saveImportedReports } from './offlineStorage.js';
+import { Capacitor, registerPlugin } from '@capacitor/core';
+
+const nativeBle = registerPlugin('RescueBle');
+const onAndroid = Capacitor.getPlatform() === 'android';
+let nativeStarted = false;
+let nativeListener = null;
 
 // Dedicated 16-bit/128-bit RescueMemory BLE Service & Characteristic UUIDs
 export const RESCUE_BLE_SERVICE_UUID = '0000fe50-0000-1000-8000-00805f9b34fb';
@@ -25,7 +29,53 @@ const listeners = new Set();
  */
 export function isBluetoothSupported() {
   if (typeof window === 'undefined') return false;
-  return Boolean(window.navigator?.bluetooth);
+  return onAndroid;
+}
+
+export function isNativeBle() { return onAndroid; }
+
+export async function startBleReceiver() {
+  if (!onAndroid) return false;
+  if (!nativeListener) {
+    nativeListener = await nativeBle.addListener('packet', async ({ payload }) => {
+      try {
+        const packet = JSON.parse(payload);
+        if (packet.k !== 'rm_ble_packet' || !Array.isArray(packet.e)) return;
+        const reports = packet.e.filter(e => e && e.id && Array.isArray(e.l)).map(e => ({
+          id: e.id,
+          kind: e.k || 'sos',
+          text: e.t || '',
+          location: { lat: e.l[0], lon: e.l[1] },
+          severity: e.v || 'red',
+          status: e.s || 'needs_help',
+          created_at: e.ts || new Date().toISOString(),
+          reporter_id: packet.s || 'ble-peer'
+        }));
+        const imported = await saveImportedReports(reports, { markForRelay: true });
+        window.dispatchEvent(new CustomEvent('rescue:ble-received', { detail: { imported } }));
+      } catch (error) {
+        console.warn('[BLE] Rejected malformed incoming SOS packet:', error);
+      }
+    });
+  }
+  if (!nativeStarted) {
+    await nativeBle.start();
+    nativeStarted = true;
+  }
+  return true;
+}
+
+/** A real, finite BLE scan on Android; Web Bluetooth uses its permission chooser. */
+export async function scanForNearbyPhones() {
+  if (onAndroid) {
+    await startBleReceiver();
+    const result = await nativeBle.scan();
+    for (const peer of result.peers || []) {
+      handleDiscoveredDevice({ id: peer.address, name: peer.name, native: true }, { rssi: peer.rssi });
+    }
+    return result.peers || [];
+  }
+  throw new Error('Phone-to-phone BLE discovery is available in the Android app. Use QR transfer in a browser.');
 }
 
 /**
@@ -230,13 +280,13 @@ function handleDiscoveredDevice(device, customMeta = {}) {
     role: customMeta.role || 'survivor',
     status: 'active',
     battery: customMeta.battery != null ? customMeta.battery : undefined,
-    rssi,
-    distance_m: customMeta.distance_m ?? dist,
-    bearing_deg: customMeta.bearing_deg ?? Math.floor(Math.random() * 360),
-    cardinal: customMeta.cardinal ?? 'NE',
+    rssi: customMeta.rssi,
+    distance_m: customMeta.rssi == null ? undefined : (customMeta.distance_m ?? dist),
+    bearing_deg: customMeta.bearing_deg,
+    cardinal: customMeta.cardinal,
     last_seen_epoch: now,
     is_online: true,
-    source: 'ble_mesh',
+    source: device.native ? 'native_ble' : 'web_ble',
     device_ref: device
   };
 
@@ -260,6 +310,15 @@ function handleDiscoveredDevice(device, customMeta = {}) {
  */
 export async function syncWithBlePeer(peerOrDevice, localReports = [], myNodeId = 'local_node', myLoc = { lat: 28.7041, lon: 77.1025 }) {
   const device = peerOrDevice.device_ref || peerOrDevice;
+  if (device.native && onAndroid) {
+    await startBleReceiver();
+    const latestReports = [...localReports].sort((a, b) => (a.created_at || '').localeCompare(b.created_at || '')).slice(-4);
+    const packet = createBlePacket(latestReports.map(report => ({
+      ...report, text: (report.text || '').slice(0, 220)
+    })), myNodeId, myLoc);
+    await nativeBle.send({ address: device.id, payload: JSON.stringify(packet) });
+    return { success: true, synced: packet.e.length, imported: 0, peer_name: device.name, speed: undefined };
+  }
   if (!device || !device.gatt) {
     throw new Error('Invalid Bluetooth device reference');
   }
@@ -352,8 +411,7 @@ export async function syncWithBlePeer(peerOrDevice, localReports = [], myNodeId 
         console.warn('[BLE Mesh] RX characteristic read notice:', rxErr);
       }
     } else {
-      // Generic BLE connection confirmed; simulate handshake confirmation
-      sentCount = localReports.length;
+      throw new Error('This Bluetooth device does not run RescueMemory and cannot receive SOS reports.');
     }
 
     // Update peer last seen & status
@@ -371,7 +429,7 @@ export async function syncWithBlePeer(peerOrDevice, localReports = [], myNodeId 
       synced: sentCount,
       imported: importedCount,
       peer_name: device.name || 'Bluetooth Device',
-      speed: '< 45ms (BLE LE-2M PHY)'
+      speed: undefined
     };
   } finally {
     // Keep connection alive for mesh relay, or disconnect gracefully
