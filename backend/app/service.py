@@ -88,13 +88,31 @@ class RescueService:
     def __init__(self, settings: Settings):
         self.settings = settings
         self.memory = Memory(settings.data_dir, settings.model_cache)
+        self._closing = threading.Event()
         with open(Path(__file__).resolve().parent.parent / "data" / "knowledge.json", encoding="utf-8") as stream:
             knowledge_data = json.load(stream)
-            threading.Thread(target=self._background_seed, args=(knowledge_data,), daemon=True).start()
+            # Guarantee essential emergency protocols and baseline checkpoints are immediately available
+            essential_protocols = knowledge_data[:35]
+            checkpoints = [x for x in knowledge_data if x.get("kind") == "checkpoint"]
+            seen_ids = set()
+            essential_items = []
+            for item in essential_protocols + checkpoints:
+                if item["id"] not in seen_ids:
+                    seen_ids.add(item["id"])
+                    essential_items.append(item)
+            if not self.memory.get("reference", knowledge_data[0]["id"]):
+                self.memory.seed(essential_items, stop_event=self._closing)
+            remaining = [x for x in knowledge_data if x["id"] not in seen_ids]
+            self._seed_thread = threading.Thread(
+                target=self._background_seed,
+                args=(remaining,),
+                daemon=True
+            )
+            self._seed_thread.start()
 
     def _background_seed(self, data: list[dict]):
         try:
-            self.memory.seed(data)
+            self.memory.seed(data, stop_event=self._closing)
         except Exception as exc:
             import logging
             logging.getLogger("rescue.seed").warning("Background seed notice: %s", exc)
@@ -108,6 +126,9 @@ class RescueService:
         return len(list(self.memory.all("reference")))
 
     def close(self):
+        self._closing.set()
+        if hasattr(self, "_seed_thread") and self._seed_thread.is_alive():
+            self._seed_thread.join(timeout=0.5)
         self.memory.close()
 
     def create_group(self, request: CreateGroupRequest) -> dict:
@@ -612,7 +633,7 @@ class RescueService:
                 raise HTTPException(422, "future event rejected")
             computed_hash = hashlib.sha256(canonical(event.body())).hexdigest()
             if not hmac.compare_digest(computed_hash, event.content_hash):
-                event.content_hash = computed_hash
+                raise HTTPException(422, "event content hash mismatch")
             old = self.memory.get("events", event.id)
             if old:
                 if old["content_hash"] != event.content_hash:
@@ -671,7 +692,7 @@ class RescueService:
             event["distance_m"] = round(distance_m(request.location.model_dump(), event["location"]))
             result.append(event)
 
-        if not result:
+        if not result and self.events_count == 0 and distance_m(request.location.model_dump(), {"lat": 28.7041, "lon": 77.1025}) < 50000:
             u_lat = request.location.lat
             u_lon = request.location.lon
             demo_items = [
@@ -848,7 +869,7 @@ class RescueService:
         # 2. Dynamic Checkpoints from Reference Memory
         ref_checkpoints = [
             card for card in self.memory.all("reference")
-            if card.get("kind") == "checkpoint" or "checkpoint" in card.get("id", "").lower() or "shelter" in card.get("id", "").lower()
+            if card.get("kind") == "checkpoint"
         ]
 
         # If unseeded test environment, fall back to safe minimal defaults
@@ -884,8 +905,9 @@ class RescueService:
                 status = override_ev.get("status") if override_ev else cp.get("status", "operational")
                 is_danger = status in {"danger", "flooded", "blocked", "danger_warning"}
                 facilities = cp.get("facilities", [])
-                is_resource = any("water" in str(f).lower() or "food" in str(f).lower() or "resource" in str(f).lower() for f in facilities) or "water" in cp.get("id", "").lower()
-                cat = "hazard" if is_danger else ("resource" if is_resource else "shelter")
+                is_shelter = "shelter" in cp.get("id", "").lower() or any("shelter" in str(f).lower() for f in facilities) or "shelter" in cp.get("title", "").lower() or "clinic" in cp.get("id", "").lower()
+                is_resource = not is_shelter and (any("water" in str(f).lower() or "food" in str(f).lower() or "resource" in str(f).lower() for f in facilities) or "water" in cp.get("id", "").lower())
+                cat = "hazard" if is_danger else ("shelter" if is_shelter else ("resource" if is_resource else "shelter"))
 
                 if request.filter_category == "all" or (request.filter_category == "shelters" and not is_danger and not is_resource) or (request.filter_category == "resources" and is_resource) or (request.filter_category == "hazards" and is_danger):
                     key = (cat, cp["id"])

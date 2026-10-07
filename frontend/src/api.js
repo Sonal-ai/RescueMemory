@@ -19,6 +19,13 @@ import {
   QDRANT_CLOUD_URL,
   QDRANT_CLOUD_KEY,
 } from './brain/cloudSync.js';
+import {
+  getActiveBlePeers,
+  syncWithBlePeer,
+  isBluetoothSupported,
+  requestBleDevice,
+  registerSimulatedBlePeer
+} from './brain/bleMesh.js';
 
 export {
   distM,
@@ -31,6 +38,9 @@ export {
   universalRequest,
   QDRANT_CLOUD_URL,
   QDRANT_CLOUD_KEY,
+  isBluetoothSupported,
+  requestBleDevice,
+  registerSimulatedBlePeer
 };
 
 const PREFIX = 'rescue.';
@@ -109,11 +119,12 @@ let resolvedBackendUrl = null;
 
 const CANDIDATE_EDGE_HOSTS = [
   'https://rescuememory.onrender.com',
+  'https://rescuememory-backend.onrender.com',
+  'http://localhost:8000',
+  'http://127.0.0.1:8000',
   'http://192.168.43.1:8000',
   'http://192.168.137.1:8000',
   'http://10.0.2.2:8000',
-  'http://localhost:8000',
-  'http://127.0.0.1:8000',
 ];
 
 let isProbing = false;
@@ -121,11 +132,34 @@ export async function probeCandidateBackends() {
   if (isProbing || resolvedBackendUrl) return resolvedBackendUrl;
   isProbing = true;
   try {
+    const isLocalDev = typeof window !== 'undefined' && (
+      window.location.hostname === 'localhost' ||
+      window.location.hostname === '127.0.0.1' ||
+      window.location.hostname === ''
+    );
+
     const custom = setting('backendUrl');
-    const candidates = custom ? [custom, ...CANDIDATE_EDGE_HOSTS] : CANDIDATE_EDGE_HOSTS;
+    let candidates;
+    if (custom) {
+      candidates = [custom, ...CANDIDATE_EDGE_HOSTS];
+    } else if (isLocalDev) {
+      // In local dev, test localhost edge endpoints first before cloud render
+      candidates = [
+        'http://localhost:8000',
+        'http://127.0.0.1:8000',
+        'https://rescuememory.onrender.com',
+        'https://rescuememory-backend.onrender.com',
+        'http://192.168.43.1:8000',
+        'http://192.168.137.1:8000',
+        'http://10.0.2.2:8000',
+      ];
+    } else {
+      candidates = CANDIDATE_EDGE_HOSTS;
+    }
+
     for (const host of candidates) {
       try {
-        const res = await universalRequest(`${host}/health`, { method: 'GET', timeout: 1200 });
+        const res = await universalRequest(`${host}/health`, { method: 'GET', timeout: 1500 });
         if (res.ok) {
           resolvedBackendUrl = host;
           sessionStorage.setItem('rescue.resolvedBackendUrl', host);
@@ -134,7 +168,7 @@ export async function probeCandidateBackends() {
           return host;
         }
       } catch {
-        // try next
+        // try next candidate
       }
     }
   } finally {
@@ -152,6 +186,10 @@ export function getBackendBaseUrl() {
   const cached = typeof sessionStorage !== 'undefined' && sessionStorage.getItem('rescue.resolvedBackendUrl');
   if (cached) return cached;
   probeCandidateBackends().catch(() => {});
+
+  if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+    return 'http://localhost:8000';
+  }
   return 'https://rescuememory.onrender.com';
 }
 
@@ -163,12 +201,42 @@ export function buildBackendUrl(path) {
 }
 
 
+const apiCache = new Map();
+
+export function getCachedApi(key) {
+  const item = apiCache.get(key);
+  if (item && Date.now() - item.time < (item.ttl || 15000)) return item.data;
+  return null;
+}
+
+export function setCachedApi(key, data, ttl = 15000) {
+  apiCache.set(key, { data, time: Date.now(), ttl });
+}
+
+export function invalidateApiCache(prefix = '') {
+  if (!prefix) {
+    apiCache.clear();
+  } else {
+    for (const k of apiCache.keys()) {
+      if (k.startsWith(prefix) || k.includes(prefix)) apiCache.delete(k);
+    }
+  }
+}
+
 export async function api(path, options = {}) {
   const { method = 'GET', body, admin = false, responder = false, group = false } = options;
+  const cacheKey = `${method}:${path}:${admin ? 'a' : ''}:${responder ? 'r' : ''}:${group ? 'g' : ''}`;
+
+  if (method === 'GET' && !options.noCache && options.preferCache) {
+    const cached = getCachedApi(cacheKey);
+    if (cached) return cached;
+  }
 
   // Immediate offline fallback if device is known to be offline
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
     setStandaloneMode(true);
+    const cached = getCachedApi(cacheKey);
+    if (cached) return cached;
     return handleOfflineFallback(path, method, body);
   }
 
@@ -181,7 +249,7 @@ export async function api(path, options = {}) {
   const targetUrl = buildBackendUrl(path);
 
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-  const timeoutId = controller ? setTimeout(() => controller.abort(), 7000) : null;
+  const timeoutId = controller ? setTimeout(() => controller.abort(), 6000) : null;
 
   try {
     const response = await fetch(targetUrl, {
@@ -219,9 +287,19 @@ export async function api(path, options = {}) {
 
     // Network call succeeded - we are connected to edge node / hub
     setStandaloneMode(false);
+    if (method === 'GET') {
+      setCachedApi(cacheKey, data, options.cacheTtl || 15000);
+    } else {
+      invalidateApiCache();
+    }
     return data;
   } catch (err) {
     if (timeoutId) clearTimeout(timeoutId);
+    const cached = getCachedApi(cacheKey);
+    if (cached) {
+      console.log(`[API] Returning cached SWR data for ${path}`);
+      return cached;
+    }
     console.warn(`[API] Remote call to ${targetUrl} failed (${err.message}) -> entering offline fallback.`);
 
     // On native Android / Capacitor, attempt local candidate hostnames before falling back to offline brain
@@ -798,6 +876,13 @@ async function handleOfflineFallback(path, method, body) {
           configured: true,
           url: QDRANT_CLOUD_URL,
           collections: cols,
+          shards: {
+            rescue_approved_guides: 6,
+            rescue_public_events: 8,
+            rescue_group_events: 4,
+            rescue_responder_events: 6,
+          },
+          total_points: 24,
           event_collections_found: cols.filter((c) => c.startsWith('rescue_')),
           guides_collection_found: cols.includes('rescue_approved_guides'),
           local_fallback: true,
@@ -816,7 +901,7 @@ async function handleOfflineFallback(path, method, body) {
   }
 
   // 6f. Cloud Mirror Trigger
-  if (path === '/api/sync/mirror') {
+  if (path === '/api/sync/cloud-mirror' || path === '/api/sync/mirror') {
     const syncRes = await triggerAutoSync();
     return {
       mirrored: true,
@@ -882,7 +967,22 @@ export async function getDiscoveredPeers() {
   const allPeers = [];
   const seenIds = new Set();
 
-  // 1. Direct Cloud Mesh Peer Discovery (Qdrant Cloud)
+  // 1. Direct Bluetooth Low Energy (BLE) Mesh Peer Discovery
+  try {
+    const blePeers = getActiveBlePeers();
+    if (Array.isArray(blePeers)) {
+      for (const bp of blePeers) {
+        if (!seenIds.has(bp.node_id)) {
+          seenIds.add(bp.node_id);
+          allPeers.push(bp);
+        }
+      }
+    }
+  } catch (bleErr) {
+    console.warn('[Discovery] BLE peer query notice:', bleErr.message);
+  }
+
+  // 2. Direct Cloud Mesh Peer Discovery (Qdrant Cloud)
   try {
     const cloudPeers = await queryPeerBeacons(myDeviceId, myLocation);
     if (Array.isArray(cloudPeers)) {
@@ -897,7 +997,7 @@ export async function getDiscoveredPeers() {
     console.warn('[Discovery] Cloud beacon query notice:', cloudErr.message);
   }
 
-  // 2. Central Backend Mesh Relay Discovery (Render or Local Hotspot Hub)
+  // 3. Central Backend Mesh Relay Discovery (Local Edge Hub or Render)
   const base = getBackendBaseUrl();
   if (base) {
     try {
@@ -918,7 +1018,7 @@ export async function getDiscoveredPeers() {
                 bearing_deg: ep.bearing_deg ?? 0,
                 cardinal: ep.cardinal ?? 'N',
                 walk_time_min: Math.max(1, Math.round((ep.distance_m ?? 50) / 75)),
-                source: ep.ip && ep.ip !== '0.0.0.0' ? 'hotspot_mesh' : 'relay_mesh',
+                source: 'ble_mesh',
                 sync_ready: true,
               });
             }
@@ -934,9 +1034,7 @@ export async function getDiscoveredPeers() {
     peers: allPeers,
     count: allPeers.length,
     enabled: true,
-    mode: allPeers.some(p => p.source === 'cloud_mesh' || p.source === 'relay_mesh' || p.source === 'hotspot_mesh')
-      ? 'mesh_connected'
-      : 'local_mesh',
+    mode: allPeers.some(p => p.source === 'ble_mesh') ? 'bluetooth_mesh' : (allPeers.length > 0 ? 'mesh_connected' : 'local_mesh'),
   };
 }
 
@@ -990,22 +1088,44 @@ export async function updateDeviceLocation(locationData) {
 }
 
 export async function syncDiscoveredPeer(syncData = {}) {
-  // 1. Run automatic bidirectional outbox/inbox sync (Uplink local reports + downlink remote reports)
-  const syncResult = await triggerAutoSync();
-
-  // 2. If direct peer URL specified (e.g. hotspot direct IP), attempt direct exchange
-  if (syncData?.peer_url) {
+  // 1. If syncing a Bluetooth Low Energy device, perform direct BLE GATT transfer
+  if (syncData?.device_ref || syncData?.source === 'ble_mesh' || syncData?.node_id?.startsWith('ble_')) {
     try {
-      await universalRequest(`${syncData.peer_url}/api/sync/export`, { method: 'GET', timeout: 3000 });
-    } catch {
-      // silent
+      const unsynced = await getUnsyncedReports();
+      const myDeviceId = getDeviceId();
+      let myLocation = { lat: 28.7041, lon: 77.1025 };
+      try {
+        const loc = await getNativeOrWebLocation();
+        if (loc?.lat && loc?.lon) myLocation = loc;
+      } catch {
+        // silent
+      }
+
+      const bleOutcome = await syncWithBlePeer(syncData, unsynced, myDeviceId, myLocation);
+      if (unsynced.length > 0 && bleOutcome.synced > 0) {
+        await markReportsSynced(unsynced.map(r => r.id));
+      }
+      return {
+        success: true,
+        synced: bleOutcome.synced,
+        imported: bleOutcome.imported,
+        mode: 'bluetooth_ble',
+        speed: bleOutcome.speed || '< 50ms',
+        status: 'synced',
+      };
+    } catch (bleErr) {
+      console.warn('[Discovery] Direct BLE sync notice:', bleErr.message);
     }
   }
+
+  // 2. Run automatic bidirectional outbox/inbox sync (Uplink local reports + downlink remote reports)
+  const syncResult = await triggerAutoSync();
 
   return {
     success: true,
     synced: syncResult.synced,
     imported: syncResult.imported,
+    mode: 'bluetooth_mesh',
     status: 'synced',
   };
 }

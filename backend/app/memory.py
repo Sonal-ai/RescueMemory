@@ -143,22 +143,32 @@ class Memory:
         )])
         return list(self.all("events", geo))[:limit]
 
-    def seed(self, cards: list[dict]):
+    def seed(self, cards: list[dict], stop_event: threading.Event | None = None):
         to_seed = [card for card in cards if self.get("reference", card["id"]) != card]
         if not to_seed:
             return
         batch_size = 16
-        with self.lock:
-            for i in range(0, len(to_seed), batch_size):
-                chunk = to_seed[i:i + batch_size]
-                texts = [f"{c['title']} {c.get('keywords', '')} {c.get('summary', '')}" for c in chunk]
-                dense_vectors = [v.tolist() for v in self.embedder.embed(texts, batch_size=batch_size)]
-                sparse_vectors = [self.bm25.embed_document(t) for t in texts]
-                points = [
-                    Point(point_id(c["id"]), {"dense": d, "bm25": s}, c)
-                    for c, d, s in zip(chunk, dense_vectors, sparse_vectors)
-                ]
-                self.shards["reference"].update(UpdateOperation.upsert_points(points))
+        for i in range(0, len(to_seed), batch_size):
+            if stop_event and stop_event.is_set():
+                break
+            chunk = to_seed[i:i + batch_size]
+            texts = [f"{c['title']} {c.get('keywords', '')} {c.get('summary', '')}" for c in chunk]
+            dense_vectors = [v.tolist() for v in self.embedder.embed(texts, batch_size=batch_size)]
+            sparse_vectors = [self.bm25.embed_document(t) for t in texts]
+            points = [
+                Point(point_id(c["id"]), {"dense": d, "bm25": s}, c)
+                for c, d, s in zip(chunk, dense_vectors, sparse_vectors)
+            ]
+            if stop_event and stop_event.is_set():
+                break
+            with self.lock:
+                if not any(s.is_closed for s in self.shards.values() if hasattr(s, 'is_closed')):
+                    try:
+                        self.shards["reference"].update(UpdateOperation.upsert_points(points))
+                    except Exception:
+                        if stop_event and stop_event.is_set():
+                            break
+                        raise
 
     def recommend_alternative(
         self,
@@ -209,13 +219,14 @@ class Memory:
             cid = p.get("id") or p.get("entity_id")
             if cid == compromised_id or p.get("entity_id") == compromised_id:
                 continue
+            if p.get("kind") == "protocol":
+                continue
             is_checkpoint = (
                 p.get("kind") == "checkpoint"
                 or "shelter" in cid.lower()
                 or "clinic" in cid.lower()
                 or "cp_" in cid.lower()
-                or "shelter" in p.get("title", "").lower()
-                or "hospital" in p.get("title", "").lower()
+                or "water_" in cid.lower()
             )
             if is_checkpoint:
                 candidates.append({

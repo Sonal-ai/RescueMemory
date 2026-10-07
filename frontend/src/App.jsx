@@ -5,6 +5,7 @@ import CommandInspector from './views/CommandInspector';
 import ActivationScreen from './views/ActivationScreen';
 import CentralHQ from './views/CentralHQ';
 import SafePlace from './views/SafePlace';
+import AdminPortal from './views/AdminPortal';
 
 function App() {
   return (
@@ -24,6 +25,7 @@ function App() {
         <Route path="/crisis" element={<Navigate to="/" replace />} />
         
         {/* Responder & Command HQ */}
+        <Route path="/admin" element={<AdminPortal initialTab="hq" />} />
         <Route path="/volunteer" element={<VolunteerBoard />} />
         <Route path="/command" element={<CommandInspector />} />
         <Route path="/hq" element={<CentralHQ />} />

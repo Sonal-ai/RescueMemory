@@ -381,7 +381,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
   };
 
   // Live GPS geolocation (Native Capacitor Satellite GPS with Web fallback)
-  const useGps = async () => {
+  const locateWithGps = async () => {
     try {
       const position = await getNativeOrWebLocation();
       const location = {
@@ -409,7 +409,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
 
   // Initial GPS lock on component mount
   useEffect(() => {
-    useGps();
+    locateWithGps();
   }, []);
 
   // Peer Wi-Fi sync
@@ -718,7 +718,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
             (bleedingType !== 'none' ? `• ⚠️ **BLEEDING ALERT:** ${bleedingType} bleeding. Apply firm, continuous direct pressure.\n` : '') +
             `\n**Dispatch & Relay Status:**\n` +
             `• ✅ Recorded into local Qdrant memory\n` +
-            `• 📡 Transmitted to ${peers.length} nearby peer device(s) on Wi-Fi hotspot\n` +
+            `• 📡 Transmitted to ${peers.length} nearby peer device(s) on Bluetooth LE mesh\n` +
             `• 🛰️ Uplinked to Central Command & Field Responders\n\n` +
             `Tap the **Radar Map** tab to monitor your live beacon position.`,
           timestamp: new Date(),
@@ -1231,7 +1231,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
           userLocation={pin}
           items={items}
           peers={peers}
-          onRefreshGps={useGps}
+          onRefreshGps={locateWithGps}
           selectedTarget={selected || nearestCasualty}
           onSelectLocation={(loc) => {
             setPin(loc);
@@ -1480,7 +1480,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                 </div>
                 <button
                   type="button"
-                  onClick={useGps}
+                  onClick={locateWithGps}
                   className="text-cyan-700 dark:text-cyan-400 hover:text-cyan-900 dark:hover:text-cyan-300 text-xs sm:text-[13px] font-bold flex items-center gap-1 transition-colors"
                 >
                   <Cross size={12} /> Update
@@ -1728,7 +1728,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
               </div>
               <div className="flex justify-between text-slate-400">
                 <span>Mesh Relayed:</span>
-                <strong className="text-emerald-400">{sosBroadcastModal.peersCount} nearby device(s) on Wi-Fi</strong>
+                <strong className="text-cyan-400">{sosBroadcastModal.peersCount} nearby device(s) on Bluetooth</strong>
               </div>
               <p className="pt-1.5 border-t border-slate-800 text-[11px] text-slate-300 font-sans leading-relaxed line-clamp-2">
                 "{sosBroadcastModal.text}"

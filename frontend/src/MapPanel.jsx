@@ -1,4 +1,4 @@
-import { MapPin, Navigation, Radio, TriangleAlert, Wifi } from 'lucide-react';
+import { Bluetooth, MapPin, Navigation, Radio, TriangleAlert } from 'lucide-react';
 
 const WIDTH = 600;
 const HEIGHT = 340;
@@ -285,9 +285,9 @@ export default function MapPanel({
         </div>
 
         {validPeers.length > 0 && (
-          <div className="absolute left-3.5 top-3.5 text-[11px] font-bold bg-slate-950/85 border border-emerald-500/40 px-3 py-1.5 rounded-xl text-emerald-300 flex items-center gap-2 shadow-lg backdrop-blur-md">
-            <Radio size={13} className="text-emerald-400 animate-pulse" />
-            <span>{validPeers.length} Peer Node{validPeers.length > 1 ? 's' : ''} on Wi-Fi</span>
+          <div className="absolute left-3.5 top-3.5 text-[11px] font-bold bg-slate-950/85 border border-cyan-500/40 px-3 py-1.5 rounded-xl text-cyan-300 flex items-center gap-2 shadow-lg backdrop-blur-md">
+            <Bluetooth size={13} className="text-cyan-400 animate-pulse" />
+            <span>{validPeers.length} Peer Node{validPeers.length > 1 ? 's' : ''} on Bluetooth</span>
           </div>
         )}
       </div>
@@ -307,7 +307,7 @@ export default function MapPanel({
             <span className="w-2 h-2 rounded-full bg-red-500 inline-block"></span> Hazard
           </span>
           <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-amber-500 inline-block"></span> Peer
+            <span className="w-2 h-2 rounded-full bg-amber-500 inline-block"></span> BLE Peer
           </span>
         </div>
       </div>
