@@ -1033,56 +1033,93 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                       )}
 
                       {/* Action Steps Checklist - Only display when genuine medical steps match and not greeting/fallback */}
-                      {msg.cards?.[0]?.steps?.length > 0 &&
-                       !msg.text.includes("Stay Calm & Safe") &&
-                       !msg.text.includes("Hello! I am your") &&
-                       !msg.text.includes("I could not find directly matching guidance") && (
-                        <div className="mt-2 pt-2 border-t border-slate-200 dark:border-slate-800">
-                          <p className="text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5 flex items-center gap-1">
-                            <CheckCircle2 size={12} className="text-emerald-500" />
-                            <span>Clinical Checklist (Tap to mark done):</span>
-                          </p>
-                          <div className="space-y-1">
-                            {msg.cards[0].steps.map((step, idx) => {
-                              const isDone = !!checkedSteps[idx];
-                              return (
-                                <label
-                                  key={idx}
-                                  className={`flex items-start gap-2 p-1.5 rounded-md border text-[11px] cursor-pointer transition-all ${
-                                    isDone
-                                      ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 line-through opacity-75'
-                                      : 'bg-slate-50 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:border-slate-300 dark:hover:border-slate-700'
-                                  }`}
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={isDone}
-                                    onChange={(e) =>
-                                      setCheckedSteps({ ...checkedSteps, [idx]: e.target.checked })
-                                    }
-                                    className="mt-0.5 rounded border-slate-300 dark:border-slate-700 text-emerald-600 focus:ring-0"
-                                  />
-                                  <span className="leading-snug">{step}</span>
-                                </label>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
+                      {(() => {
+                        const rawSteps = (msg.cards?.[0]?.steps || []).filter(Boolean);
+                        const seenStepNorm = new Set();
+                        const uniqueSteps = rawSteps.filter((st) => {
+                          const norm = String(st).toLowerCase().replace(/^[•\-\*\d\.\s]+/, '').replace(/[^a-z0-9]/g, '');
+                          if (!norm || seenStepNorm.has(norm)) return false;
+                          seenStepNorm.add(norm);
+                          return true;
+                        });
 
-                      {/* Warning Banner - Only display when genuine medical warnings match and not greeting/fallback */}
-                      {msg.cards?.[0]?.warnings?.length > 0 &&
-                       !msg.text.includes("Stay Calm & Safe") &&
-                       !msg.text.includes("Hello! I am your") &&
-                       !msg.text.includes("I could not find directly matching guidance") && (
-                        <div className="mt-2 p-2 rounded-lg border border-red-200 dark:border-red-800/80 bg-red-50 dark:bg-red-950/30 text-red-800 dark:text-red-200 text-[11px] flex items-start gap-1.5">
-                          <TriangleAlert size={13} className="text-red-500 shrink-0 mt-0.5" />
-                          <div className="leading-relaxed">
-                            <span className="font-bold">CRITICAL WARNING: </span>
-                            <span>{msg.cards[0].warnings.join(' ')}</span>
+                        if (
+                          uniqueSteps.length === 0 ||
+                          msg.text.includes("Stay Calm & Safe") ||
+                          msg.text.includes("Hello! I am your") ||
+                          msg.text.includes("I could not find directly matching guidance")
+                        ) {
+                          return null;
+                        }
+
+                        return (
+                          <div className="mt-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+                            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5 flex items-center gap-1">
+                              <CheckCircle2 size={12} className="text-emerald-500" />
+                              <span>Clinical Checklist (Tap to mark done):</span>
+                            </p>
+                            <div className="space-y-1">
+                              {uniqueSteps.map((step, idx) => {
+                                const stepKey = `${msg.id}_${idx}`;
+                                const isDone = !!checkedSteps[stepKey];
+                                return (
+                                  <label
+                                    key={idx}
+                                    className={`flex items-start gap-2 p-1.5 rounded-md border text-[11px] cursor-pointer transition-all ${
+                                      isDone
+                                        ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 line-through opacity-75'
+                                        : 'bg-slate-50 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:border-slate-300 dark:hover:border-slate-700'
+                                    }`}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={isDone}
+                                      onChange={(e) =>
+                                        setCheckedSteps({ ...checkedSteps, [stepKey]: e.target.checked })
+                                      }
+                                      className="mt-0.5 rounded border-slate-300 dark:border-slate-700 text-emerald-600 focus:ring-0"
+                                    />
+                                    <span className="leading-snug">{step}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        );
+                      })()}
+
+                      {/* Warning Banner - Only display unique warnings that are not already written in message text */}
+                      {(() => {
+                        const rawWarnings = (msg.cards?.[0]?.warnings || []).filter(Boolean);
+                        const seenWarnNorm = new Set();
+                        const normMsgText = (msg.text || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+                        const uniqueWarnings = rawWarnings.filter((w) => {
+                          const normW = String(w).toLowerCase().replace(/[^a-z0-9]/g, '');
+                          if (!normW || seenWarnNorm.has(normW)) return false;
+                          seenWarnNorm.add(normW);
+                          return !normMsgText.includes(normW);
+                        });
+
+                        if (
+                          uniqueWarnings.length === 0 ||
+                          msg.text.includes("Stay Calm & Safe") ||
+                          msg.text.includes("Hello! I am your") ||
+                          msg.text.includes("I could not find directly matching guidance")
+                        ) {
+                          return null;
+                        }
+
+                        return (
+                          <div className="mt-2 p-2 rounded-lg border border-red-200 dark:border-red-800/80 bg-red-50 dark:bg-red-950/30 text-red-800 dark:text-red-200 text-[11px] flex items-start gap-1.5">
+                            <TriangleAlert size={13} className="text-red-500 shrink-0 mt-0.5" />
+                            <div className="leading-relaxed">
+                              <span className="font-bold">CRITICAL WARNING: </span>
+                              <span>{uniqueWarnings.join(' ')}</span>
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                       {/* Collapsible Verified Clinical Evidence & Vector Hits */}
                       {msg.cards?.length > 0 && (

@@ -257,15 +257,30 @@ const STOP_WORDS = new Set([
   'are', 'was', 'were', 'what', 'how', 'can', 'you', 'please', 'make', 'give', 'does'
 ]);
 
+export function dedupeStrings(arr) {
+  const seen = new Set();
+  const res = [];
+  for (const item of arr || []) {
+    if (!item) continue;
+    const str = String(item).trim();
+    const norm = str.toLowerCase().replace(/^[•\-\*\d\.\s]+/, '').replace(/[^a-z0-9]/g, '');
+    if (!norm || seen.has(norm)) continue;
+    seen.add(norm);
+    res.push(str);
+  }
+  return res;
+}
+
 function extractStepsFromCard(card) {
   if (card.instructions && card.instructions.length > 0) {
-    return card.instructions;
+    return dedupeStrings(card.instructions);
   }
   if (!card.summary) return [];
-  return card.summary
+  const parts = card.summary
     .split(/(?<=[.?!;])\s+/)
     .map((s) => s.trim())
     .filter((s) => s.length > 8);
+  return dedupeStrings(parts);
 }
 
 /**
@@ -345,27 +360,50 @@ export async function searchKnowledgeLocal(queryText, limit = 5) {
     summary: c.summary,
     steps: extractStepsFromCard(c),
     instructions: c.instructions || [],
-    warnings: c.warnings || [],
+    warnings: dedupeStrings(c.warnings || []),
     source: c.source,
   }));
 
   const primaryCard = mappedCards[0];
-  const allWarnings = mappedCards.flatMap((c) => c.warnings || []).filter(Boolean);
+  const allWarnings = dedupeStrings(mappedCards.flatMap((c) => c.warnings || []).filter(Boolean));
 
   let formattedText = '';
   if (matchesFound && primaryCard) {
     formattedText = `### 🚨 Verified Protocol: ${primaryCard.title}\n\n`;
-    if (primaryCard.summary) {
-      formattedText += `**Protocol Summary:**\n${primaryCard.summary}\n\n`;
+
+    const hasExplicitInstructions = primaryCard.instructions && primaryCard.instructions.length > 0;
+    const steps = dedupeStrings(primaryCard.steps);
+    const warnings = dedupeStrings(primaryCard.warnings);
+
+    if (hasExplicitInstructions) {
+      if (primaryCard.summary) {
+        formattedText += `**Protocol Summary:**\n${primaryCard.summary}\n\n`;
+      }
+      if (steps.length > 0) {
+        formattedText += `**Action Steps:**\n` + steps.map((st, i) => `${i + 1}. ${st}`).join('\n') + '\n\n';
+      }
+    } else {
+      // Steps were parsed from summary; avoid duplicating sentences identically as summary and steps
+      if (steps.length > 1) {
+        formattedText += `**Action Steps:**\n` + steps.map((st, i) => `${i + 1}. ${st}`).join('\n') + '\n\n';
+      } else if (primaryCard.summary) {
+        formattedText += `**Protocol Guidance:**\n${primaryCard.summary}\n\n`;
+      }
     }
-    if (primaryCard.steps && primaryCard.steps.length > 0) {
-      formattedText += `**Action Steps:**\n` + primaryCard.steps.map((st, i) => `${i + 1}. ${st}`).join('\n') + '\n\n';
+
+    // Deduplicate warnings against steps and summary text
+    const cleanWarnings = warnings.filter((w) => {
+      const normW = w.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const normText = formattedText.toLowerCase().replace(/[^a-z0-9]/g, '');
+      return !normText.includes(normW);
+    });
+
+    if (cleanWarnings.length > 0) {
+      formattedText += `⚠️ **Critical Warnings:**\n` + cleanWarnings.map((w) => `- ${w}`).join('\n') + '\n\n';
     }
-    if (primaryCard.warnings && primaryCard.warnings.length > 0) {
-      formattedText += `⚠️ **Critical Warnings:**\n` + primaryCard.warnings.map((w) => `- ${w}`).join('\n') + '\n\n';
-    }
+
     if (mappedCards.length > 1) {
-      formattedText += `**Related Reference Protocols:**\n` + mappedCards.slice(1).map((c) => `• **${c.title}**${c.summary ? `: ${c.summary}` : ''}`).join('\n');
+      formattedText += `**Related Reference Protocols:**\n` + mappedCards.slice(1, 4).map((c) => `• **${c.title}**${c.summary ? `: ${c.summary}` : ''}`).join('\n');
     }
   } else {
     formattedText = `### 🛡️ Stay Calm & Safe\n\n` +
@@ -415,7 +453,9 @@ function resolveServerUrl(path) {
 
 export async function triggerAutoSync() {
   const unsyncedInitial = await getUnsyncedReports();
-  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+  const isOnline = (typeof localStorage !== 'undefined' ? localStorage.getItem('rescue.online_mode') !== 'false' : true) &&
+                   (typeof navigator === 'undefined' || navigator.onLine !== false);
+  if (!isOnline) {
     notifySync({ state: 'offline', pendingCount: unsyncedInitial.length });
     return { synced: 0, imported: 0, pending: unsyncedInitial.length, status: 'offline' };
   }

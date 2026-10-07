@@ -17,7 +17,40 @@ STOP_WORDS = {
 
 
 def tokenize(text: str) -> set[str]:
-    return {w for w in re.findall(r"[a-z]{3,}", text.lower()) if w not in STOP_WORDS}
+    raw = {w for w in re.findall(r"[a-z]{3,}", text.lower()) if w not in STOP_WORDS}
+    stems = set(raw)
+    for w in raw:
+        if w.endswith("ing") and len(w) > 4:
+            stems.add(w[:-3])
+        if w.endswith("s") and len(w) > 3:
+            stems.add(w[:-1])
+    return stems
+
+
+def dedupe_text_lines(text: str) -> str:
+    """Deduplicates redundant warning bullets and repetitive sentences in Markdown output."""
+    lines = text.split("\n")
+    seen_normalized = set()
+    result = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            result.append(line)
+            continue
+        cleaned = re.sub(r"^[\s•\-\*\d\.\>#]+", "", stripped)
+        cleaned = re.sub(r"^(?:⚠️\s*|\u26a0\ufe0f?\s*)", "", cleaned)
+        cleaned = re.sub(r"^(?:\*\*)?(?:precaution|warning|critical warning|caution|immediate action|protocol summary)(?:\*\*)?[:\s-]*", "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"^[\s•\-\*\d\.\>]+", "", cleaned)
+        norm = re.sub(r"[^\w\s]", "", cleaned.lower())
+        norm = " ".join(norm.split())
+        if len(norm) < 15:
+            result.append(line)
+            continue
+        if norm in seen_normalized:
+            continue
+        seen_normalized.add(norm)
+        result.append(line)
+    return "\n".join(result)
 
 
 # Built-in offline emergency protocols for immediate offline triage and guidance
@@ -266,7 +299,10 @@ def detect_intent(query: str) -> tuple[str, str, dict[str, Any] | None]:
     mobility_patterns = (
         "can't walk", "cant walk", "cannot walk", "unable to walk",
         "can't move", "cant move", "cannot move", "broken leg", "injured leg",
-        "twisted ankle", "broken ankle", "fracture", "immobile", "sprained ankle"
+        "twisted ankle", "broken ankle", "fracture", "immobile", "sprained ankle",
+        "leg hurting", "legs hurting", "leg hurts", "legs hurt", "leg pain", "legs pain",
+        "injured legs", "legs injury", "hurting leg", "hurting legs", "broken legs",
+        "feet hurting", "foot hurting", "foot hurt", "feet hurt"
     )
     if any(p in q for p in mobility_patterns):
         action = {
@@ -708,8 +744,25 @@ def synthesize_offline_rag(
             p_lines.append(f"⚠️ **Precaution:** {' '.join(protocol['warnings'])}")
         sections.append("\n".join(p_lines))
 
+        # When immediate action protocol is already provided, list matching reference cards
+        # as citations with resource assessment notes without repeating identical action steps or duplicate warning bullets
+        if matching_cards:
+            ref_lines = ["**Related Reference Protocols:**"]
+            for idx, card in enumerate(matching_cards[:2]):
+                c_title = card.get("title", "")
+                c_sum = card.get("summary", "")
+                ref_lines.append(f"• Local guide [G{cards.index(card) + 1 if card in cards else idx + 1}]: **{c_title}**{f': {c_sum}' if c_sum else ''}")
+                ass = card.get("materials_assessment")
+                if ass:
+                    if ass.get("matched"):
+                        ref_lines.append(f"  - ✅ Resource Match: Using available {', '.join(ass['matched'])}.")
+                    if ass.get("missing"):
+                        ref_lines.append(f"  - ⚠️ Improvised Note: Missing {', '.join(ass['missing'])}.")
+            sections.append("\n".join(ref_lines))
+
     # Case 2: Matching reference cards from Qdrant Edge (with Resource Assessment)
-    if matching_cards:
+    elif matching_cards:
+        seen_card_warnings = set()
         for idx, card in enumerate(matching_cards[:2]):
             c_lines = [
                 f"Local guide [G{cards.index(card) + 1 if card in cards else idx + 1}]: **{card.get('title')}**",
@@ -729,7 +782,11 @@ def synthesize_offline_rag(
                 for step in card["steps"][:3]:
                     c_lines.append(f"  - {step}")
             if card.get("warnings"):
-                c_lines.append(f"⚠️ Warning: {' '.join(card['warnings'][:2])}")
+                unique_w = [w for w in card["warnings"][:2] if re.sub(r"[^\w\s]", "", w.lower()).strip() not in seen_card_warnings]
+                for w in unique_w:
+                    seen_card_warnings.add(re.sub(r"[^\w\s]", "", w.lower()).strip())
+                if unique_w:
+                    c_lines.append(f"⚠️ Warning: {' '.join(unique_w)}")
             sections.append("\n".join(c_lines))
 
     # Case 3: Matching local reports from Qdrant Edge
@@ -780,5 +837,6 @@ def synthesize_offline_rag(
             "• **How can I assist you right now?** Describe any injuries or hazards you observe, or choose one of the quick prompts below."
         ]
 
-    return "\n\n".join(sections), action
+    final_text = dedupe_text_lines("\n\n".join(sections))
+    return final_text, action
 

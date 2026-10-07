@@ -37,7 +37,14 @@ STOP_WORDS = {"a", "an", "and", "are", "can", "do", "for", "from", "how", "i", "
 
 
 def query_terms(text: str) -> set[str]:
-    return {word for word in re.findall(r"[a-z]{3,}", text.lower()) if word not in STOP_WORDS}
+    raw = {word for word in re.findall(r"[a-z]{3,}", text.lower()) if word not in STOP_WORDS}
+    stems = set(raw)
+    for w in raw:
+        if w.endswith("ing") and len(w) > 4:
+            stems.add(w[:-3])
+        if w.endswith("s") and len(w) > 3:
+            stems.add(w[:-1])
+    return stems
 
 
 def card_terms(card: dict) -> set[str]:

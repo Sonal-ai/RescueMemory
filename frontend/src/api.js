@@ -83,6 +83,13 @@ export function isOnlineMode() {
 export function setOnlineMode(enabled) {
   isOnline = Boolean(enabled);
   localStorage.setItem(ONLINE_MODE_KEY, isOnline ? 'true' : 'false');
+  if (!isOnline) {
+    setStandaloneMode(true);
+    invalidateApiCache();
+  } else {
+    invalidateApiCache();
+    probeCandidateBackends().catch(() => {});
+  }
   onlineModeListeners.forEach((fn) => {
     try {
       fn(isOnline);
@@ -129,6 +136,7 @@ const CANDIDATE_EDGE_HOSTS = [
 
 let isProbing = false;
 export async function probeCandidateBackends() {
+  if (!isOnlineMode()) return null;
   if (isProbing || resolvedBackendUrl) return resolvedBackendUrl;
   isProbing = true;
   try {
@@ -232,8 +240,8 @@ export async function api(path, options = {}) {
     if (cached) return cached;
   }
 
-  // Immediate offline fallback if device is known to be offline
-  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+  // Immediate offline fallback if offline mode is toggled OR device is known to be offline
+  if (!isOnlineMode() || (typeof navigator !== 'undefined' && navigator.onLine === false)) {
     setStandaloneMode(true);
     const cached = getCachedApi(cacheKey);
     if (cached) return cached;
@@ -935,6 +943,10 @@ async function handleOfflineFallback(path, method, body) {
     };
   }
 
+  if (path === '/api/groups') {
+    return { groups: [] };
+  }
+
   // 7. Peer Discovery Fallback
   if (path === '/api/discovery/peers') {
     return getDiscoveredPeers();
@@ -961,13 +973,15 @@ export async function getDiscoveredPeers() {
     // silent
   }
 
-  // 0. Proactively announce our own presence beacon so other devices can discover us immediately
-  updateDeviceLocation(myLocation).catch(() => {});
+  // 0. Proactively announce our own presence beacon if online
+  if (isOnlineMode()) {
+    updateDeviceLocation(myLocation).catch(() => {});
+  }
 
   const allPeers = [];
   const seenIds = new Set();
 
-  // 1. Direct Bluetooth Low Energy (BLE) Mesh Peer Discovery
+  // 1. Direct Bluetooth Low Energy (BLE) Mesh Peer Discovery (100% on-device)
   try {
     const blePeers = getActiveBlePeers();
     if (Array.isArray(blePeers)) {
@@ -982,51 +996,55 @@ export async function getDiscoveredPeers() {
     console.warn('[Discovery] BLE peer query notice:', bleErr.message);
   }
 
-  // 2. Direct Cloud Mesh Peer Discovery (Qdrant Cloud)
-  try {
-    const cloudPeers = await queryPeerBeacons(myDeviceId, myLocation);
-    if (Array.isArray(cloudPeers)) {
-      for (const p of cloudPeers) {
-        if (!seenIds.has(p.node_id)) {
-          seenIds.add(p.node_id);
-          allPeers.push(p);
-        }
-      }
-    }
-  } catch (cloudErr) {
-    console.warn('[Discovery] Cloud beacon query notice:', cloudErr.message);
-  }
-
-  // 3. Central Backend Mesh Relay Discovery (Local Edge Hub or Render)
-  const base = getBackendBaseUrl();
-  if (base) {
+  // 2. Direct Cloud Mesh Peer Discovery (Qdrant Cloud) - Only when online
+  if (isOnlineMode()) {
     try {
-      const edgeRes = await universalRequest(
-        `${base}/api/discovery/peers?node_id=${encodeURIComponent(myDeviceId)}&lat=${myLocation.lat}&lon=${myLocation.lon}`,
-        { method: 'GET', timeout: 3000 }
-      );
-      if (edgeRes.ok) {
-        const edgeData = await edgeRes.json();
-        if (Array.isArray(edgeData?.peers)) {
-          for (const ep of edgeData.peers) {
-            if (ep.node_id !== myDeviceId && !seenIds.has(ep.node_id)) {
-              seenIds.add(ep.node_id);
-              allPeers.push({
-                ...ep,
-                name: ep.name || ep.device_name || `Android Device (${ep.node_id.slice(-4)})`,
-                distance_m: ep.distance_m ?? 50,
-                bearing_deg: ep.bearing_deg ?? 0,
-                cardinal: ep.cardinal ?? 'N',
-                walk_time_min: Math.max(1, Math.round((ep.distance_m ?? 50) / 75)),
-                source: 'ble_mesh',
-                sync_ready: true,
-              });
-            }
+      const cloudPeers = await queryPeerBeacons(myDeviceId, myLocation);
+      if (Array.isArray(cloudPeers)) {
+        for (const p of cloudPeers) {
+          if (!seenIds.has(p.node_id)) {
+            seenIds.add(p.node_id);
+            allPeers.push(p);
           }
         }
       }
-    } catch {
-      // Edge hub unavailable
+    } catch (cloudErr) {
+      console.warn('[Discovery] Cloud beacon query notice:', cloudErr.message);
+    }
+  }
+
+  // 3. Central Backend Mesh Relay Discovery (Local Edge Hub or Render) - Only when online
+  if (isOnlineMode()) {
+    const base = getBackendBaseUrl();
+    if (base) {
+      try {
+        const edgeRes = await universalRequest(
+          `${base}/api/discovery/peers?node_id=${encodeURIComponent(myDeviceId)}&lat=${myLocation.lat}&lon=${myLocation.lon}`,
+          { method: 'GET', timeout: 3000 }
+        );
+        if (edgeRes.ok) {
+          const edgeData = await edgeRes.json();
+          if (Array.isArray(edgeData?.peers)) {
+            for (const ep of edgeData.peers) {
+              if (ep.node_id !== myDeviceId && !seenIds.has(ep.node_id)) {
+                seenIds.add(ep.node_id);
+                allPeers.push({
+                  ...ep,
+                  name: ep.name || ep.device_name || `Android Device (${ep.node_id.slice(-4)})`,
+                  distance_m: ep.distance_m ?? 50,
+                  bearing_deg: ep.bearing_deg ?? 0,
+                  cardinal: ep.cardinal ?? 'N',
+                  walk_time_min: Math.max(1, Math.round((ep.distance_m ?? 50) / 75)),
+                  source: 'ble_mesh',
+                  sync_ready: true,
+                });
+              }
+            }
+          }
+        }
+      } catch {
+        // Edge hub unavailable
+      }
     }
   }
 
@@ -1039,6 +1057,9 @@ export async function getDiscoveredPeers() {
 }
 
 export async function updateDeviceLocation(locationData) {
+  if (!isOnlineMode()) {
+    return { updated: true, mode: 'offline_local' };
+  }
   const loc = locationData?.location || locationData;
   const lat = Number(loc?.lat ?? 28.7041);
   const lon = Number(loc?.lon ?? 77.1025);
