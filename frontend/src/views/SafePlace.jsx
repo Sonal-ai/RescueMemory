@@ -1,7 +1,27 @@
-import { useEffect, useState } from 'react';
-import { CheckSquare, Square, Droplet, AlertCircle, Route, ShieldCheck, HeartPulse, RefreshCw, Crosshair } from 'lucide-react';
+import { useEffect, useState, useCallback } from 'react';
+import {
+  CheckSquare,
+  Square,
+  Droplet,
+  AlertCircle,
+  Route,
+  ShieldCheck,
+  HeartPulse,
+  RefreshCw,
+  Crosshair,
+  PlusCircle,
+  X,
+  CheckCircle2,
+  Building
+} from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { api, recommendAlternativeLocal, getNativeOrWebLocation, distM } from '../api';
+import {
+  api,
+  recommendAlternativeLocal,
+  getNativeOrWebLocation,
+  distM,
+  invalidateApiCache
+} from '../api';
 import { Shell } from '../components';
 import MapPanel from '../MapPanel';
 
@@ -26,155 +46,186 @@ export default function SafePlace() {
   const [mapItems, setMapItems] = useState([]);
   const [loading, setLoading] = useState(false);
 
+  // New Safe Place Registration Modal
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [newShelter, setNewShelter] = useState({
+    name: '',
+    type: 'Community Shelter',
+    facilities: ['Water', 'Shelter', 'Medical'],
+    capacity: '250 Beds',
+    notes: 'Operational safe haven with water and shelter cots.',
+    lat: DEFAULT_CENTER.lat,
+    lon: DEFAULT_CENTER.lon,
+  });
+
   // Auto-acquire live GPS position on mount
   useEffect(() => {
     getNativeOrWebLocation().then((pos) => {
       if (pos?.lat && pos?.lon) {
-        setCenter({ lat: Number(pos.lat.toFixed(5)), lon: Number(pos.lon.toFixed(5)) });
+        const coords = { lat: Number(pos.lat.toFixed(5)), lon: Number(pos.lon.toFixed(5)) };
+        setCenter(coords);
+        setNewShelter((prev) => ({ ...prev, lat: coords.lat, lon: coords.lon }));
       }
     }).catch(() => {});
   }, []);
 
   // Load dynamic data from Qdrant Edge Memory & Negative Vector Engine
-  useEffect(() => {
-    let isMounted = true;
-    async function loadData() {
-      setLoading(true);
-      try {
-        // 1. Get negative vector safe facility recommendation
-        const hazardText = [
-          avoid.flooded ? 'flooded entrance' : '',
-          avoid.electrical ? 'live electrical wires' : ''
-        ].filter(Boolean).join(' ') || 'flooded hazard';
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      // 1. Get negative vector safe facility recommendation
+      const hazardText = [
+        avoid.flooded ? 'flooded entrance' : '',
+        avoid.electrical ? 'live electrical wires' : ''
+      ].filter(Boolean).join(' ') || 'flooded hazard';
 
-        const recResult = await recommendAlternativeLocal('cp_17', hazardText);
+      const recResult = await recommendAlternativeLocal('cp_17', hazardText).catch(() => null);
 
-        // 2. Query nearby map records
-        const mapData = await api('/api/map/nearby', {
-          method: 'POST',
-          body: {
-            location: center,
-            radius_m: radiusKm * 1000,
-            include_responders: false,
-          },
-        }).catch(() => ({ items: [] }));
+      // 2. Query nearby map records
+      const mapData = await api('/api/map/nearby', {
+        method: 'POST',
+        body: {
+          location: center,
+          radius_m: radiusKm * 1000,
+          include_responders: false,
+        },
+      }).catch(() => ({ items: [] }));
 
-        if (!isMounted) return;
+      setMapItems(mapData.items || []);
 
-        setMapItems(mapData.items || []);
+      if (recResult?.compromised) {
+        setExcluded(recResult.compromised);
+      }
 
-        if (recResult?.compromised) {
-          setExcluded(recResult.compromised);
+      // Dynamically anchor facilities relative to current center
+      const baseLat = center.lat;
+      const baseLon = center.lon;
+
+      let rawFacilities = [
+        {
+          id: 'shelter_alpha',
+          name: 'Shelter Alpha (Central High)',
+          type: 'Community Hall',
+          dist_m: 510,
+          walk_min: 7,
+          status: 'Operational',
+          facilities: ['Water', 'Food', 'Shelter', '300 Beds'],
+          lat: Number((baseLat + 0.0035).toFixed(5)),
+          lon: Number((baseLon - 0.0028).toFixed(5)),
+        },
+        {
+          id: 'clinic_beta',
+          name: 'Clinic Beta (West District)',
+          type: 'Primary Clinic',
+          dist_m: 530,
+          walk_min: 7,
+          status: 'Operational',
+          facilities: ['Medical', 'Water', 'Resuscitation'],
+          lat: Number((baseLat + 0.0021).toFixed(5)),
+          lon: Number((baseLon - 0.0042).toFixed(5)),
+        },
+        {
+          id: 'water_tanker_4',
+          name: 'Water Tanker 4 (North Gate)',
+          type: 'Municipal Tanker',
+          dist_m: 560,
+          walk_min: 8,
+          status: 'Operational',
+          facilities: ['Water', 'Clean Supply'],
+          lat: Number((baseLat - 0.0025).toFixed(5)),
+          lon: Number((baseLon + 0.0036).toFixed(5)),
+        },
+      ];
+
+      // If negative-vector engine recommended a specific alternative facility:
+      if (recResult?.recommended) {
+        const rec = recResult.recommended;
+        const exists = rawFacilities.some((f) => f.id === rec.id || f.id === rec.entity_id || f.id === rec.recommended_id);
+        if (!exists) {
+          rawFacilities.unshift({
+            id: rec.id || rec.entity_id || rec.recommended_id || 'rec_safe',
+            name: rec.name || rec.title || 'Safe Alternative Shelter',
+            type: 'Rerouted Safe Shelter',
+            dist_m: 620,
+            walk_min: 9,
+            status: 'Operational',
+            facilities: rec.facilities || ['Shelter', 'Water', 'Medical'],
+            lat: Number((baseLat + 0.0045).toFixed(5)),
+            lon: Number((baseLon + 0.0022).toFixed(5)),
+          });
         }
+      }
 
-        // Dynamically anchor facilities relative to current center
-        const baseLat = center.lat;
-        const baseLon = center.lon;
-
-        let rawFacilities = [
-          {
-            id: 'shelter_alpha',
-            name: 'Shelter Alpha (Central High)',
-            type: 'Community Hall',
-            dist_m: 510,
-            walk_min: 7,
-            status: 'Operational',
-            facilities: ['Water', 'Food', 'Shelter', '300 Beds'],
-            lat: Number((baseLat + 0.0035).toFixed(5)),
-            lon: Number((baseLon - 0.0028).toFixed(5)),
-          },
-          {
-            id: 'clinic_beta',
-            name: 'Clinic Beta (West District)',
-            type: 'Primary Clinic',
-            dist_m: 530,
-            walk_min: 7,
-            status: 'Operational',
-            facilities: ['Medical', 'Water', 'Resuscitation'],
-            lat: Number((baseLat + 0.0021).toFixed(5)),
-            lon: Number((baseLon - 0.0042).toFixed(5)),
-          },
-          {
-            id: 'water_tanker_4',
-            name: 'Water Tanker 4 (North Gate)',
-            type: 'Municipal Tanker',
-            dist_m: 560,
-            walk_min: 8,
-            status: 'Operational',
-            facilities: ['Water', 'Clean Supply'],
-            lat: Number((baseLat - 0.0025).toFixed(5)),
-            lon: Number((baseLon + 0.0036).toFixed(5)),
-          },
-        ];
-
-        // If negative-vector engine recommended a specific alternative facility:
-        if (recResult?.recommended) {
-          const rec = recResult.recommended;
-          const exists = rawFacilities.some((f) => f.id === rec.id || f.id === rec.entity_id);
+      // Merge dynamic checkpoints or resource stations from Edge Memory
+      (mapData.items || []).forEach((item) => {
+        const kind = item.kind || '';
+        const status = (item.status || '').toLowerCase();
+        const isSafe = !['blocked', 'danger', 'flooded', 'closed', 'compromised'].includes(status);
+        if (['checkpoint', 'resource', 'shelter'].includes(kind) && isSafe) {
+          const exists = rawFacilities.some((f) => f.id === item.id || f.id === item.entity_id);
           if (!exists) {
-            rawFacilities.unshift({
-              id: rec.id || rec.entity_id || 'rec_safe',
-              name: rec.name || rec.title || 'Safe Alternative Shelter',
-              type: 'Rerouted Safe Shelter',
-              dist_m: 620,
-              walk_min: 9,
-              status: 'Operational',
-              facilities: rec.facilities || ['Shelter', 'Water', 'Medical'],
-              lat: Number((baseLat + 0.0045).toFixed(5)),
-              lon: Number((baseLon + 0.0022).toFixed(5)),
+            const itemCoords = {
+              lat: item.location?.lat ?? item.lat ?? baseLat,
+              lon: item.location?.lon ?? item.lon ?? baseLon
+            };
+            const dist = Math.round(distM(center, itemCoords)) || 650;
+
+            // Extract facilities from text or metadata
+            let facs = item.facilities || item.details?.facilities || [];
+            if (!facs.length) {
+              const textLower = (item.text || '').toLowerCase();
+              if (textLower.includes('water')) facs.push('Water');
+              if (textLower.includes('medical') || textLower.includes('clinic')) facs.push('Medical');
+              if (textLower.includes('shelter') || textLower.includes('bed') || textLower.includes('cot')) facs.push('Shelter');
+              if (textLower.includes('food') || textLower.includes('ration')) facs.push('Food');
+              if (!facs.length) facs = ['Shelter', 'Water'];
+            }
+
+            const displayName =
+              item.title ||
+              item.details?.name ||
+              (item.text ? item.text.split('(')[0].split('.')[0].trim() : '') ||
+              `Safe Haven ${String(item.id).slice(0, 6)}`;
+
+            rawFacilities.push({
+              id: item.id || item.entity_id,
+              name: displayName,
+              type: kind === 'checkpoint' ? 'Relief Checkpoint' : 'Supply Point',
+              dist_m: dist,
+              walk_min: Math.max(1, Math.round(dist / 75)),
+              status: item.status ? (item.status.charAt(0).toUpperCase() + item.status.slice(1)) : 'Operational',
+              facilities: facs,
+              lat: itemCoords.lat,
+              lon: itemCoords.lon,
             });
           }
         }
+      });
 
-        // Merge dynamic checkpoints or resource stations from Edge Memory
-        (mapData.items || []).forEach((item) => {
-          const kind = item.kind || '';
-          const status = (item.status || '').toLowerCase();
-          const isSafe = !['blocked', 'danger', 'flooded', 'closed', 'compromised'].includes(status);
-          if (['checkpoint', 'resource', 'shelter'].includes(kind) && isSafe) {
-            const exists = rawFacilities.some((f) => f.id === item.id || f.id === item.entity_id);
-            if (!exists) {
-              const itemCoords = { lat: item.lat || baseLat, lon: item.lon || baseLon };
-              const dist = Math.round(distM(center, itemCoords)) || 650;
-              rawFacilities.push({
-                id: item.id || item.entity_id,
-                name: item.summary || item.details?.name || `Checkpoint ${String(item.id).slice(0, 6)}`,
-                type: kind === 'checkpoint' ? 'Relief Checkpoint' : 'Supply Point',
-                dist_m: dist,
-                walk_min: Math.max(1, Math.round(dist / 75)),
-                status: item.status ? (item.status.charAt(0).toUpperCase() + item.status.slice(1)) : 'Operational',
-                facilities: item.details?.facilities || ['Shelter', 'Water'],
-                lat: itemCoords.lat,
-                lon: itemCoords.lon,
-              });
-            }
-          }
-        });
+      // Filter based on selected needs
+      const activeNeedNames = Object.entries(needs)
+        .filter(([, v]) => v)
+        .map(([k]) => k.toLowerCase());
 
-        // Filter based on selected needs
-        const activeNeedNames = Object.entries(needs)
-          .filter(([, v]) => v)
-          .map(([k]) => k.toLowerCase());
+      const filtered = rawFacilities.filter((f) => {
+        if (!activeNeedNames.length) return true;
+        const facLower = (f.facilities || []).map((x) => x.toLowerCase());
+        return activeNeedNames.some((n) => facLower.some((fl) => fl.includes(n)));
+      });
 
-        const filtered = rawFacilities.filter((f) => {
-          if (!activeNeedNames.length) return true;
-          const facLower = f.facilities.map((x) => x.toLowerCase());
-          return activeNeedNames.some((n) => facLower.some((fl) => fl.includes(n)));
-        });
-
-        setShelters(filtered.length ? filtered : rawFacilities);
-      } catch (err) {
-        console.error('Failed to load safe places:', err);
-      } finally {
-        if (isMounted) setLoading(false);
-      }
+      setShelters(filtered.length ? filtered : rawFacilities);
+    } catch (err) {
+      console.error('Failed to load safe places:', err);
+    } finally {
+      setLoading(false);
     }
-
-    loadData();
-    return () => {
-      isMounted = false;
-    };
   }, [center, needs, avoid, radiusKm]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const toggleNeed = (key) => setNeeds((prev) => ({ ...prev, [key]: !prev[key] }));
   const toggleAvoid = (key) => setAvoid((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -182,7 +233,11 @@ export default function SafePlace() {
   const acquireGps = async () => {
     try {
       const pos = await getNativeOrWebLocation();
-      setCenter({ lat: Number(pos.lat.toFixed(5)), lon: Number(pos.lon.toFixed(5)) });
+      if (pos?.lat && pos?.lon) {
+        const coords = { lat: Number(pos.lat.toFixed(5)), lon: Number(pos.lon.toFixed(5)) };
+        setCenter(coords);
+        setNewShelter((prev) => ({ ...prev, lat: coords.lat, lon: coords.lon }));
+      }
     } catch (err) {
       console.warn('GPS unavailable:', err);
     }
@@ -192,11 +247,96 @@ export default function SafePlace() {
     navigate('/compass', { state: { target: shelter } });
   };
 
+  // Submit Handler: Register new safe place
+  const handleAddSafePlace = async (e) => {
+    e.preventDefault();
+    if (!newShelter.name.trim()) return;
+    setSubmitting(true);
+    try {
+      const entityId = `safe_${Date.now()}`;
+      await api('/api/reports', {
+        method: 'POST',
+        admin: true,
+        body: {
+          kind: 'checkpoint',
+          entity_id: entityId,
+          status: 'operational',
+          severity: 'green',
+          visibility: 'public',
+          text: `${newShelter.name.trim()} (${newShelter.type}). Facilities: ${newShelter.facilities.join(', ')}. Capacity: ${newShelter.capacity || 'Open'}. Notes: ${newShelter.notes || 'Safe checkpoint'}`,
+          location: { lat: Number(newShelter.lat), lon: Number(newShelter.lon) },
+          reporter_id: 'responder-field',
+          verified: true,
+        }
+      });
+      invalidateApiCache();
+      setShowAddModal(false);
+      setToastMessage(`Safe haven "${newShelter.name}" registered and broadcasted across offline mesh!`);
+      setNewShelter({
+        name: '',
+        type: 'Community Shelter',
+        facilities: ['Water', 'Shelter', 'Medical'],
+        capacity: '250 Beds',
+        notes: '',
+        lat: center.lat,
+        lon: center.lon,
+      });
+      await loadData();
+    } catch (err) {
+      alert(`Failed to add safe place: ${err.message}`);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <Shell
       title="Safe Evacuation & Negative Routing"
       subtitle="Qdrant Edge Vector Rerouting & Autonomous Shelter Navigation"
     >
+      {/* TOAST MESSAGE */}
+      {toastMessage && (
+        <div role="status" className="mb-3 p-2.5 rounded-xl border border-emerald-500/30 bg-emerald-950/40 text-emerald-200 text-xs flex items-center justify-between shadow-lg">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+            <span>{toastMessage}</span>
+          </div>
+          <button onClick={() => setToastMessage('')} className="p-1 text-emerald-300 hover:text-white cursor-pointer" aria-label="Dismiss">
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
+      {/* TOP HEADER ACTION BAR */}
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3 bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 p-2 sm:p-2.5 rounded-2xl shadow-xs">
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+            <ShieldCheck size={18} />
+          </div>
+          <div>
+            <h2 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100">
+              Verified Safe Havens & Supply Checkpoints
+            </h2>
+            <p className="text-[10px] text-slate-500 font-mono">
+              Filtered using Qdrant Negative Vector Arithmetic & Offline GPS Relays
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              setNewShelter((prev) => ({ ...prev, lat: center.lat, lon: center.lon }));
+              setShowAddModal(true);
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-xs transition cursor-pointer"
+          >
+            <PlusCircle size={14} />
+            <span>Add Safe Haven</span>
+          </button>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4">
         {/* LEFT COLUMN: Interactive Filters */}
         <div className="lg:col-span-3 bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 rounded-2xl p-3 sm:p-4 flex flex-col shadow-xs">
@@ -225,7 +365,7 @@ export default function SafePlace() {
                 <button
                   key={key}
                   onClick={() => toggleNeed(key)}
-                  className={`w-full flex items-center gap-2 p-2 rounded-xl border text-left text-xs transition-all ${
+                  className={`w-full flex items-center gap-2 p-2 rounded-xl border text-left text-xs transition-all cursor-pointer ${
                     needs[key]
                       ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-400 dark:border-emerald-500 text-emerald-900 dark:text-emerald-200 font-bold shadow-xs'
                       : 'bg-[#f7fafc] dark:bg-[#07111e] border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-700'
@@ -257,7 +397,7 @@ export default function SafePlace() {
                 <button
                   key={key}
                   onClick={() => toggleAvoid(key)}
-                  className={`w-full flex items-center gap-2 p-2 rounded-xl border text-left text-xs transition-all ${
+                  className={`w-full flex items-center gap-2 p-2 rounded-xl border text-left text-xs transition-all cursor-pointer ${
                     avoid[key]
                       ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-400 dark:border-rose-500 text-rose-900 dark:text-rose-200 font-bold shadow-xs'
                       : 'bg-[#f7fafc] dark:bg-[#07111e] border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-700'
@@ -279,7 +419,7 @@ export default function SafePlace() {
               <h4 className="text-[10px] text-slate-500 dark:text-slate-400 font-bold tracking-widest uppercase font-mono">
                 WALKING RADIUS
               </h4>
-              <button onClick={acquireGps} className="text-[11px] text-cyan-600 dark:text-cyan-400 hover:underline font-mono font-bold flex items-center gap-1">
+              <button onClick={acquireGps} className="text-[11px] text-cyan-600 dark:text-cyan-400 hover:underline font-mono font-bold flex items-center gap-1 cursor-pointer">
                 <Crosshair size={12} /> Sync GPS
               </button>
             </div>
@@ -329,7 +469,7 @@ export default function SafePlace() {
                 {shelter.type} · {shelter.dist_m} m away · ~{shelter.walk_min} min walk
               </p>
               <div className="flex gap-1 mb-2.5 flex-wrap">
-                {shelter.facilities.map((fac) => (
+                {(shelter.facilities || []).map((fac) => (
                   <span
                     key={fac}
                     className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded-md text-[10px] font-medium"
@@ -373,6 +513,197 @@ export default function SafePlace() {
           </div>
         </div>
       </div>
+
+      {/* MODAL: REGISTER NEW SAFE HAVEN */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
+          <div className="w-full max-w-lg bg-white dark:bg-[#0b1626] border border-emerald-500/30 rounded-3xl p-5 shadow-2xl max-h-[92vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-3 pb-2 border-b border-slate-200 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                  <PlusCircle size={18} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                    Register New Safe Haven
+                  </h3>
+                  <p className="text-[10px] text-slate-500 font-mono">
+                    Broadcast operational checkpoint to Edge Memory & Bluetooth Mesh
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowAddModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800/50 cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddSafePlace} className="space-y-3 text-xs">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
+                  Safe Haven Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. North Gate Community Center, St. Jude Clinic"
+                  value={newShelter.name}
+                  onChange={(e) => setNewShelter({ ...newShelter, name: e.target.value })}
+                  className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
+                    Facility Type
+                  </label>
+                  <select
+                    value={newShelter.type}
+                    onChange={(e) => setNewShelter({ ...newShelter, type: e.target.value })}
+                    className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100"
+                  >
+                    <option value="Community Shelter">Community Shelter</option>
+                    <option value="Primary Clinic">Primary Clinic / Trauma Tent</option>
+                    <option value="Municipal Tanker">Clean Water Tanker</option>
+                    <option value="Supply Distribution">Food & Ration Cache</option>
+                    <option value="High Ground Safe Point">High Ground Safe Point</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
+                    Estimated Capacity / Beds
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 350 Beds, Unlimited, 5000L"
+                    value={newShelter.capacity}
+                    onChange={(e) => setNewShelter({ ...newShelter, capacity: e.target.value })}
+                    className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
+                  Available Facilities & Supplies
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                  {['Water', 'Medical', 'Shelter', 'Food', 'Generator', 'Security'].map((fac) => {
+                    const isChecked = newShelter.facilities.includes(fac);
+                    return (
+                      <button
+                        type="button"
+                        key={fac}
+                        onClick={() => {
+                          const updated = isChecked
+                            ? newShelter.facilities.filter((f) => f !== fac)
+                            : [...newShelter.facilities, fac];
+                          setNewShelter({ ...newShelter, facilities: updated });
+                        }}
+                        className={`p-2 rounded-xl border text-left text-xs font-semibold flex items-center justify-between cursor-pointer transition ${
+                          isChecked
+                            ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-500 text-emerald-800 dark:text-emerald-300'
+                            : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-400'
+                        }`}
+                      >
+                        <span>{fac}</span>
+                        <span className={`w-2 h-2 rounded-full ${isChecked ? 'bg-emerald-500' : 'bg-slate-400'}`}></span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
+                  Operational Details & Access Notes
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="e.g. Accessible via South Gate. Clean drinking water available. Electric power generator operational."
+                  value={newShelter.notes}
+                  onChange={(e) => setNewShelter({ ...newShelter, notes: e.target.value })}
+                  className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100"
+                />
+              </div>
+
+              <div className="p-2.5 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                <div className="flex justify-between items-center mb-1.5">
+                  <span className="text-[10px] font-mono font-bold uppercase text-slate-500">
+                    Location Coordinates
+                  </span>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const pos = await getNativeOrWebLocation();
+                      if (pos?.lat && pos?.lon) {
+                        setNewShelter({
+                          ...newShelter,
+                          lat: Number(pos.lat.toFixed(5)),
+                          lon: Number(pos.lon.toFixed(5)),
+                        });
+                      }
+                    }}
+                    className="text-[10px] font-mono text-cyan-600 dark:text-cyan-400 hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <Crosshair size={11} /> Use Current GPS
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <span className="text-[9px] font-mono text-slate-400">LATITUDE</span>
+                    <input
+                      type="number"
+                      step="0.0001"
+                      required
+                      value={newShelter.lat}
+                      onChange={(e) => setNewShelter({ ...newShelter, lat: parseFloat(e.target.value) || 0 })}
+                      className="w-full p-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono text-xs"
+                    />
+                  </div>
+                  <div>
+                    <span className="text-[9px] font-mono text-slate-400">LONGITUDE</span>
+                    <input
+                      type="number"
+                      step="0.0001"
+                      required
+                      value={newShelter.lon}
+                      onChange={(e) => setNewShelter({ ...newShelter, lon: parseFloat(e.target.value) || 0 })}
+                      className="w-full p-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono text-xs"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(false)}
+                  className="flex-1 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-md"
+                >
+                  {submitting ? (
+                    <RefreshCw size={14} className="animate-spin" />
+                  ) : (
+                    <ShieldCheck size={14} />
+                  )}
+                  <span>{submitting ? 'Registering...' : 'Register Safe Haven'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </Shell>
   );
 }

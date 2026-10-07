@@ -1258,7 +1258,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
           >
             {/* 4 Clear High-Contrast Emergency Situation Tiles */}
             <div className="mb-2.5">
-              <label className="block text-xs sm:text-sm text-slate-700 dark:text-slate-300 font-bold uppercase tracking-wider mb-1.5">
+              <label className="block text-sm sm:text-base text-slate-800 dark:text-slate-200 font-extrabold uppercase tracking-wider mb-1.5">
                 Emergency Type:
               </label>
               <div className="grid grid-cols-2 gap-2">
@@ -1291,7 +1291,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                         </div>
                         <span className="font-bold text-sm sm:text-base text-slate-900 dark:text-white tracking-tight truncate">{type.title}</span>
                       </div>
-                      <p className="text-[11.5px] sm:text-xs text-slate-600 dark:text-slate-400 line-clamp-1 leading-tight ml-0.5 font-medium">
+                      <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 line-clamp-1 leading-tight ml-0.5 font-medium">
                         {type.subtitle}
                       </p>
                     </button>
@@ -1301,15 +1301,19 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
             </div>
 
             {/* Editable Description & Broadcast Form */}
-            <form onSubmit={submitReport} className="space-y-2.5">
+            <form onSubmit={submitReport} className="space-y-3">
               <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 font-bold uppercase tracking-wider">
-                    Situation Details:
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-sm sm:text-base text-slate-800 dark:text-slate-200 font-extrabold uppercase tracking-wider flex items-center gap-1.5">
+                    <span>Situation Details:</span>
                   </label>
+                  <span className="text-[11px] font-mono font-medium text-slate-500 dark:text-slate-400">
+                    Live Broadcast Message
+                  </span>
                 </div>
                 <textarea
-                  className="field min-h-16 w-full text-sm font-sans py-2 px-3"
+                  className="field min-h-24 sm:min-h-28 w-full !text-base sm:!text-lg font-medium font-sans py-3 px-3.5 leading-relaxed text-slate-900 dark:text-slate-100 rounded-xl border border-slate-300 dark:border-slate-700 shadow-xs focus:border-red-500 dark:focus:border-rose-500 focus:ring-2 focus:ring-red-500/20"
+                  style={{ fontSize: '1.05rem', lineHeight: '1.5' }}
                   value={report.text}
                   onChange={(e) => setReport({ ...report, text: e.target.value })}
                   required
@@ -1319,42 +1323,42 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
               </div>
 
               {/* Clinical Casualty Triage & Materials Assessment */}
-              <div className="rounded-xl border border-red-200 dark:border-red-900/60 bg-[#edf5fc] dark:bg-[#07111e] p-2.5 sm:p-3 space-y-2">
+              <div className="rounded-xl border border-red-200 dark:border-red-900/60 bg-[#edf5fc] dark:bg-[#07111e] p-3 sm:p-3.5 space-y-2.5">
                 <div className="flex items-center justify-between">
-                  <span className="flex items-center gap-1.5 text-xs sm:text-sm font-bold text-red-700 dark:text-rose-400">
-                    <HeartPulse size={13} className="animate-pulse text-red-600" />
+                  <span className="flex items-center gap-1.5 text-sm sm:text-base font-extrabold text-red-700 dark:text-rose-400">
+                    <HeartPulse size={15} className="animate-pulse text-red-600" />
                     <span>Clinical Casualty Triage & Materials</span>
                   </span>
                   <div className="flex items-center gap-1">
                     {selectedMaterials.length > 0 && (
-                      <span className="text-[9px] font-mono px-1.5 py-0.2 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 font-bold">
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 font-bold">
                         {selectedMaterials.length} Mat{selectedMaterials.length > 1 ? 's' : ''}
                       </span>
                     )}
                     {bleedingType === 'spurting' && (
-                      <span className="text-[9px] font-mono px-1.5 py-0.2 rounded-full bg-red-600 text-white font-bold animate-pulse">
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-red-600 text-white font-bold animate-pulse">
                         ARTERIAL
                       </span>
                     )}
                     {!breathingStatus && (
-                      <span className="text-[9px] font-mono px-1.5 py-0.2 rounded-full bg-red-600 text-white font-bold animate-pulse">
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-red-600 text-white font-bold animate-pulse">
                         CPR NEEDED
                       </span>
                     )}
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   {/* Breathing state */}
                   <div>
-                    <span className="block text-[10.5px] sm:text-xs uppercase font-bold text-slate-700 dark:text-slate-400 mb-1 tracking-wider">
+                    <span className="block text-xs sm:text-sm uppercase font-bold text-slate-800 dark:text-slate-300 mb-1.5 tracking-wider">
                       1. Casualty Breathing:
                     </span>
                     <div className="grid grid-cols-2 gap-1.5">
                       <button
                         type="button"
                         onClick={() => setBreathingStatus(true)}
-                        className={`py-1.5 px-2 rounded-lg border text-[11.5px] sm:text-xs font-bold transition-all ${
+                        className={`py-2 px-2.5 rounded-lg border text-xs sm:text-sm font-bold transition-all ${
                           breathingStatus
                             ? 'bg-emerald-600 text-white border-emerald-500 shadow-xs'
                             : 'bg-white dark:bg-slate-900 border-[#cbdbe9] dark:border-slate-800 text-slate-700 dark:text-slate-300'
@@ -1373,7 +1377,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                             }));
                           }
                         }}
-                        className={`py-1.5 px-2 rounded-lg border text-[11.5px] sm:text-xs font-bold transition-all ${
+                        className={`py-2 px-2.5 rounded-lg border text-xs sm:text-sm font-bold transition-all ${
                           !breathingStatus
                             ? 'bg-red-600 text-white border-red-500 shadow-xs'
                             : 'bg-white dark:bg-slate-900 border-[#cbdbe9] dark:border-slate-800 text-red-700 dark:text-red-400'
@@ -1386,7 +1390,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
 
                   {/* Bleeding status */}
                   <div>
-                    <span className="block text-[10.5px] sm:text-xs uppercase font-bold text-slate-700 dark:text-slate-400 mb-1 tracking-wider">
+                    <span className="block text-xs sm:text-sm uppercase font-bold text-slate-800 dark:text-slate-300 mb-1.5 tracking-wider">
                       2. Bleeding Severity:
                     </span>
                     <div className="grid grid-cols-3 gap-1.5">
@@ -1407,7 +1411,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                               }));
                             }
                           }}
-                          className={`py-1.5 px-1 rounded-lg border text-[11.5px] sm:text-xs font-bold transition-all ${
+                          className={`py-2 px-1 rounded-lg border text-xs sm:text-sm font-bold transition-all ${
                             bleedingType === val
                               ? val === 'spurting'
                                 ? 'bg-red-600 text-white border-red-500 shadow-xs'
@@ -1426,7 +1430,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
 
                 {/* Improvised Materials selection */}
                 <div>
-                  <span className="block text-[10.5px] sm:text-xs uppercase font-bold text-slate-700 dark:text-slate-400 mb-1 tracking-wider">
+                  <span className="block text-xs sm:text-sm uppercase font-bold text-slate-800 dark:text-slate-300 mb-1.5 tracking-wider">
                     3. Improvised Materials Available:
                   </span>
                   <div className="flex flex-wrap gap-1.5">
@@ -1447,7 +1451,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                               isSelected ? prev.filter((m) => m !== id) : [...prev, id]
                             );
                           }}
-                          className={`text-[11.5px] sm:text-xs py-1 px-2.5 rounded-lg border font-bold transition-all ${
+                          className={`text-xs sm:text-sm py-1.5 px-3 rounded-lg border font-bold transition-all ${
                             isSelected
                               ? 'bg-cyan-600 text-white border-cyan-500 shadow-xs'
                               : 'bg-white dark:bg-slate-900 border-[#cbdbe9] dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-cyan-400'

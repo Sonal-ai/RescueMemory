@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   ArrowRight,
   Award,
+  Building,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
@@ -120,6 +121,16 @@ export default function AdminPortal({ initialTab = 'hq' }) {
   const [verifyHazardInput, setVerifyHazardInput] = useState({ entity_id: 'cp_17', status: 'blocked', text: 'Bridge submerged with live fallen electrical cables.' });
   const [showProtocolModal, setShowProtocolModal] = useState(false);
   const [protocolInput, setProtocolInput] = useState({ id: 'flood_water_safety_v2', title: 'Emergency Floodwater Disinfection Guidelines', summary: 'Boil for 1 minute or use purification tablets. Never drink raw surface water.', keywords: 'water, boil, disinfection, purification', steps: 'Bring water to rolling boil for 60s\nAllow to cool in covered sterile container', warnings: 'Boiling does not remove chemical run-offs\nStore away from flood waters' });
+  const [showSafeHavenModal, setShowSafeHavenModal] = useState(false);
+  const [safeHavenInput, setSafeHavenInput] = useState({
+    name: 'North Gate Evacuation Complex',
+    type: 'Community Shelter',
+    facilities: ['Water', 'Shelter', 'Medical', 'Food'],
+    capacity: '400 Beds',
+    notes: 'Operational emergency shelter with backup generator and clean water.',
+    lat: DEFAULT_CENTER.lat + 0.0055,
+    lon: DEFAULT_CENTER.lon - 0.0035,
+  });
 
   // Tab 3 (Cloud Inspector) Specific States
   const [selectedRecord, setSelectedRecord] = useState(null);
@@ -294,6 +305,40 @@ export default function AdminPortal({ initialTab = 'hq' }) {
     }
   };
 
+  // Tab 2 Action: Register Verified Safe Haven
+  const handleRegisterSafeHaven = async (e) => {
+    e.preventDefault();
+    setWorking('shelter');
+    setError('');
+    setMessage('');
+    try {
+      const entityId = `shelter_${Date.now()}`;
+      await api('/api/reports', {
+        method: 'POST',
+        admin: true,
+        body: {
+          kind: 'checkpoint',
+          entity_id: entityId,
+          status: 'operational',
+          severity: 'green',
+          visibility: 'public',
+          text: `${safeHavenInput.name.trim()} (${safeHavenInput.type}). Facilities: ${safeHavenInput.facilities.join(', ')}. Capacity: ${safeHavenInput.capacity || 'Open'}. Notes: ${safeHavenInput.notes || 'Safe checkpoint'}`,
+          location: { lat: Number(safeHavenInput.lat), lon: Number(safeHavenInput.lon) },
+          reporter_id: 'command-hq',
+          verified: true,
+        }
+      });
+      setShowSafeHavenModal(false);
+      invalidateApiCache();
+      setMessage(`Safe haven "${safeHavenInput.name}" verified and registered across network!`);
+      await loadData(true);
+    } catch (err) {
+      setError(`Failed to register safe haven: ${err.message}`);
+    } finally {
+      setWorking('');
+    }
+  };
+
   // Tab 3 Action: Mirror to Qdrant Cloud
   const handleCloudMirror = async () => {
     setWorking('mirror');
@@ -366,6 +411,7 @@ export default function AdminPortal({ initialTab = 'hq' }) {
   const redCount = casualties.filter((c) => c.severity === 'red' && c.status !== 'rescued_transported').length;
   const yellowCount = casualties.filter((c) => c.severity === 'yellow' && c.status !== 'rescued_transported').length;
   const rescuedCount = casualties.filter((c) => c.status === 'rescued_transported').length;
+  const openSafeHavens = 3 + checkpoints.filter((c) => c.status !== 'blocked' && c.status !== 'compromised' && c.severity !== 'red').length;
 
   const currentShards = cloudStatus?.shards || {
     rescue_approved_guides: 6,
@@ -690,8 +736,8 @@ export default function AdminPortal({ initialTab = 'hq' }) {
 
             <div className="bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 rounded-2xl p-2.5 sm:p-3 shadow-xs">
               <div className="text-[10px] font-mono uppercase text-slate-500 font-bold">Safe Havens</div>
-              <div className="text-xl sm:text-2xl font-black font-mono text-emerald-600 dark:text-emerald-400">3 Open</div>
-              <div className="text-[10px] text-slate-500 font-mono">Shelter Alpha (82% Cap)</div>
+              <div className="text-xl sm:text-2xl font-black font-mono text-emerald-600 dark:text-emerald-400">{openSafeHavens} Open</div>
+              <div className="text-[10px] text-slate-500 font-mono">Shelter Alpha & Active Havens</div>
             </div>
 
             <div className="bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 rounded-2xl p-2.5 sm:p-3 shadow-xs">
@@ -764,6 +810,30 @@ export default function AdminPortal({ initialTab = 'hq' }) {
                 >
                   <PlusCircle size={14} />
                   <span>Publish Signed Emergency Protocol</span>
+                </button>
+              </div>
+
+              {/* Safe Haven & Shelter Registry */}
+              <div className="bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 rounded-2xl p-3 sm:p-4 shadow-xs">
+                <div className="flex items-center justify-between mb-2 pb-2 border-b border-slate-200 dark:border-slate-800">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-3.5 rounded-full bg-emerald-500 inline-block"></span>
+                    <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100">
+                      Safe Haven & Shelter Registry
+                    </h3>
+                  </div>
+                </div>
+
+                <p className="text-xs text-slate-600 dark:text-slate-400 mb-3 leading-relaxed">
+                  Designate and broadcast verified safe shelters, trauma clinics, or water points to steer evacuated civilians toward safety.
+                </p>
+
+                <button
+                  onClick={() => setShowSafeHavenModal(true)}
+                  className="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition"
+                >
+                  <Building size={14} />
+                  <span>Register New Safe Haven / Shelter</span>
                 </button>
               </div>
             </div>
@@ -1014,6 +1084,197 @@ export default function AdminPortal({ initialTab = 'hq' }) {
               >
                 {working === 'protocol' ? 'Signing...' : 'Sign & Publish to Local Shards'}
               </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: REGISTER SAFE HAVEN */}
+      {showSafeHavenModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
+          <div className="w-full max-w-lg bg-white dark:bg-[#0b1626] border border-emerald-500/30 rounded-3xl p-5 shadow-2xl max-h-[92vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-3 pb-2 border-b border-slate-200 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                  <Building size={18} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                    Register Verified Safe Haven
+                  </h3>
+                  <p className="text-[10px] text-slate-500 font-mono">
+                    Broadcast official safe checkpoint to survivor compasses & Edge Memory
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowSafeHavenModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800/50 cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleRegisterSafeHaven} className="space-y-3 text-xs">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
+                  Safe Haven / Shelter Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. North Gate Evacuation Complex, St. Jude Clinic"
+                  value={safeHavenInput.name}
+                  onChange={(e) => setSafeHavenInput({ ...safeHavenInput, name: e.target.value })}
+                  className="field w-full"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
+                    Facility Type
+                  </label>
+                  <select
+                    value={safeHavenInput.type}
+                    onChange={(e) => setSafeHavenInput({ ...safeHavenInput, type: e.target.value })}
+                    className="field w-full"
+                  >
+                    <option value="Community Shelter">Community Shelter</option>
+                    <option value="Primary Clinic">Primary Clinic / Trauma Tent</option>
+                    <option value="Clean Water Tanker">Clean Water Tanker</option>
+                    <option value="Supply Distribution">Food & Ration Distribution</option>
+                    <option value="High Ground Safe Point">High Ground Safe Point</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
+                    Capacity / Beds
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 400 Beds, Unlimited, 5000L"
+                    value={safeHavenInput.capacity}
+                    onChange={(e) => setSafeHavenInput({ ...safeHavenInput, capacity: e.target.value })}
+                    className="field w-full"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
+                  Supplies & Capabilities
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                  {['Water', 'Medical', 'Shelter', 'Food', 'Generator', 'Security'].map((fac) => {
+                    const isChecked = safeHavenInput.facilities.includes(fac);
+                    return (
+                      <button
+                        type="button"
+                        key={fac}
+                        onClick={() => {
+                          const updated = isChecked
+                            ? safeHavenInput.facilities.filter((f) => f !== fac)
+                            : [...safeHavenInput.facilities, fac];
+                          setSafeHavenInput({ ...safeHavenInput, facilities: updated });
+                        }}
+                        className={`p-2 rounded-xl border text-left text-xs font-semibold flex items-center justify-between cursor-pointer transition ${
+                          isChecked
+                            ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-500 text-emerald-800 dark:text-emerald-300'
+                            : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-400'
+                        }`}
+                      >
+                        <span>{fac}</span>
+                        <span className={`w-2 h-2 rounded-full ${isChecked ? 'bg-emerald-500' : 'bg-slate-400'}`}></span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
+                  Operational Details & Access Notes
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="e.g. Backup diesel generator active, 400 cots ready, clean drinking water filtration."
+                  value={safeHavenInput.notes}
+                  onChange={(e) => setSafeHavenInput({ ...safeHavenInput, notes: e.target.value })}
+                  className="field w-full"
+                />
+              </div>
+
+              <div className="p-2.5 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                <div className="flex justify-between items-center mb-1.5">
+                  <span className="text-[10px] font-mono font-bold uppercase text-slate-500">
+                    Location Coordinates
+                  </span>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const pos = await getNativeOrWebLocation();
+                      if (pos?.lat && pos?.lon) {
+                        setSafeHavenInput({
+                          ...safeHavenInput,
+                          lat: Number(pos.lat.toFixed(5)),
+                          lon: Number(pos.lon.toFixed(5)),
+                        });
+                      }
+                    }}
+                    className="text-[10px] font-mono text-cyan-600 dark:text-cyan-400 hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <Crosshair size={11} /> Use Current GPS
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <span className="text-[9px] font-mono text-slate-400">LATITUDE</span>
+                    <input
+                      type="number"
+                      step="0.0001"
+                      required
+                      value={safeHavenInput.lat}
+                      onChange={(e) => setSafeHavenInput({ ...safeHavenInput, lat: parseFloat(e.target.value) || 0 })}
+                      className="field w-full font-mono text-xs"
+                    />
+                  </div>
+                  <div>
+                    <span className="text-[9px] font-mono text-slate-400">LONGITUDE</span>
+                    <input
+                      type="number"
+                      step="0.0001"
+                      required
+                      value={safeHavenInput.lon}
+                      onChange={(e) => setSafeHavenInput({ ...safeHavenInput, lon: parseFloat(e.target.value) || 0 })}
+                      className="field w-full font-mono text-xs"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowSafeHavenModal(false)}
+                  className="flex-1 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={working === 'shelter'}
+                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-md"
+                >
+                  {working === 'shelter' ? (
+                    <RefreshCw size={14} className="animate-spin" />
+                  ) : (
+                    <Building size={14} />
+                  )}
+                  <span>{working === 'shelter' ? 'Broadcasting...' : 'Verify & Broadcast Safe Haven'}</span>
+                </button>
+              </div>
             </form>
           </div>
         </div>
