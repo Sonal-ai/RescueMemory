@@ -857,12 +857,12 @@ export default function SurvivalRadar({
 
                     {/* Survivor Condition / Observation Text */}
                     {activeCompassTarget.text && (
-                      <div className="bg-slate-50 dark:bg-slate-900/60 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800/80 text-xs leading-relaxed mb-3">
-                        <div className="text-[10px] font-mono text-slate-500 dark:text-slate-400 uppercase font-bold mb-1 flex items-center gap-1.5">
-                          <AlertOctagon className="w-3.5 h-3.5 text-red-500" />
+                      <div className="bg-slate-50 dark:bg-slate-900/60 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800/80 mb-3">
+                        <div className="text-xs sm:text-sm font-mono text-slate-600 dark:text-slate-300 uppercase font-bold mb-1.5 flex items-center gap-1.5">
+                          <AlertOctagon className="w-4 h-4 text-red-500" />
                           <span>Condition & Situation Details:</span>
                         </div>
-                        <p className="font-medium text-slate-800 dark:text-slate-100">{activeCompassTarget.text}</p>
+                        <p className="font-semibold text-sm sm:text-base leading-relaxed text-slate-900 dark:text-slate-100">{activeCompassTarget.text}</p>
                       </div>
                     )}
 

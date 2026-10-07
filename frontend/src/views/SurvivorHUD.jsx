@@ -1627,7 +1627,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                       {report.visibility === 'responders' ? 'Responders Only' : 'Public Mesh'}
                     </span>
                   </div>
-                  <div className="bg-white/70 dark:bg-black/30 p-2 rounded-lg font-mono text-[11px] leading-relaxed text-slate-800 dark:text-slate-200 border border-emerald-500/20">
+                  <div className="bg-white/70 dark:bg-black/30 p-2.5 rounded-lg font-mono text-xs sm:text-sm leading-relaxed text-slate-800 dark:text-slate-200 border border-emerald-500/20">
                     "{report.text}"
                   </div>
                   <div className="text-[9px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
@@ -1734,7 +1734,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                 <span>Mesh Relayed:</span>
                 <strong className="text-cyan-400">{sosBroadcastModal.peersCount} nearby device(s) on Bluetooth</strong>
               </div>
-              <p className="pt-1.5 border-t border-slate-800 text-[11px] text-slate-300 font-sans leading-relaxed line-clamp-2">
+              <p className="pt-2 border-t border-slate-800 text-xs sm:text-sm text-slate-200 font-sans leading-relaxed line-clamp-3">
                 "{sosBroadcastModal.text}"
               </p>
             </div>
