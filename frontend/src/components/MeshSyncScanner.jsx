@@ -138,26 +138,44 @@ export default function MeshSyncScanner({
       }
 
       if (currentPeers.length > 0) {
+        setErrorMessage('');
         setStatusMessage(
-          `⚡ Bluetooth Mesh Active: Connected to ${currentPeers.length} device(s)${localFlushed > 0 ? ` · Uplinked ${localFlushed} SOS` : ''}${remoteImported > 0 ? ` · Received ${remoteImported} reports` : ''}`
+          `⚡ Mesh Active: Connected to ${currentPeers.length} device(s)${localFlushed > 0 ? ` · Uplinked ${localFlushed} SOS` : ''}${remoteImported > 0 ? ` · Received ${remoteImported} reports` : ''}`
         );
         if (onSyncComplete) onSyncComplete();
       } else {
-        setStatusMessage(
-          localFlushed > 0
-            ? `✅ Synced ${localFlushed} report(s). Bluetooth radar active & scanning for nearby devices...`
-            : '📡 Bluetooth LE radar active & scanning nearby devices automatically...'
-        );
+        // Only set status in background if no active error is displayed
+        setErrorMessage((prevErr) => {
+          if (!prevErr) {
+            if (hasBleHardware) {
+              setStatusMessage(
+                localFlushed > 0
+                  ? `✅ Synced ${localFlushed} report(s). Bluetooth radar active & scanning for nearby devices...`
+                  : '📡 Bluetooth LE radar active & scanning nearby devices automatically...'
+              );
+            } else {
+              setStatusMessage(
+                localFlushed > 0
+                  ? `✅ Synced ${localFlushed} report(s). Local off-grid mesh active.`
+                  : '🌐 Off-grid mesh active (Web Bluetooth unavailable on this browser · Use QR Fallback or Wi-Fi).'
+              );
+            }
+          }
+          return prevErr;
+        });
       }
     } catch (err) {
-      if (!isSilent) setErrorMessage(`Sync notice: ${err.message || 'Network error'}`);
+      if (!isSilent) {
+        setStatusMessage('');
+        setErrorMessage(`Sync notice: ${err.message || 'Network error'}`);
+      }
     } finally {
       if (!isSilent) {
         setSyncingAll(false);
         setScanning(false);
       }
     }
-  }, [onSyncComplete]);
+  }, [onSyncComplete, hasBleHardware]);
 
   // Automated background sync interval: runs on mount and every 6 seconds
   useEffect(() => {
@@ -170,15 +188,22 @@ export default function MeshSyncScanner({
 
   // Request Bluetooth Scan Dialog (1-Tap Native BLE Discovery)
   const handleScanBluetooth = async () => {
+    if (!hasBleHardware) {
+      setStatusMessage('');
+      setErrorMessage('Web Bluetooth is not supported in this browser environment (requires Chrome on Android or a Native BLE plugin). Please use QR Fallback or Wi-Fi Mesh for off-grid transfer.');
+      return;
+    }
     setIsBleScanning(true);
     setErrorMessage('');
     try {
       const dev = await requestBleDevice();
+      setErrorMessage('');
       setStatusMessage(`⚡ Connected to Bluetooth device: ${dev.name || dev.id}. Syncing data...`);
       await refreshPeersList();
       await handleScanAndTransfer(false);
     } catch (err) {
       if (err.name !== 'NotFoundError' && !err.message?.includes('User cancelled')) {
+        setStatusMessage('');
         setErrorMessage(`Bluetooth: ${err.message || 'Scan cancelled'}`);
       }
     } finally {
@@ -360,7 +385,14 @@ export default function MeshSyncScanner({
       </div>
 
       {/* Alert Notifications */}
-      {statusMessage && (
+      {errorMessage ? (
+        <div className="p-2.5 sm:p-3 rounded-xl border border-red-300 dark:border-red-800/80 bg-red-50 dark:bg-red-950/40 text-red-800 dark:text-red-200 text-xs sm:text-sm flex items-center justify-between shadow-xs">
+          <span className="font-medium">{errorMessage}</span>
+          <button onClick={() => setErrorMessage('')} className="text-xs underline font-semibold ml-2 cursor-pointer">
+            Dismiss
+          </button>
+        </div>
+      ) : statusMessage ? (
         <div className="p-2.5 sm:p-3 rounded-xl border border-cyan-300 dark:border-cyan-800/80 bg-cyan-50 dark:bg-cyan-950/40 text-cyan-900 dark:text-cyan-100 text-xs sm:text-sm flex items-center justify-between shadow-xs">
           <div className="flex items-center gap-2">
             <CheckCircle2 size={16} className="shrink-0 text-cyan-500" />
@@ -370,16 +402,7 @@ export default function MeshSyncScanner({
             Dismiss
           </button>
         </div>
-      )}
-
-      {errorMessage && (
-        <div className="p-2.5 sm:p-3 rounded-xl border border-red-300 dark:border-red-800/80 bg-red-50 dark:bg-red-950/40 text-red-800 dark:text-red-200 text-xs sm:text-sm flex items-center justify-between shadow-xs">
-          <span className="font-medium">{errorMessage}</span>
-          <button onClick={() => setErrorMessage('')} className="text-xs underline font-semibold ml-2 cursor-pointer">
-            Dismiss
-          </button>
-        </div>
-      )}
+      ) : null}
 
       {/* Visual Scanner & Action Button */}
       <div className="bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 rounded-2xl p-3 sm:p-4 shadow-xs flex flex-col items-center">
@@ -416,21 +439,27 @@ export default function MeshSyncScanner({
             <line x1={GRID_CENTER} y1={GRID_CENTER - MAX_RADIUS} x2={GRID_CENTER} y2={GRID_CENTER + MAX_RADIUS} stroke="#0369a1" strokeWidth="0.8" />
 
             {/* Sweeping Bluetooth Radar Beam */}
-            <g className="animate-[spin_4s_linear_infinite]" style={{ transformOrigin: `${GRID_CENTER}px ${GRID_CENTER}px` }}>
-              <line
-                x1={GRID_CENTER}
-                y1={GRID_CENTER}
-                x2={GRID_CENTER}
-                y2={GRID_CENTER - MAX_RADIUS}
-                stroke="#38bdf8"
-                strokeWidth="2"
-                strokeLinecap="round"
-              />
-              <path
-                d={`M ${GRID_CENTER} ${GRID_CENTER} L ${GRID_CENTER} ${GRID_CENTER - MAX_RADIUS} A ${MAX_RADIUS} ${MAX_RADIUS} 0 0 1 ${GRID_CENTER + MAX_RADIUS * 0.7} ${GRID_CENTER - MAX_RADIUS * 0.7} Z`}
-                fill="url(#meshSweepGrad)"
-              />
-            </g>
+            {hasBleHardware ? (
+              <g className="animate-[spin_4s_linear_infinite]" style={{ transformOrigin: `${GRID_CENTER}px ${GRID_CENTER}px` }}>
+                <line
+                  x1={GRID_CENTER}
+                  y1={GRID_CENTER}
+                  x2={GRID_CENTER}
+                  y2={GRID_CENTER - MAX_RADIUS}
+                  stroke="#38bdf8"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
+                <path
+                  d={`M ${GRID_CENTER} ${GRID_CENTER} L ${GRID_CENTER} ${GRID_CENTER - MAX_RADIUS} A ${MAX_RADIUS} ${MAX_RADIUS} 0 0 1 ${GRID_CENTER + MAX_RADIUS * 0.7} ${GRID_CENTER - MAX_RADIUS * 0.7} Z`}
+                  fill="url(#meshSweepGrad)"
+                />
+              </g>
+            ) : (
+              <g opacity="0.3">
+                <circle cx={GRID_CENTER} cy={GRID_CENTER} r={MAX_RADIUS - 10} fill="none" stroke="#64748b" strokeWidth="1" strokeDasharray="3 3" />
+              </g>
+            )}
 
             {/* Center Node (YOU) */}
             <circle cx={GRID_CENTER} cy={GRID_CENTER} r="14" fill="#0ea5e9" opacity="0.2" />
@@ -496,18 +525,19 @@ export default function MeshSyncScanner({
 
           <div className="flex items-center justify-between px-1">
             <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+              <span className={`w-2 h-2 rounded-full ${hasBleHardware ? 'bg-cyan-400 animate-pulse' : 'bg-slate-400'}`} />
               <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 font-medium">
-                BLE Radio Active · Zero Passwords Required
+                {hasBleHardware ? 'BLE Radio Active · Zero Passwords Required' : 'Off-Grid Mesh Mode · Local DB Ready'}
               </p>
             </div>
 
             <button
               type="button"
               onClick={handleScanBluetooth}
-              className="text-[11px] text-cyan-600 dark:text-cyan-400 font-bold hover:underline cursor-pointer"
+              className={`text-[11px] font-bold hover:underline cursor-pointer ${hasBleHardware ? 'text-cyan-600 dark:text-cyan-400' : 'text-slate-500 dark:text-slate-400'}`}
+              title={hasBleHardware ? 'Pair a new Bluetooth phone' : 'Web Bluetooth is not supported in this browser'}
             >
-              + Pair New Phone
+              {hasBleHardware ? '+ Pair New Phone' : 'ℹ️ No Web BLE'}
             </button>
           </div>
         </div>

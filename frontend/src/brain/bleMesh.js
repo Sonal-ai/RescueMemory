@@ -229,7 +229,7 @@ function handleDiscoveredDevice(device, customMeta = {}) {
     device_name: device.name || `BLE Node (${device.id.slice(-4)})`,
     role: customMeta.role || 'survivor',
     status: 'active',
-    battery: customMeta.battery ?? 88,
+    battery: customMeta.battery != null ? customMeta.battery : undefined,
     rssi,
     distance_m: customMeta.distance_m ?? dist,
     bearing_deg: customMeta.bearing_deg ?? Math.floor(Math.random() * 360),
@@ -274,6 +274,26 @@ export async function syncWithBlePeer(peerOrDevice, localReports = [], myNodeId 
       server = await device.gatt.connect();
     } else {
       server = device.gatt;
+    }
+
+    // Attempt to read standard GATT Battery Service if available
+    try {
+      const battService = await server.getPrimaryService('battery_service');
+      const battChar = await battService.getCharacteristic('battery_level');
+      const val = await battChar.readValue();
+      const battPct = val.getUint8(0);
+      if (typeof battPct === 'number' && !Number.isNaN(battPct)) {
+        if (peerOrDevice && typeof peerOrDevice === 'object') {
+          peerOrDevice.battery = battPct;
+        }
+        const cached = activeBlePeers.get(`ble_${device.id.slice(0, 12).replace(/[^a-zA-Z0-9]/g, '')}`);
+        if (cached) {
+          cached.battery = battPct;
+        }
+        notifyListeners();
+      }
+    } catch {
+      // standard battery service not supported on this peripheral
     }
 
     // 2. Discover RescueMemory Primary Service

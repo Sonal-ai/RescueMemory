@@ -1066,7 +1066,15 @@ export async function updateDeviceLocation(locationData) {
   const myDeviceId = getDeviceId();
   const myRole = setting('role') || 'survivor';
   const myDeviceName = `Survivor Android (${myDeviceId.slice(-4)})`;
-  const batteryLevel = locationData?.battery ?? 88;
+  let batteryLevel = locationData?.battery;
+  if (batteryLevel == null && typeof navigator !== 'undefined' && navigator.getBattery) {
+    try {
+      const b = await navigator.getBattery();
+      batteryLevel = Math.round(b.level * 100);
+    } catch {
+      // ignore
+    }
+  }
   const statusStr = locationData?.status || 'active';
 
   try {
@@ -1076,7 +1084,7 @@ export async function updateDeviceLocation(locationData) {
       role: myRole,
       deviceName: myDeviceName,
       location: { lat, lon },
-      battery: batteryLevel,
+      ...(batteryLevel != null ? { battery: batteryLevel } : {}),
       unsyncedCount: unsynced.length,
     });
   } catch {
@@ -1093,7 +1101,7 @@ export async function updateDeviceLocation(locationData) {
           lat,
           lon,
           status: statusStr,
-          battery: batteryLevel,
+          ...(batteryLevel != null ? { battery: batteryLevel } : {}),
           node_id: myDeviceId,
           role: myRole,
           device_name: myDeviceName,

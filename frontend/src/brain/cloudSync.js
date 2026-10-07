@@ -162,32 +162,35 @@ export async function publishPresenceBeacon({
   role = 'survivor',
   deviceName = '',
   location = { lat: 28.7041, lon: 77.1025 },
-  battery = 90,
+  battery = undefined,
   unsyncedCount = 0,
 }) {
   if (!deviceId) return false;
   try {
     const pointId = await strToUuid(`beacon_${deviceId}`);
     const name = deviceName || `Android Mesh Node (${deviceId.slice(-4)})`;
+    const payload = {
+      id: `beacon_${deviceId}`,
+      node_id: deviceId,
+      kind: 'peer_beacon',
+      visibility: 'public',
+      device_name: name,
+      role,
+      location: {
+        lat: Number(location.lat || 28.7041),
+        lon: Number(location.lon || 77.1025),
+      },
+      unsynced_count: Number(unsyncedCount || 0),
+      last_seen: Date.now(),
+      status: 'active',
+    };
+    if (battery != null) {
+      payload.battery = Number(battery);
+    }
     const point = {
       id: pointId,
       vector: { dense: generateVector384(deviceId) },
-      payload: {
-        id: `beacon_${deviceId}`,
-        node_id: deviceId,
-        kind: 'peer_beacon',
-        visibility: 'public',
-        device_name: name,
-        role,
-        location: {
-          lat: Number(location.lat || 28.7041),
-          lon: Number(location.lon || 77.1025),
-        },
-        battery: Number(battery || 90),
-        unsynced_count: Number(unsyncedCount || 0),
-        last_seen: Date.now(),
-        status: 'active',
-      },
+      payload,
     };
 
     const res = await universalRequest(`${QDRANT_CLOUD_URL}/collections/${PUBLIC_EVENTS_COLLECTION}/points`, {
@@ -258,7 +261,7 @@ export async function queryPeerBeacons(myDeviceId, myLocation = { lat: 28.7041, 
         name: p.device_name || `Android Device (${p.node_id.slice(-4)})`,
         role: p.role || 'survivor',
         status: p.status || 'active',
-        battery: p.battery || 85,
+        battery: p.battery != null ? Number(p.battery) : undefined,
         last_seen: lastSeen,
         location: { lat: pLat, lon: pLon },
         distance_m: dist,
