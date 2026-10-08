@@ -1,3 +1,5 @@
+import { wireReport, validReport } from './meshProtocol.js';
+
 /**
  * RescueMemory Direct Cloud Mesh & Qdrant Sync Engine
  * 
@@ -289,42 +291,26 @@ export async function pushReportsToCloud(reports = []) {
   try {
     const publicPoints = [];
     const responderPoints = [];
-    const idMap = [];
 
     for (const rep of reports) {
       if (!rep || !rep.id) continue;
+      // Group records require their own authorized channel.
+      if (rep.visibility === 'group') continue;
+      const normalized = wireReport(rep);
+      if (!validReport(normalized)) continue;
       const pointId = await strToUuid(rep.id);
       const vector = generateVector384(rep.text || rep.kind || 'sos emergency');
-      const payload = {
-        id: rep.id,
-        entity_id: rep.entity_id || rep.id,
-        kind: rep.kind || 'sos',
-        visibility: rep.visibility || 'public',
-        severity: rep.severity || 'red',
-        status: rep.status || 'needs_help',
-        text: rep.text || '',
-        reporter_id: rep.reporter_id || 'survivor-mobile',
-        location: {
-          lat: Number(rep.location?.lat || 28.7041),
-          lon: Number(rep.location?.lon || 77.1025),
-        },
-        materials: rep.materials || [],
-        breathing: rep.breathing || null,
-        bleeding_type: rep.bleeding_type || null,
-        observed_at: rep.observed_at || rep.created_at || new Date().toISOString(),
-        created_at: rep.created_at || new Date().toISOString(),
-      };
+      const payload = normalized;
       const pt = {
         id: pointId,
         vector: { dense: vector },
         payload,
       };
-      if (rep.visibility === 'responders') {
+      if (payload.visibility === 'responders') {
         responderPoints.push(pt);
       } else {
         publicPoints.push(pt);
       }
-      idMap.push(rep.id);
     }
 
     if (publicPoints.length === 0 && responderPoints.length === 0) return [];
@@ -346,11 +332,9 @@ export async function pushReportsToCloud(reports = []) {
     const res1 = await pushBatch(PUBLIC_EVENTS_COLLECTION, publicPoints);
     const res2 = await pushBatch(RESPONDER_EVENTS_COLLECTION, responderPoints);
 
-    if (res1 || res2) {
-      console.log(`[CloudMesh] Successfully pushed ${idMap.length} report(s) to Qdrant Cloud.`);
-      return idMap;
-    }
-    return [];
+    // A success for an empty/public batch cannot acknowledge a failed private batch.
+    return [...(res1 ? publicPoints.map(p => p.payload.id) : []),
+      ...(res2 ? responderPoints.map(p => p.payload.id) : [])];
   } catch (err) {
     console.warn('[CloudMesh] pushReportsToCloud error:', err.message);
     return [];

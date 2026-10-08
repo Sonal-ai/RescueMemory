@@ -28,6 +28,7 @@ class Settings:
     @classmethod
     def from_env(cls) -> "Settings":
         load_dotenv(override=False)
+        load_dotenv(".env.responder", override=False)
         node_id = os.getenv("NODE_ID", "survivor-a")
         role = os.getenv("NODE_ROLE", "survivor")
         if role not in {"survivor", "volunteer", "central"}:

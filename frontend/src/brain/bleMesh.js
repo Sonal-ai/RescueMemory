@@ -1,482 +1,343 @@
-/**
- * RescueMemory Bluetooth Low Energy (BLE) Mesh Engine
- * 
- * Android BLE service discovery and one-way SOS delivery, with Web Bluetooth
- * helpers retained for supported peripheral browsers.
- */
-
-import { saveImportedReports } from './offlineStorage.js';
 import { Capacitor, registerPlugin } from '@capacitor/core';
+import { getAllLocalReports, commitMeshReports, recordMeshSent, saveTransferSession } from './offlineStorage.js';
+import { eligibleReports, reportHash, reportBatches, PROTOCOL_VERSION } from './meshProtocol.js';
+import { cachedMeshLocation, meshLocation } from './meshRadar.js';
+import { nonce, ephemeralKey, transcript, sessionKey, seal, unseal, signingBytes,
+  verifySignature, verifyResponder, verifySignedDocument, credentialTrustConfigured, cacheRevocations } from './meshSecurity.js';
 
 const nativeBle = registerPlugin('RescueBle');
 const onAndroid = Capacitor.getPlatform() === 'android';
-let nativeStarted = false;
-let nativeListener = null;
-
-// Dedicated 16-bit/128-bit RescueMemory BLE Service & Characteristic UUIDs
 export const RESCUE_BLE_SERVICE_UUID = '0000fe50-0000-1000-8000-00805f9b34fb';
-export const CHAR_BEACON_UUID = '0000fe51-0000-1000-8000-00805f9b34fb';      // Read/Notify: Node metadata & GPS
-export const CHAR_SYNC_RX_UUID = '0000fe52-0000-1000-8000-00805f9b34fb';     // Write/WriteWithoutResponse: Packet Ingest
-export const CHAR_SYNC_TX_UUID = '0000fe53-0000-1000-8000-00805f9b34fb';     // Read/Notify: Outgoing Packet Stream
+export const CHAR_BEACON_UUID = '0000fe51-0000-1000-8000-00805f9b34fb';
+export const CHAR_SYNC_RX_UUID = '0000fe52-0000-1000-8000-00805f9b34fb';
+export const CHAR_SYNC_TX_UUID = '0000fe53-0000-1000-8000-00805f9b34fb';
+const peers = new Map(), listeners = new Set(), sessions = new Map(), messageQueues = new Map();
+let startup = null, attachment = null, attached = false, queue = Promise.resolve(), identityPromise = null;
+const serialize = fn => { const work = queue.then(fn); queue = work.catch(() => {}); return work; };
+const dispatch = (name, detail) => window.dispatchEvent(new CustomEvent(name, { detail }));
+const notify = () => listeners.forEach(fn => fn(getActiveBlePeers()));
+export const isNativeBle = () => onAndroid;
+export const isBluetoothSupported = () => onAndroid;
+export const onBlePeersChange = fn => { listeners.add(fn); return () => listeners.delete(fn); };
 
-// In-memory cache of discovered Bluetooth peers
-const activeBlePeers = new Map();
-const activeConnections = new Map();
-const listeners = new Set();
-
-/**
- * Checks whether Bluetooth Low Energy (Web Bluetooth / native BLE) is supported on this platform.
- */
-export function isBluetoothSupported() {
-  if (typeof window === 'undefined') return false;
-  return onAndroid;
+export async function ensureMeshIdentity() {
+  if (!onAndroid) return { node_id: localStorage.getItem('rescue.device_id') };
+  if (!identityPromise) identityPromise = nativeBle.getIdentity({ nodeId: localStorage.getItem('rescue.device_id'),
+    name: sessionStorage.getItem('rescue.reporterId') || 'RescueMemory phone' }).then(identity => {
+    localStorage.setItem('rescue.device_id', identity.node_id); return identity;
+  }).catch(error => { identityPromise = null; throw error; });
+  return identityPromise;
 }
 
-export function isNativeBle() { return onAndroid; }
+export async function getPhoneBattery() {
+  if (onAndroid) return nativeBle.getBattery();
+  if (navigator.getBattery) {
+    const battery = await navigator.getBattery();
+    return { battery: Math.round(battery.level * 100), charging: battery.charging, battery_measured_at: Date.now() };
+  }
+  return { battery: null };
+}
+
+export async function publishMeshLocation(value) {
+  const location = meshLocation(value?.location || value);
+  if (!location) return;
+  localStorage.setItem('rescue.meshLocation', JSON.stringify(location));
+  if (onAndroid) await nativeBle.setLocation({ location });
+  return location;
+}
+
+export async function getPhoneTelemetry() {
+  return { ...await getPhoneBattery(), location: cachedMeshLocation() };
+}
+
+export async function getResponderCredentialStatus() {
+  const identity = await ensureMeshIdentity();
+  const claims = identity.certificate ? await verifySignedDocument(identity.certificate).catch(() => null) : null;
+  return { configured: credentialTrustConfigured(), enrolled: !!identity.certificate,
+    verified: onAndroid && await verifyResponder(identity), expires: claims?.expires ? claims.expires * 1000 : null };
+}
+
+export async function enrollResponder(baseUrl, secret, request) {
+  if (!onAndroid) throw new Error('Enroll using the Android app on the responder phone.');
+  if (!credentialTrustConfigured()) throw new Error('This APK needs the command issuer public key configured before enrollment.');
+  if (!baseUrl.startsWith('https://') && !/^http:\/\/(localhost|127\.0\.0\.1|10\.0\.2\.2)(:|\/|$)/.test(baseUrl))
+    throw new Error('Responder enrollment requires HTTPS (or a local development backend).');
+  const identity = await ensureMeshIdentity();
+  const headers = { 'Content-Type': 'application/json', 'X-Credential-Admin-Key': secret };
+  const endpoint = `${baseUrl.replace(/\/$/, '')}/api/responder-credentials`;
+  const fetchJson = async (path, body) => {
+    const res = await request(`${endpoint}${path}`, { method: 'POST', headers, body, timeout: 10000 });
+    const data = await res.json(); if (!res.ok) throw new Error(data.detail || 'Responder enrollment failed.'); return data;
+  };
+  const challenge = await fetchJson('/challenge', { node_id: identity.node_id, public_key: identity.public_key });
+  const proof = await nativeBle.sign({ data: challenge.challenge });
+  const { certificate } = await fetchJson('/enroll', { challenge: challenge.challenge, signature: proof.signature });
+  if (!await verifyResponder({ ...identity, certificate })) throw new Error('Credential is not signed by this APK’s trusted command issuer.');
+  await nativeBle.setCredential({ certificate }); identityPromise = null;
+  await refreshResponderRevocations(baseUrl, request);
+  return getResponderCredentialStatus();
+}
+
+export async function refreshResponderRevocations(baseUrl, request) {
+  if (!credentialTrustConfigured()) return;
+  const response = await request(`${baseUrl.replace(/\/$/, '')}/api/responder-credentials/revocations`, { timeout: 5000 });
+  if (!response.ok) throw new Error('Could not update responder revocations. Cached verification remains available.');
+  await cacheRevocations(await response.json());
+}
+
+const sign = async text => {
+  const proof = await nativeBle.sign({ data: signingBytes(text) });
+  const identity = await ensureMeshIdentity();
+  if (proof.public_key && proof.public_key !== identity.public_key) {
+    identityPromise = null;
+    throw new Error('This phone’s identity key changed. Close Mesh Sync, reopen it, and retry.');
+  }
+  return proof.signature;
+};
+
+async function verifyPhoneProof(publicKey, signature, text) {
+  if (!onAndroid) return verifySignature(publicKey, signature, new TextEncoder().encode(text));
+  const result = await nativeBle.verifyPhoneProof({ publicKey, signature, data: signingBytes(text) });
+  return result.valid === true;
+}
+const resultFor = (id, peerId) => ({ id, peer_id: peerId, transport: 'bluetooth', sent: 0, received: 0,
+  duplicates: 0, conflicts: 0, pending: 0, status: 'syncing', started_at: new Date().toISOString() });
+
+async function inventory(reports) {
+  return Promise.all(reports.map(async r => ({ id: r.id, hash: await reportHash(r) })));
+}
+async function finishIncoming(address, error) {
+  const session = sessions.get(address);
+  if (!session) return;
+  sessions.delete(address); clearTimeout(session.timer);
+  if (session.authorized) {
+    session.result.status = error || session.result.conflicts || session.result.pending ? 'partial' : 'complete';
+    if (error) session.result.error = error;
+    await saveTransferSession(session.result);
+    dispatch('rescue:ble-received', { imported: session.result.received, result: session.result });
+  }
+}
+
+async function handleMessage(address, message) {
+  if (message.v !== PROTOCOL_VERSION) throw new Error('Update required on both phones.');
+  if (message.type === 'hello') {
+    if (document.hidden) throw new Error('Open Mesh Sync on the receiving phone to exchange reports.');
+    if (sessions.size >= 32 || !message.identity?.node_id || typeof message.nonce !== 'string' || typeof message.ephemeral !== 'string')
+      throw new Error('Invalid handshake or too many connections.');
+    await finishIncoming(address, 'A new connection replaced the previous exchange.');
+    const identity = await ensureMeshIdentity();
+    if (message.identity.node_id === identity.node_id) throw new Error('Cannot sync this phone with itself.');
+    const ephemeral = await ephemeralKey();
+    const reply = { v: 2, type: 'hello', session_id: crypto.randomUUID(), identity, nonce: nonce(), ephemeral: ephemeral.public_key,
+      metadata: await getPhoneTelemetry() };
+    const text = transcript(message, reply); reply.proof = await sign(text);
+    const session = { id: reply.session_id, peerId: message.identity.node_id, localId: identity.node_id,
+      key: await sessionKey(ephemeral.privateKey, message.ephemeral, text), inbound: 0, outbound: 0, text,
+      remoteIdentity: message.identity, remoteMetadata: message.metadata, authorized: false,
+      result: resultFor(reply.session_id, message.identity.node_id), offered: new Set() };
+    session.timer = setTimeout(() => finishIncoming(address, 'Exchange timed out. Retry to continue.').catch(() => {}), 180000);
+    sessions.set(address, session); return reply;
+  }
+  const session = sessions.get(address);
+  if (!session) throw new Error('Sync session expired. Retry to continue.');
+  const request = await unseal(session, message);
+  if (request.action === 'authorize') {
+    if (session.authorized || !await verifyPhoneProof(session.remoteIdentity.public_key, request.proof, session.text))
+      throw new Error('Phone identity proof failed.');
+    session.authorized = true;
+    session.reports = eligibleReports(await getAllLocalReports());
+    session.inventory = await inventory(session.reports);
+    const previous = peers.get(session.peerId);
+    remember({ ...session.remoteMetadata, ...session.remoteIdentity, v: 2 }, { address, rssi: previous?.rssi });
+    await saveTransferSession(session.result);
+    return seal(session, { authorized: true });
+  }
+  if (!session.authorized) throw new Error('Phone is not authorized.');
+  let response;
+  switch (request.action) {
+    case 'inventory': {
+      const offset = Number.isSafeInteger(request.offset) && request.offset >= 0 ? request.offset : 0;
+      response = { items: session.inventory.slice(offset, offset + 128), more: offset + 128 < session.inventory.length }; break;
+    }
+    case 'get': {
+      if (!Array.isArray(request.ids) || request.ids.length > 32) throw new Error('Invalid report request.');
+      const ids = new Set(request.ids);
+      const reports = session.reports.filter(r => ids.has(r.id));
+      // Return one byte-bounded batch; the caller requests the remaining IDs again.
+      const batch = reportBatches(reports)[0] || [];
+      batch.forEach(r => session.offered.add(r.id)); response = { reports: batch }; break;
+    }
+    case 'put': {
+      if (!Array.isArray(request.reports) || request.reports.length > 128) throw new Error('Invalid report batch.');
+      response = await commitMeshReports(request.reports, { sessionId: session.id, peerId: session.peerId });
+      session.result.received += response.received; session.result.duplicates += response.duplicates; session.result.conflicts += response.conflicts;
+      await saveTransferSession(session.result); break;
+    }
+    case 'ack': {
+      if (!Array.isArray(request.ids) || request.ids.some(id => !session.offered.has(id))) throw new Error('Invalid receipt.');
+      await recordMeshSent(request.ids, session.id, session.peerId);
+      request.ids.forEach(id => session.offered.delete(id)); session.result.sent += request.ids.length;
+      await saveTransferSession(session.result); response = { acknowledged: true }; break;
+    }
+    case 'done': response = { complete: true }; break;
+    default: throw new Error('Unknown sync operation.');
+  }
+  const envelope = await seal(session, response);
+  if (request.action === 'done') await finishIncoming(address);
+  return envelope;
+}
 
 export async function startBleReceiver() {
   if (!onAndroid) return false;
-  if (!nativeListener) {
-    nativeListener = await nativeBle.addListener('packet', async ({ payload }) => {
-      try {
-        const packet = JSON.parse(payload);
-        if (packet.k !== 'rm_ble_packet' || !Array.isArray(packet.e)) return;
-        const reports = packet.e.filter(e => e && e.id && Array.isArray(e.l)).map(e => ({
-          id: e.id,
-          kind: e.k || 'sos',
-          text: e.t || '',
-          location: { lat: e.l[0], lon: e.l[1] },
-          severity: e.v || 'red',
-          status: e.s || 'needs_help',
-          created_at: e.ts || new Date().toISOString(),
-          reporter_id: packet.s || 'ble-peer'
-        }));
-        const imported = await saveImportedReports(reports, { markForRelay: true });
-        window.dispatchEvent(new CustomEvent('rescue:ble-received', { detail: { imported } }));
-      } catch (error) {
-        console.warn('[BLE] Rejected malformed incoming SOS packet:', error);
-      }
+  await ensureMeshIdentity();
+  const location = cachedMeshLocation();
+  if (location) await nativeBle.setLocation({ location });
+  if (!attached) {
+    if (!attachment) attachment = (async () => {
+    await nativeBle.addListener('message', ({ address, message_id: messageId, payload }) => {
+      const work = (messageQueues.get(address) || Promise.resolve()).catch(() => {}).then(async () => {
+        let response;
+        try { response = await handleMessage(address, JSON.parse(payload)); }
+        catch (error) { response = { v: 2, error: error.message }; await finishIncoming(address, error.message); }
+        await nativeBle.reply({ address, messageId, payload: JSON.stringify(response) });
+      }).catch(error => console.warn('[BLE] Response unavailable:', error.message));
+      messageQueues.set(address, work);
+      work.finally(() => { if (messageQueues.get(address) === work) messageQueues.delete(address); });
     });
+    await nativeBle.addListener('disconnected', ({ address }) => {
+      const work = messageQueues.get(address) || Promise.resolve();
+      work.catch(() => {}).then(() => finishIncoming(address, 'Nearby phone disconnected. Retry to continue.')).catch(() => {});
+    });
+    await nativeBle.addListener('state', ({ ready }) => {
+      if (!ready) { startup = null; dispatch('rescue:ble-state', { ready: false }); }
+    });
+    attached = true;
+    })().catch(error => { attachment = null; throw error; });
+    await attachment;
   }
-  if (!nativeStarted) {
-    await nativeBle.start();
-    nativeStarted = true;
-  }
-  return true;
+  if (!startup) startup = nativeBle.start().catch(error => { startup = null; throw error; });
+  await startup; return true;
 }
 
-/** A real, finite BLE scan on Android; Web Bluetooth uses its permission chooser. */
+export async function stopBleReceiver() {
+  if (!onAndroid) return;
+  return serialize(async () => {
+    for (const address of sessions.keys()) await finishIncoming(address, 'Mesh Sync page closed.');
+    await nativeBle.stop(); startup = null;
+  });
+}
+
+function remember(meta, observed) {
+  const id = meta.node_id || `unresolved_${observed.address}`;
+  if (meta.node_id === localStorage.getItem('rescue.device_id')) return;
+  peers.delete(`unresolved_${observed.address}`);
+  const old = peers.get(id);
+  const peer = { ...old, ...meta, node_id: id, address: observed.address, device_id: observed.address,
+    name: meta.name || observed.name, device_name: meta.name || observed.name, rssi: observed.rssi,
+    distance_m: rssiToDistance(observed.rssi), last_seen_epoch: Date.now(), source: 'native_ble',
+    is_online: true, sync_ready: meta.v === 2,
+    device_ref: { native: true, id: observed.address } };
+  peers.set(id, peer); notify(); return peer;
+}
+
 export async function scanForNearbyPhones() {
-  if (onAndroid) {
-    await startBleReceiver();
-    const result = await nativeBle.scan();
-    for (const peer of result.peers || []) {
-      handleDiscoveredDevice({ id: peer.address, name: peer.name, native: true }, { rssi: peer.rssi });
-    }
-    return result.peers || [];
-  }
-  throw new Error('Phone-to-phone BLE discovery is available in the Android app. Use QR transfer in a browser.');
-}
-
-/**
- * Subscribe to BLE peer list updates.
- */
-export function onBlePeersChange(callback) {
-  listeners.add(callback);
-  return () => listeners.delete(callback);
-}
-
-function notifyListeners() {
-  const list = Array.from(activeBlePeers.values());
-  for (const cb of listeners) {
-    try {
-      cb(list);
-    } catch {
-      // ignore
-    }
-  }
-}
-
-/**
- * Converts Bluetooth RSSI signal strength (dBm) to an estimated distance in meters.
- * Path loss model: Distance = 10 ^ ((Measured Power (-59) - RSSI) / (10 * N (2.5)))
- */
-export function rssiToDistance(rssi = -65) {
-  if (rssi == null || Number.isNaN(rssi)) return 15;
-  const measuredPower = -59; // RSSI at 1 meter for typical mobile BLE
-  const pathLossFactor = 2.4;
-  const ratio = (measuredPower - rssi) / (10 * pathLossFactor);
-  const dist = Math.pow(10, ratio);
-  return Math.max(1, Math.min(150, Math.round(dist)));
-}
-
-/**
- * Converts RSSI to a human-readable signal quality string.
- */
-export function rssiToQuality(rssi = -65) {
-  if (rssi >= -60) return { label: 'Strong', color: 'emerald', bars: 3 };
-  if (rssi >= -78) return { label: 'Good', color: 'cyan', bars: 2 };
-  return { label: 'Weak', color: 'amber', bars: 1 };
-}
-
-/**
- * Formats a compact BLE mesh payload for rapid transfer.
- */
-export function createBlePacket(reports = [], myNodeId = 'node', myLoc = { lat: 28.7041, lon: 77.1025 }) {
-  return {
-    k: 'rm_ble_packet',
-    s: myNodeId,
-    t: Date.now(),
-    l: [Number((myLoc.lat || 28.7041).toFixed(5)), Number((myLoc.lon || 77.1025).toFixed(5))],
-    e: (reports || []).map((r) => ({
-      id: r.id,
-      k: r.kind || 'sos',
-      t: r.text || '',
-      l: [
-        Number((r.location?.lat || myLoc.lat || 28.7041).toFixed(5)),
-        Number((r.location?.lon || myLoc.lon || 77.1025).toFixed(5))
-      ],
-      v: r.severity || 'red',
-      s: r.status || 'needs_help',
-      ts: r.created_at || new Date().toISOString()
-    }))
-  };
-}
-
-/**
- * Splits a packet into MTU-safe chunks (240 bytes) with a 4-byte header:
- * [packetId (2B), chunkIndex (1B), totalChunks (1B), payload (<=236B)]
- */
-export function chunkData(dataString, chunkSize = 236) {
-  const encoder = new TextEncoder();
-  const bytes = encoder.encode(dataString);
-  const totalChunks = Math.ceil(bytes.length / chunkSize);
-  const chunks = [];
-  const packetId = Math.floor(Math.random() * 65535);
-
-  for (let i = 0; i < totalChunks; i++) {
-    const start = i * chunkSize;
-    const slice = bytes.subarray(start, start + chunkSize);
-    const chunk = new Uint8Array(4 + slice.length);
-    chunk[0] = (packetId >> 8) & 0xff;
-    chunk[1] = packetId & 0xff;
-    chunk[2] = i;
-    chunk[3] = totalChunks;
-    chunk.set(slice, 4);
-    chunks.push(chunk);
-  }
-
-  return chunks;
-}
-
-/**
- * Reassembles packet chunks into full data string.
- */
-export class PacketReassembler {
-  constructor() {
-    this.buffer = new Map(); // packetId -> { total, chunks: Map<idx, Uint8Array> }
-  }
-
-  addChunk(chunkBytes) {
-    if (chunkBytes.length < 4) return null;
-    const packetId = (chunkBytes[0] << 8) | chunkBytes[1];
-    const index = chunkBytes[2];
-    const total = chunkBytes[3];
-    const payload = chunkBytes.subarray(4);
-
-    let session = this.buffer.get(packetId);
-    if (!session) {
-      session = { total, chunks: new Map(), createdAt: Date.now() };
-      this.buffer.set(packetId, session);
-    }
-
-    session.chunks.set(index, payload);
-
-    if (session.chunks.size === total) {
-      // Reassemble complete packet
-      let totalLength = 0;
-      for (let i = 0; i < total; i++) {
-        totalLength += session.chunks.get(i).length;
-      }
-      const fullBytes = new Uint8Array(totalLength);
-      let offset = 0;
-      for (let i = 0; i < total; i++) {
-        const part = session.chunks.get(i);
-        fullBytes.set(part, offset);
-        offset += part.length;
-      }
-      this.buffer.delete(packetId);
-      const decoder = new TextDecoder();
-      return decoder.decode(fullBytes);
-    }
-
-    // Cleanup stale incomplete packets (> 30s)
-    const now = Date.now();
-    for (const [pid, s] of this.buffer.entries()) {
-      if (now - s.createdAt > 30000) this.buffer.delete(pid);
-    }
-
-    return null;
-  }
-}
-
-const reassembler = new PacketReassembler();
-
-/**
- * Initiates user-gesture Bluetooth scan dialog and pairs with nearby BLE devices.
- */
-export async function requestBleDevice() {
-  if (!isBluetoothSupported()) {
-    throw new Error('Bluetooth is not supported or disabled on this browser/device.');
-  }
-
-  try {
-    const device = await navigator.bluetooth.requestDevice({
-      filters: [
-        { services: [RESCUE_BLE_SERVICE_UUID] },
-        { namePrefix: 'Rescue' },
-        { namePrefix: 'Android' }
-      ],
-      optionalServices: [RESCUE_BLE_SERVICE_UUID, 'battery_service', 'device_information']
-    });
-
-    handleDiscoveredDevice(device);
-    return device;
-  } catch (err) {
-    // If filtered scan fails (e.g. device without pre-advertised service), allow scanning all devices
-    if (err.name === 'NotFoundError' || err.message?.includes('User cancelled')) {
-      throw err;
-    }
-
-    try {
-      const device = await navigator.bluetooth.requestDevice({
-        acceptAllDevices: true,
-        optionalServices: [RESCUE_BLE_SERVICE_UUID, 'battery_service', 'device_information']
-      });
-      handleDiscoveredDevice(device);
-      return device;
-    } catch (fallbackErr) {
-      throw fallbackErr;
-    }
-  }
-}
-
-/**
- * Internal handler to register a discovered Bluetooth device.
- */
-function handleDiscoveredDevice(device, customMeta = {}) {
-  if (!device || !device.id) return;
-
-  const nodeId = `ble_${device.id.slice(0, 12).replace(/[^a-zA-Z0-9]/g, '')}`;
-  const now = Date.now();
-  const rssi = customMeta.rssi ?? -62;
-  const dist = rssiToDistance(rssi);
-
-  const peer = {
-    node_id: nodeId,
-    device_id: device.id,
-    name: device.name || `BLE Node (${device.id.slice(-4)})`,
-    device_name: device.name || `BLE Node (${device.id.slice(-4)})`,
-    role: customMeta.role || 'survivor',
-    status: 'active',
-    battery: customMeta.battery != null ? customMeta.battery : undefined,
-    rssi: customMeta.rssi,
-    distance_m: customMeta.rssi == null ? undefined : (customMeta.distance_m ?? dist),
-    bearing_deg: customMeta.bearing_deg,
-    cardinal: customMeta.cardinal,
-    last_seen_epoch: now,
-    is_online: true,
-    source: device.native ? 'native_ble' : 'web_ble',
-    device_ref: device
-  };
-
-  activeBlePeers.set(nodeId, peer);
-
-  // Monitor disconnection event
-  if (device.addEventListener) {
-    device.addEventListener('gattserverdisconnected', () => {
-      peer.is_online = false;
-      activeConnections.delete(nodeId);
-      notifyListeners();
-    });
-  }
-
-  notifyListeners();
-  return peer;
-}
-
-/**
- * Connects to a target BLE device's GATT server and performs lightning-fast report sync.
- */
-export async function syncWithBlePeer(peerOrDevice, localReports = [], myNodeId = 'local_node', myLoc = { lat: 28.7041, lon: 77.1025 }) {
-  const device = peerOrDevice.device_ref || peerOrDevice;
-  if (device.native && onAndroid) {
-    await startBleReceiver();
-    const latestReports = [...localReports].sort((a, b) => (a.created_at || '').localeCompare(b.created_at || '')).slice(-4);
-    const packet = createBlePacket(latestReports.map(report => ({
-      ...report, text: (report.text || '').slice(0, 220)
-    })), myNodeId, myLoc);
-    await nativeBle.send({ address: device.id, payload: JSON.stringify(packet) });
-    return { success: true, synced: packet.e.length, imported: 0, peer_name: device.name, speed: undefined };
-  }
-  if (!device || !device.gatt) {
-    throw new Error('Invalid Bluetooth device reference');
-  }
-
-  let server = null;
-  let importedCount = 0;
-  let sentCount = 0;
-
-  try {
-    // 1. Connect GATT Server
-    if (!device.gatt.connected) {
-      server = await device.gatt.connect();
-    } else {
-      server = device.gatt;
-    }
-
-    // Attempt to read standard GATT Battery Service if available
-    try {
-      const battService = await server.getPrimaryService('battery_service');
-      const battChar = await battService.getCharacteristic('battery_level');
-      const val = await battChar.readValue();
-      const battPct = val.getUint8(0);
-      if (typeof battPct === 'number' && !Number.isNaN(battPct)) {
-        if (peerOrDevice && typeof peerOrDevice === 'object') {
-          peerOrDevice.battery = battPct;
-        }
-        const cached = activeBlePeers.get(`ble_${device.id.slice(0, 12).replace(/[^a-zA-Z0-9]/g, '')}`);
-        if (cached) {
-          cached.battery = battPct;
-        }
-        notifyListeners();
-      }
-    } catch {
-      // standard battery service not supported on this peripheral
-    }
-
-    // 2. Discover RescueMemory Primary Service
-    let service = null;
-    try {
-      service = await server.getPrimaryService(RESCUE_BLE_SERVICE_UUID);
-    } catch {
-      // If custom service not exposed on remote GATT, use fallback transmission
-    }
-
-    if (service) {
-      // 3. Write unsynced reports to RX characteristic with MTU chunk streaming
-      if (localReports.length > 0) {
-        try {
-          const rxChar = await service.getCharacteristic(CHAR_SYNC_RX_UUID);
-          const payload = JSON.stringify(createBlePacket(localReports, myNodeId, myLoc));
-          const chunks = chunkData(payload, 236);
-
-          for (const chunk of chunks) {
-            if (rxChar.writeValueWithoutResponse) {
-              await rxChar.writeValueWithoutResponse(chunk);
-            } else {
-              await rxChar.writeValue(chunk);
-            }
-          }
-          sentCount = localReports.length;
-        } catch (txErr) {
-          console.warn('[BLE Mesh] TX characteristic write notice:', txErr);
-        }
-      }
-
-      // 4. Read incoming reports from TX characteristic
+  if (!onAndroid) throw new Error('Nearby Bluetooth sync requires the Android app.');
+  return serialize(async () => {
+    await startBleReceiver(); const result = await nativeBle.scan(); const found = [];
+    for (const observed of result.peers || []) {
       try {
-        const txChar = await service.getCharacteristic(CHAR_SYNC_TX_UUID);
-        const dataView = await txChar.readValue();
-        const rawBytes = new Uint8Array(dataView.buffer);
-        const assembledJson = reassembler.addChunk(rawBytes);
-
-        if (assembledJson) {
-          const parsed = JSON.parse(assembledJson);
-          if (Array.isArray(parsed.e)) {
-            const eventsToSave = parsed.e.map((ev) => ({
-              id: ev.id,
-              kind: ev.k || 'sos',
-              text: ev.t || '',
-              location: Array.isArray(ev.l) ? { lat: ev.l[0], lon: ev.l[1] } : myLoc,
-              severity: ev.v || 'red',
-              status: ev.s || 'needs_help',
-              created_at: ev.ts || new Date().toISOString(),
-              reporter_id: parsed.s || 'ble-peer'
-            }));
-            importedCount = await saveImportedReports(eventsToSave);
-          }
+        const meta = await nativeBle.connect({ address: observed.address });
+        const peer = remember(meta, observed); if (peer) found.push(peer);
+      } catch (error) {
+        if (error.message?.includes('Update required')) { const peer = remember({ v: 1, error: error.message }, observed); if (peer) found.push(peer); }
+        else {
+          const existing = [...peers.values()].find(p => p.address === observed.address);
+          if (existing) { existing.last_seen_epoch = Date.now(); existing.error = error.message; found.push(existing); }
         }
-      } catch (rxErr) {
-        console.warn('[BLE Mesh] RX characteristic read notice:', rxErr);
+      } finally { await nativeBle.disconnect().catch(() => {}); }
+    }
+    notify(); return found;
+  });
+}
+
+export async function syncWithBlePeer(peer) {
+  if (!onAndroid || !peer.sync_ready) throw new Error('Update required on both Android phones.');
+  return serialize(async () => {
+    let result, session;
+    try {
+      await startBleReceiver();
+      const meta = await nativeBle.connect({ address: peer.address });
+      const identity = await ensureMeshIdentity(), ephemeral = await ephemeralKey();
+      const hello = { v: 2, type: 'hello', identity, nonce: nonce(), ephemeral: ephemeral.public_key,
+        metadata: await getPhoneTelemetry() };
+      const exchange = async message => {
+        const response = await nativeBle.exchange({ payload: JSON.stringify(message) });
+        const reply = JSON.parse(response.payload); if (reply.error) throw new Error(reply.error); return reply;
+      };
+      const reply = await exchange(hello);
+      if (reply.type !== 'hello' || reply.identity?.node_id !== peer.node_id || reply.identity.node_id === identity.node_id)
+        throw new Error('Nearby phone identity changed. Scan again.');
+      const text = transcript(hello, reply);
+      if (!await verifyPhoneProof(reply.identity.public_key, reply.proof, text)) throw new Error('Nearby phone identity proof failed. Update both phones and retry.');
+      session = { id: reply.session_id, localId: identity.node_id, peerId: reply.identity.node_id,
+        inbound: 0, outbound: 0, key: await sessionKey(ephemeral.privateKey, reply.ephemeral, text) };
+      result = resultFor(session.id, peer.node_id); await saveTransferSession(result);
+      const rpc = async message => unseal(session, await exchange(await seal(session, message)));
+      await rpc({ action: 'authorize', proof: await sign(text) });
+      Object.assign(peer, meta, reply.metadata, { node_id: reply.identity.node_id, last_seen_epoch: Date.now(), error: null });
+      peers.set(peer.node_id, peer); notify();
+      const local = eligibleReports(await getAllLocalReports());
+      const localInventory = new Map((await inventory(local)).map(item => [item.id, item.hash]));
+      const remote = [];
+      for (let offset = 0; ; offset += 128) { const page = await rpc({ action: 'inventory', offset });
+        if (!Array.isArray(page.items) || remote.length > 100000) throw new Error('Invalid remote inventory.');
+        remote.push(...page.items); if (!page.more) break;
       }
-    } else {
-      throw new Error('This Bluetooth device does not run RescueMemory and cannot receive SOS reports.');
-    }
-
-    // Update peer last seen & status
-    const nodeId = peerOrDevice.node_id || `ble_${device.id?.slice(0, 8)}`;
-    const existing = activeBlePeers.get(nodeId);
-    if (existing) {
-      existing.last_seen_epoch = Date.now();
-      existing.is_online = true;
-      existing.rssi = -55; // Upgraded signal after successful handshake
-      notifyListeners();
-    }
-
-    return {
-      success: true,
-      synced: sentCount,
-      imported: importedCount,
-      peer_name: device.name || 'Bluetooth Device',
-      speed: undefined
-    };
-  } finally {
-    // Keep connection alive for mesh relay, or disconnect gracefully
-  }
+      const remoteIds = new Map(remote.map(item => [item.id, item.hash]));
+      result.duplicates = remote.filter(item => localInventory.get(item.id) === item.hash).length;
+      const confirmed = remote.filter(item => localInventory.get(item.id) === item.hash).map(item => item.id);
+      if (confirmed.length) await recordMeshSent(confirmed, session.id, peer.node_id, 'confirmed');
+      result.conflicts = remote.filter(item => localInventory.has(item.id) && localInventory.get(item.id) !== item.hash).length;
+      const outgoing = local.filter(r => !remoteIds.has(r.id));
+      const needed = remote.filter(item => !localInventory.has(item.id)).map(item => item.id);
+      result.pending = outgoing.length + needed.length; await saveTransferSession(result);
+      for (const batch of reportBatches(outgoing)) {
+        const ack = await rpc({ action: 'put', reports: batch });
+        if (!Array.isArray(ack.acceptedIds) || ack.acceptedIds.some(id => !batch.some(r => r.id === id))) throw new Error('Invalid storage acknowledgement.');
+        await recordMeshSent(ack.acceptedIds, session.id, peer.node_id);
+        result.sent += ack.acceptedIds.length; result.pending -= ack.acceptedIds.length; result.conflicts += ack.conflicts || 0;
+        await saveTransferSession(result);
+      }
+      while (needed.length) {
+        const requested = needed.slice(0, 32), data = await rpc({ action: 'get', ids: requested });
+        if (!data.reports?.length || data.reports.some(r => !requested.includes(r.id))) throw new Error('Incomplete remote report response.');
+        const committed = await commitMeshReports(data.reports, { sessionId: session.id, peerId: peer.node_id });
+        await rpc({ action: 'ack', ids: committed.acceptedIds });
+        const returned = new Set(data.reports.map(r => r.id));
+        for (let i = needed.length - 1; i >= 0; i--) if (returned.has(needed[i])) needed.splice(i, 1);
+        result.received += committed.received; result.duplicates += committed.duplicates; result.conflicts += committed.conflicts;
+        result.pending -= committed.acceptedIds.length; await saveTransferSession(result);
+      }
+      await rpc({ action: 'done' }); result.status = result.pending || result.conflicts ? 'partial' : 'complete';
+      peer.last_sync = result; await saveTransferSession(result); notify();
+      dispatch('rescue:ble-received', { imported: result.received, result });
+      return { ...result, success: result.status === 'complete', synced: result.sent, imported: result.received, mode: 'bluetooth_ble' };
+    } catch (error) {
+      peer.error = error.message;
+      if (result) { result.status = 'partial'; result.error = error.message; await saveTransferSession(result); }
+      notify(); throw error;
+    } finally { await nativeBle.disconnect().catch(() => {}); }
+  });
 }
 
-/**
- * Returns all active discovered Bluetooth peers.
- */
 export function getActiveBlePeers() {
-  const now = Date.now();
-  const list = [];
-  for (const [id, peer] of activeBlePeers.entries()) {
-    // Expire devices not seen in 5 minutes
-    if (now - peer.last_seen_epoch < 300000) {
-      list.push(peer);
-    } else {
-      activeBlePeers.delete(id);
-    }
-  }
-  return list;
+  for (const [id, peer] of peers) if (Date.now() - peer.last_seen_epoch >= 300000) peers.delete(id);
+  return [...peers.values()].map(p => ({ ...p, available: Date.now() - p.last_seen_epoch < 60000, is_online: Date.now() - p.last_seen_epoch < 60000 }));
 }
-
-/**
- * Registers an autonomous synthetic or simulated local Bluetooth beacon.
- * Enables zero-hardware development & testing on laptops / simulators.
- */
-export function registerSimulatedBlePeer(peerMeta = {}) {
-  const id = peerMeta.node_id || `ble_sim_${Math.random().toString(36).slice(2, 7)}`;
-  const peer = {
-    node_id: id,
-    device_id: id,
-    name: peerMeta.name || `Survivor BLE (${id.slice(-4)})`,
-    device_name: peerMeta.name || `Survivor BLE (${id.slice(-4)})`,
-    role: peerMeta.role || 'survivor',
-    status: 'active',
-    battery: peerMeta.battery ?? 84,
-    rssi: peerMeta.rssi ?? -58,
-    distance_m: peerMeta.distance_m ?? 18,
-    bearing_deg: peerMeta.bearing_deg ?? 42,
-    cardinal: peerMeta.cardinal ?? 'NE',
-    last_seen_epoch: Date.now(),
-    is_online: true,
-    source: 'ble_mesh',
-    location: peerMeta.location || { lat: 28.7055, lon: 77.1035 }
-  };
-  activeBlePeers.set(id, peer);
-  notifyListeners();
-  return peer;
+export function rssiToDistance(rssi) {
+  if (!Number.isFinite(rssi)) return undefined;
+  return Math.max(1, Math.min(150, Math.round(10 ** ((-59 - rssi) / 24))));
 }
+export function rssiToQuality(rssi) { return rssi >= -60 ? { label: 'Strong', bars: 3 } : rssi >= -78 ? { label: 'Good', bars: 2 } : { label: 'Weak', bars: 1 }; }
+export const requestBleDevice = scanForNearbyPhones;
+export function registerSimulatedBlePeer() { throw new Error('Simulated phones are not included in real device discovery.'); }

@@ -6,7 +6,7 @@ import {
   triggerAutoSync,
   onSyncStateChange,
 } from './brain/offlineBrain.js';
-import { getAllLocalReports, getUnsyncedReports, getAllLocalGuides } from './brain/offlineStorage.js';
+import { getAllLocalReports, getUnsyncedReports, getAllLocalGuides, saveOfflineReport, markReportsSynced } from './brain/offlineStorage.js';
 import {
   distM,
   bearingDeg,
@@ -29,6 +29,8 @@ import {
   requestBleDevice,
   registerSimulatedBlePeer
 } from './brain/bleMesh.js';
+import { ensureMeshIdentity, getPhoneBattery, publishMeshLocation } from './brain/bleMesh.js';
+import { mergePeers } from './brain/meshProtocol.js';
 
 export {
   distM,
@@ -301,6 +303,16 @@ export async function api(path, options = {}) {
 
     // Network call succeeded - we are connected to edge node / hub
     setStandaloneMode(false);
+    if (path === '/api/reports' && method === 'POST' && data.event?.id) {
+      // Online-created reports must also be available for later offline phone sync.
+      try {
+        await saveOfflineReport({ ...body, ...data.event });
+        await markReportsSynced([data.event.id]);
+      } catch (storageError) {
+        data.local_store_failed = true;
+        console.warn('[Reports] Saved remotely, but local copy failed:', storageError.message);
+      }
+    }
     if (method === 'GET') {
       setCachedApi(cacheKey, data, options.cacheTtl || 15000);
     } else {
@@ -970,7 +982,12 @@ async function handleOfflineFallback(path, method, body) {
 }
 
 export async function getDiscoveredPeers() {
+  if (isNativeBle()) await ensureMeshIdentity();
   const myDeviceId = getDeviceId();
+  if (!isOnlineMode() || navigator.onLine === false) {
+    const peers = mergePeers([getActiveBlePeers()], myDeviceId);
+    return { peers, count: peers.length, enabled: isBluetoothSupported(), mode: peers.length ? 'bluetooth' : 'none' };
+  }
   let myLocation = { lat: 28.7041, lon: 77.1025 };
   try {
     const loc = await getNativeOrWebLocation();
@@ -1008,10 +1025,7 @@ export async function getDiscoveredPeers() {
       const cloudPeers = await queryPeerBeacons(myDeviceId, myLocation);
       if (Array.isArray(cloudPeers)) {
         for (const p of cloudPeers) {
-          if (!seenIds.has(p.node_id)) {
-            seenIds.add(p.node_id);
-            allPeers.push(p);
-          }
+          if (p.node_id !== myDeviceId) allPeers.push(p);
         }
       }
     } catch (cloudErr) {
@@ -1032,8 +1046,7 @@ export async function getDiscoveredPeers() {
           const edgeData = await edgeRes.json();
           if (Array.isArray(edgeData?.peers)) {
             for (const ep of edgeData.peers) {
-              if (ep.node_id !== myDeviceId && !seenIds.has(ep.node_id)) {
-                seenIds.add(ep.node_id);
+              if (ep.node_id !== myDeviceId) {
                 allPeers.push({
                   ...ep,
                   name: ep.name || ep.device_name || `Android Device (${ep.node_id.slice(-4)})`,
@@ -1055,16 +1068,19 @@ export async function getDiscoveredPeers() {
   }
 
   return {
-    peers: allPeers,
-    count: allPeers.length,
+    peers: mergePeers([allPeers], myDeviceId),
+    count: mergePeers([allPeers], myDeviceId).length,
     enabled: isBluetoothSupported(),
     mode: allPeers.some(p => p.source === 'native_ble' || p.source === 'web_ble') ? 'bluetooth' : (allPeers.length > 0 ? 'online_peers' : 'none'),
   };
 }
 
 export async function updateDeviceLocation(locationData) {
+  if (isNativeBle()) await ensureMeshIdentity();
+  await publishMeshLocation(locationData).catch(() => {});
+  const phoneBattery = await getPhoneBattery().catch(() => ({}));
   if (!isOnlineMode()) {
-    return { updated: true, mode: 'offline_local' };
+    return { updated: true, mode: 'offline_local', ...phoneBattery };
   }
   const loc = locationData?.location || locationData;
   const lat = Number(loc?.lat ?? 28.7041);
@@ -1072,7 +1088,7 @@ export async function updateDeviceLocation(locationData) {
   const myDeviceId = getDeviceId();
   const myRole = setting('role') || 'survivor';
   const myDeviceName = `Survivor Android (${myDeviceId.slice(-4)})`;
-  let batteryLevel = locationData?.battery;
+  let batteryLevel = locationData?.battery ?? phoneBattery.battery;
   if (batteryLevel == null && typeof navigator !== 'undefined' && navigator.getBattery) {
     try {
       const b = await navigator.getBattery();
@@ -1138,12 +1154,13 @@ export async function syncDiscoveredPeer(syncData = {}) {
 
       const bleOutcome = await syncWithBlePeer(syncData, reports, myDeviceId, myLocation);
       return {
-        success: true,
+        ...bleOutcome,
+        success: bleOutcome.success,
         synced: bleOutcome.synced,
         imported: bleOutcome.imported,
         mode: 'bluetooth_ble',
         speed: bleOutcome.speed,
-        status: 'synced',
+        status: bleOutcome.status,
       };
     } catch (bleErr) {
       console.warn('[Discovery] Direct BLE sync notice:', bleErr.message);

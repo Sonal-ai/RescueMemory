@@ -503,7 +503,7 @@ export async function triggerAutoSync() {
           body: JSON.stringify(payload),
           signal: AbortSignal.timeout(3000),
         });
-        if (res.ok || res.status === 409) {
+        if (res.ok) {
           syncedIds.push(report.id);
         }
       } catch (err) {
@@ -571,7 +571,8 @@ export async function triggerAutoSync() {
   if (!anyChannelConnected && remaining > 0) {
     notifySync({ state: 'server_unreachable', pendingCount: remaining });
   } else {
-    notifySync({ state: remaining === 0 ? 'synced' : 'partial', pendingCount: remaining });
+    notifySync({ state: remaining === 0 ? 'synced' : 'partial', pendingCount: remaining,
+      uploadedCount: totalSyncedCount, receivedCount: remoteImportedCount });
   }
 
   return {

@@ -139,6 +139,7 @@ def test_http_peer_cross_discovery(tmp_path):
         })
         assert p1.status_code == 200
         assert p1.json()["registered_peer"]["node_id"] == "phone-alpha"
+        assert client.get('/api/discovery/peers').json()['my_location']['battery'] is None
 
         # Phone 2 registers location (~135m away)
         p2 = client.post("/api/discovery/location", json={
@@ -161,6 +162,7 @@ def test_http_peer_cross_discovery(tmp_path):
         assert p1_peers["count"] == 1
         assert p1_peers["peers"][0]["node_id"] == "phone-bravo"
         assert p1_peers["peers"][0]["name"] == "Phone Bravo (Client)"
+        assert p1_peers["peers"][0]["battery"] == 78
         assert p1_peers["peers"][0]["distance_m"] is not None
         assert 80 < p1_peers["peers"][0]["distance_m"] < 200
 
@@ -173,4 +175,5 @@ def test_http_peer_cross_discovery(tmp_path):
         assert p2_peers["count"] == 1
         assert p2_peers["peers"][0]["node_id"] == "phone-alpha"
         assert p2_peers["peers"][0]["name"] == "Phone Alpha (Host)"
+        assert p2_peers["peers"][0]["battery"] == 92
 

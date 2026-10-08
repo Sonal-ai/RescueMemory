@@ -19,6 +19,7 @@ from .schemas import (AssessRequest, ChatRequest, CreateGroupRequest, DeviceLoca
                       SurvivalRadarRequest)
 from .service import RescueService
 from .sync import authorize, sync_with_peer, uplink_sos
+from .responder_credentials import credential_router
 
 
 class ImportBatch(BaseModel):
@@ -68,6 +69,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.rescue.close()
 
     app = FastAPI(title="RescueMemory Edge API", version="0.1.0", lifespan=lifespan)
+    app.include_router(credential_router(settings.data_dir))
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -448,17 +450,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not disc:
             return {"updated": False, "reason": "discovery_not_initialized"}
         
-        # 1. Update local node location
-        updated = disc.update_location(
-            lat=data.lat,
-            lon=data.lon,
-            status=data.status,
-            battery=data.battery,
-        )
+        # A phone presence update must not replace the hub's own position/battery.
+        node_id = data.node_id or request.headers.get("x-device-id")
+        updated = disc.get_my_location()
+        if not node_id or node_id == settings.node_id:
+            updated = disc.update_location(lat=data.lat, lon=data.lon, status=data.status, battery=data.battery)
 
         # 2. Register caller as an active peer in the mesh if node_id provided
         caller_ip = request.client.host if request.client else None
-        node_id = data.node_id or request.headers.get("x-device-id")
         peer_data = None
         if node_id and node_id != settings.node_id:
             peer_data = disc.register_peer(

@@ -6,3 +6,4 @@ httpx==0.28.1
 qdrant-client==1.19.1
 pytest==9.1.1
 python-dotenv==1.2.3
+cryptography==48.0.1
