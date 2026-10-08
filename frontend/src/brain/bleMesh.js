@@ -13,6 +13,9 @@ export const CHAR_SYNC_RX_UUID = '0000fe52-0000-1000-8000-00805f9b34fb';
 export const CHAR_SYNC_TX_UUID = '0000fe53-0000-1000-8000-00805f9b34fb';
 const peers = new Map(), listeners = new Set(), sessions = new Map(), messageQueues = new Map();
 let startup = null, attachment = null, attached = false, queue = Promise.resolve(), identityPromise = null;
+let backgroundBusy = false;
+export const isBleBackgroundBusy = () => backgroundBusy;
+export const hasIncomingBleSession = () => sessions.size > 0;
 const serialize = fn => { const work = queue.then(fn); queue = work.catch(() => {}); return work; };
 const dispatch = (name, detail) => window.dispatchEvent(new CustomEvent(name, { detail }));
 const notify = () => listeners.forEach(fn => fn(getActiveBlePeers()));
@@ -114,6 +117,8 @@ async function finishIncoming(address, error) {
     session.result.status = error || session.result.conflicts || session.result.pending ? 'partial' : 'complete';
     if (error) session.result.error = error;
     await saveTransferSession(session.result);
+    const peer = peers.get(session.peerId);
+    if (peer) { peer.last_sync = session.result; peer.error = error || null; notify(); }
     dispatch('rescue:ble-received', { imported: session.result.received, result: session.result });
   }
 }
@@ -121,7 +126,7 @@ async function finishIncoming(address, error) {
 async function handleMessage(address, message) {
   if (message.v !== PROTOCOL_VERSION) throw new Error('Update required on both phones.');
   if (message.type === 'hello') {
-    if (document.hidden) throw new Error('Open Mesh Sync on the receiving phone to exchange reports.');
+    if (document.hidden) throw new Error('Nearby phone is in the background. Presence is active; open the app to exchange reports.');
     if (sessions.size >= 32 || !message.identity?.node_id || typeof message.nonce !== 'string' || typeof message.ephemeral !== 'string')
       throw new Error('Invalid handshake or too many connections.');
     await finishIncoming(address, 'A new connection replaced the previous exchange.');
@@ -148,7 +153,8 @@ async function handleMessage(address, message) {
     session.reports = eligibleReports(await getAllLocalReports());
     session.inventory = await inventory(session.reports);
     const previous = peers.get(session.peerId);
-    remember({ ...session.remoteMetadata, ...session.remoteIdentity, v: 2 }, { address, rssi: previous?.rssi });
+    const connectable = previous?.connectable_at && Date.now() - previous.connectable_at < 120000;
+    remember({ ...session.remoteMetadata, ...session.remoteIdentity, v: 2 }, { address: connectable ? previous.address : address, rssi: previous?.rssi });
     await saveTransferSession(session.result);
     return seal(session, { authorized: true });
   }
@@ -187,7 +193,7 @@ async function handleMessage(address, message) {
   return envelope;
 }
 
-export async function startBleReceiver() {
+export async function startBleReceiver({ automatic = false } = {}) {
   if (!onAndroid) return false;
   await ensureMeshIdentity();
   const location = cachedMeshLocation();
@@ -211,18 +217,27 @@ export async function startBleReceiver() {
     await nativeBle.addListener('state', ({ ready }) => {
       if (!ready) { startup = null; dispatch('rescue:ble-state', { ready: false }); }
     });
+    await nativeBle.addListener('presence', meta => {
+      remember(meta, { address: meta.address, rssi: meta.rssi, last_seen_epoch: meta.last_seen_epoch });
+    });
     attached = true;
     })().catch(error => { attachment = null; throw error; });
     await attachment;
   }
-  if (!startup) startup = nativeBle.start().catch(error => { startup = null; throw error; });
-  await startup; return true;
+  if (!startup) startup = nativeBle.start({ automatic }).catch(error => { startup = null; throw error; });
+  await startup;
+  const state = await nativeBle.getPeers();
+  backgroundBusy = state.background_busy === true;
+  for (const meta of state.peers || []) remember(meta, { address: meta.address, rssi: meta.rssi, last_seen_epoch: meta.last_seen_epoch });
+  dispatch('rescue:ble-state', { ready: state.ready !== false });
+  if (state.ready === false) { startup = null; return false; }
+  return true;
 }
 
 export async function stopBleReceiver() {
   if (!onAndroid) return;
   return serialize(async () => {
-    for (const address of sessions.keys()) await finishIncoming(address, 'Mesh Sync page closed.');
+    for (const address of sessions.keys()) await finishIncoming(address, 'Nearby mesh stopped.');
     await nativeBle.stop(); startup = null;
   });
 }
@@ -233,8 +248,9 @@ function remember(meta, observed) {
   peers.delete(`unresolved_${observed.address}`);
   const old = peers.get(id);
   const peer = { ...old, ...meta, node_id: id, address: observed.address, device_id: observed.address,
-    name: meta.name || observed.name, device_name: meta.name || observed.name, rssi: observed.rssi,
-    distance_m: rssiToDistance(observed.rssi), last_seen_epoch: Date.now(), source: 'native_ble',
+    first_seen_epoch: old?.first_seen_epoch || observed.last_seen_epoch || Date.now(),
+    name: meta.name || observed.name, device_name: meta.name || observed.name, rssi: observed.rssi ?? old?.rssi,
+    distance_m: rssiToDistance(observed.rssi ?? old?.rssi), last_seen_epoch: observed.last_seen_epoch || Date.now(), source: 'native_ble',
     is_online: true, sync_ready: meta.v === 2,
     device_ref: { native: true, id: observed.address } };
   peers.set(id, peer); notify(); return peer;
@@ -248,6 +264,8 @@ export async function scanForNearbyPhones() {
       try {
         const meta = await nativeBle.connect({ address: observed.address });
         const peer = remember(meta, observed); if (peer) found.push(peer);
+        // Native ping records this phone on the receiver even if its scan misses us.
+        if (peer?.sync_ready) await nativeBle.ping().catch(() => {});
       } catch (error) {
         if (error.message?.includes('Update required')) { const peer = remember({ v: 1, error: error.message }, observed); if (peer) found.push(peer); }
         else {
@@ -267,6 +285,7 @@ export async function syncWithBlePeer(peer) {
     try {
       await startBleReceiver();
       const meta = await nativeBle.connect({ address: peer.address });
+      await nativeBle.ping();
       const identity = await ensureMeshIdentity(), ephemeral = await ephemeralKey();
       const hello = { v: 2, type: 'hello', identity, nonce: nonce(), ephemeral: ephemeral.public_key,
         metadata: await getPhoneTelemetry() };

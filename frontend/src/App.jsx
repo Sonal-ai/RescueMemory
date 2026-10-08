@@ -1,4 +1,6 @@
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import { startAppMesh, detachAppMesh } from './brain/meshRuntime.js';
 import SurvivorHUD from './views/SurvivorHUD';
 import VolunteerBoard from './views/VolunteerBoard';
 import CommandInspector from './views/CommandInspector';
@@ -8,6 +10,7 @@ import SafePlace from './views/SafePlace';
 import AdminPortal from './views/AdminPortal';
 
 function App() {
+  useEffect(() => { startAppMesh(); return detachAppMesh; }, []);
   return (
     <HashRouter>
       <Routes>

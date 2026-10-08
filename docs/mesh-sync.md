@@ -1,13 +1,33 @@
-# Nearby Mesh Sync (Android 1.4)
+# Nearby Mesh Sync (Android 1.5)
 
 Install the updated `RescueMemory-debug.apk` on both phones without uninstalling
 the previous app, so existing reports are preserved. Open **Mesh Sync**, enable
 Bluetooth, and allow Nearby devices. No saved Android pairing is required.
 
-The page scans for eight seconds every 30 seconds while visible. Auto-sync is on
-by default. For automatic exchanges, the phone with the smaller device ID starts
-the connection; both phones send and receive in that one session. **Find & sync**
-and **Sync now** bypass that tie-breaker. Bluetooth signal is approximate proximity,
+The app starts an Android foreground service after Nearby devices permission is
+granted. It advertises and scans for eight seconds about every 30 seconds with
+random timing variation, including on other pages and while the app is in the
+background. A persistent **RescueMemory nearby mesh** notification includes a
+**Stop mesh** action; **Find & sync** resumes it. Android 10/11 also require
+Location permission/services for BLE scanning. Android 12+ uses Nearby devices.
+Discovery survives WebView/activity destruction while the service is running;
+force-stopping the app or Android/OEM terminating the service stops it. Open the
+app again to start mesh; this is not a boot receiver or a guarantee against Doze.
+
+Native presence pings exchange app IDs, battery and last GPS fixes in both
+directions, even when only one phone's scan succeeds. Presence is discovery
+telemetry; report access still requires device proofs and encrypted sessions.
+Native peer snapshots repopulate the page when the WebView resumes. Recent
+connectable addresses are retained when an incoming ping uses a different
+Android central-role address. Advertising uses balanced mode.
+
+Auto-sync is on by default and runs across every app page while the app is active.
+The smaller device ID gets the first opportunity; the other phone can initiate
+after 20 seconds if that fails. Both phones send and receive in one session.
+**Find & sync** and **Sync now** bypass that tie-breaker. Full report exchanges
+require both apps active; presence pings work while either is backgrounded. The
+native receiver returns that distinction promptly instead of waiting for a paused
+WebView to answer. Bluetooth signal is approximate proximity,
 not a measured direction. Internet connectivity is independent of Bluetooth availability.
 
 Each phone has one persistent app ID shared by Bluetooth, backend and cloud
@@ -60,21 +80,29 @@ nonces and ephemeral keys. Android verifies phone proofs using its native
 `SHA256withECDSA` provider instead of converting them inside the WebView. Both
 DER and fixed-width P1363 signatures are supported. Signing checks the local
 Keystore key pair, and the app rejects stale cached keys explicitly. Altered
-proofs still fail before any reports are shared. Install 1.4 on both phones,
+proofs still fail before any reports are shared. Install 1.5 on both phones,
 then close and reopen Mesh Sync; it adds a new native verification method.
 
 Report messages use ECDH/HKDF/AES-GCM, sequence checks,
 inventory pagination, byte-sized report batches, and acknowledgements after
 IndexedDB commits. Full text is retained. A single encoded report over 60 KB is
 left pending with an explicit error rather than truncated. There is no four-report
-limit. Pre-v2 APKs show **Update required**. Install 1.4 on both phones for
+limit. Pre-v2 APKs show **Update required**. Install 1.5 on both phones for
 the current all-SOS sharing policy and GPS telemetry.
+
+Android 14+ may negotiate MTU 517 even when the app requests 247. Wire frames
+are capped at 512 bytes (including their framing header) in both directions,
+preventing oversized characteristic writes that previously surfaced as
+**Invalid sync request**. Missing MTU callbacks fall back to reading metadata;
+later write errors retain the failing operation/MTU rather than blaming the
+request contents.
 
 Reports retain immutable IDs. Identical repeats add no records; mismatching
 content under one ID is reported as a conflict and never replaces the local copy.
 Cloud upload status is separate from peer receipts. Failed exchanges back off at
-30, 60 and 120 seconds. Leaving the page stops new work and shuts down the receiver
-after the current outgoing operation settles; a failed/partial transfer can retry.
+30, 60 and 120 seconds. Leaving the page keeps discovery and the receiver alive.
+Foreground scans/transfers take priority over native discovery pings; a
+failed/partial transfer can retry.
 
 Automated checks:
 

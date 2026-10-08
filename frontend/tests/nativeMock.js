@@ -2,10 +2,14 @@ import { parentPort, workerData } from 'node:worker_threads';
 import { createPrivateKey, createPublicKey, generateKeyPairSync, sign, verify } from 'node:crypto';
 
 const callbacks = new Map(), requests = new Map();
+const nativePeers = new Map();
 let nextId = 0, certificate = workerData.certificate;
 let privateKey = createPrivateKey(workerData.privateKey), publicKey = workerData.publicKey, keyRotated = false;
 parentPort.on('message', message => {
-  if (message.type === 'native-event') callbacks.get(message.name)?.(message.event);
+  if (message.type === 'native-event') {
+    if (message.name === 'presence') nativePeers.set(message.event.node_id, message.event);
+    callbacks.get(message.name)?.(message.event);
+  }
   if (message.type === 'native-response') {
     const waiting = requests.get(message.id); requests.delete(message.id);
     if (message.error) waiting?.reject(new Error(message.error)); else waiting?.resolve({ payload: message.payload });
@@ -35,7 +39,13 @@ const plugin = {
   async setCredential({ certificate: value }) { certificate = value; },
   async addListener(name, callback) { callbacks.set(name, callback); return { remove() { callbacks.delete(name); } }; },
   async start() {}, async stop() {},
-  async scan() { return { peers: [{ address: workerData.peer, rssi: -52 }] }; },
+  async getPeers() { return { peers: [...nativePeers.values()], ready: true }; },
+  async ping() {
+    parentPort.postMessage({ type: 'native-presence', from: workerData.id, to: workerData.peer,
+      event: { v: 2, node_id: workerData.id, name: `Phone ${workerData.id}`, address: workerData.id,
+        battery: workerData.battery, last_seen_epoch: Date.now() } });
+  },
+  async scan() { return { peers: workerData.scanBlind ? [] : [{ address: workerData.peer, rssi: -52 }] }; },
   async connect() { return { v: 2, node_id: workerData.peer, name: `Phone ${workerData.peer}`, address: workerData.peer, ...workerData.peerBattery }; },
   async exchange({ payload }) {
     const id = ++nextId;

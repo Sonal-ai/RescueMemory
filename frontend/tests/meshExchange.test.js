@@ -19,6 +19,7 @@ function pair(t, verifiedB = false, options = {}) {
         signatureFormat: options.signatureFormat, webviewRejectsEcdsa: options.webviewRejectsEcdsa,
         corruptProof: options.corruptPhone === id,
         rotateKeyOnSign: options.rotatePhone === id,
+        scanBlind: options.scanBlindPhone === id,
         privateKey: key.privateKey.export({ type: 'pkcs8', format: 'pem' }) },
       env: { ...process.env, MESH_TEST_ISSUER: issuerPublic },
     });
@@ -41,6 +42,7 @@ function pair(t, verifiedB = false, options = {}) {
             payload: message.payload, error: drop ? 'Connection lost after receiver commit' : undefined });
         }
         if (message.type === 'native-disconnect') workers.get(message.to)?.postMessage({ type: 'native-event', name: 'disconnected', event: { address: message.from } });
+        if (message.type === 'native-presence') workers.get(message.to)?.postMessage({ type: 'native-event', name: 'presence', event: message.event });
         if (message.type === 'command-result') {
           const promise = requests.get(message.id); requests.delete(message.id);
           if (message.error) promise?.reject(new Error(message.error)); else promise?.resolve(message.result);
@@ -60,6 +62,38 @@ function pair(t, verifiedB = false, options = {}) {
 }
 const report = (id, visibility = 'public') => ({ id, kind: visibility === 'responders' ? 'incident' : 'hazard', visibility,
   text: `Report ${id} 🆘 सहायता `.repeat(300), severity: 'red', location: { lat: 0, lon: 0 }, created_at: '2026-10-08T01:00:00Z' });
+
+test('one-way scan announces the scanning phone back to a background peer without sharing reports', { timeout: 30000 }, async t => {
+  const { command } = pair(t, false, { scanBlindPhone: 'B' });
+  await command('A', 'seed', { reports: [report('not-a-presence-payload')] });
+  await command('B', 'hidden', { hidden: true });
+  assert.equal((await command('B', 'scan')).length, 0);
+  assert.equal((await command('A', 'scan'))[0].node_id, 'B');
+  const b = await command('B', 'read');
+  assert.equal(b.peers[0].node_id, 'A'); assert.equal(b.peers[0].battery, 0);
+  assert.equal(b.reports.length, 0); assert.equal(b.history.receipts.length, 0);
+  await command('B', 'hidden', { hidden: false });
+  const result = await command('A', 'sync');
+  assert.equal(result.status, 'complete'); assert.equal(result.sent, 1);
+});
+
+test('app-owned runtime transfers reports without a Mesh page and discovery survives runtime detach', { timeout: 30000 }, async t => {
+  const { command } = pair(t);
+  await command('A', 'seed', { reports: [report('from-home-screen')] });
+  await command('A', 'startRuntime');
+  await command('A', 'scan');
+  const end = Date.now() + 8000;
+  let b;
+  do {
+    b = await command('B', 'read');
+    if (b.reports.length) break;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  } while (Date.now() < end);
+  assert.equal(b.reports[0]?.id, 'from-home-screen');
+  await command('A', 'detachRuntime');
+  await command('B', 'scan');
+  assert.equal((await command('A', 'read')).peers[0].node_id, 'B');
+});
 
 test('phone exchange succeeds when WebView ECDSA import fails, for DER and raw provider signatures', { timeout: 30000 }, async t => {
   for (const signatureFormat of ['der', 'ieee-p1363']) {
@@ -105,6 +139,7 @@ test('actual engine exchanges every report both ways and retry transfers nothing
   assert.equal(a.reports.length, 19); assert.equal(b.reports.length, 19);
   assert.ok(b.reports.some(r => r.id === 'A-private'));
   assert.equal(b.history.transfers[0].status, 'complete');
+  assert.equal(b.peers[0].last_sync.status, 'complete');
   const repeated = await command('A', 'sync');
   assert.equal(repeated.sent, 0); assert.equal(repeated.received, 0); assert.equal(repeated.duplicates, 19);
 });

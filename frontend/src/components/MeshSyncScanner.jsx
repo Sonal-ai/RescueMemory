@@ -5,7 +5,7 @@ import MeshRadar from './MeshRadar.jsx';
 import { cachedMeshLocation, peerRadarPosition, radarDistance } from '../brain/meshRadar.js';
 import { getDiscoveredPeers, syncDiscoveredPeer, triggerAutoSync, getDeviceId, isOnlineMode,
   onOnlineModeChange, onSyncStateChange, watchNativeOrWebLocation } from '../api';
-import { isNativeBle, startBleReceiver, stopBleReceiver, scanForNearbyPhones, getPhoneBattery,
+import { isNativeBle, startBleReceiver, scanForNearbyPhones, getPhoneBattery,
   onBlePeersChange, publishMeshLocation } from '../brain/bleMesh.js';
 import { getAllLocalReports, getMeshHistory } from '../brain/offlineStorage.js';
 import { wireReport, mergePeers } from '../brain/meshProtocol.js';
@@ -83,7 +83,7 @@ export default function MeshSyncScanner({ initialPeers = [], onSyncComplete = nu
         }
       }
       if (mounted.current && !document.hidden) { await refreshPhones(); await refreshLocal(); await refreshData(); }
-      if (manual && !selected && mounted.current && !found.length) setMessage('No nearby phones found. Open Mesh Sync on both Android phones and allow Nearby devices.');
+      if (manual && !selected && mounted.current && !found.length) setMessage('No nearby phones found. Start RescueMemory on both phones and allow Nearby devices.');
     } catch (err) { if (mounted.current) { setError(err.message); setReady(false); } }
     finally { busyRef.current = false; if (mounted.current) setBusy(''); }
   }, [exchangePhone, refreshData, refreshLocal, refreshPhones]);
@@ -104,6 +104,7 @@ export default function MeshSyncScanner({ initialPeers = [], onSyncComplete = nu
     });
     const updateConnectivity = () => setOnline(isOnlineMode() && navigator.onLine !== false);
     const updateBle = event => { if (mounted.current) setReady(event.detail.ready); };
+    const meshError = event => { if (mounted.current) setError(event.detail.error); };
     const unsubscribeOnline = onOnlineModeChange(updateConnectivity);
     const unsubscribePeers = onBlePeersChange(list => {
       if (mounted.current) setPeers(current => mergePeers([current.filter(p => p.source !== 'native_ble'), list], getDeviceId()));
@@ -112,24 +113,26 @@ export default function MeshSyncScanner({ initialPeers = [], onSyncComplete = nu
     window.addEventListener('rescue:transfers-changed', changed);
     window.addEventListener('rescue:ble-received', received);
     window.addEventListener('rescue:ble-state', updateBle);
+    window.addEventListener('rescue:mesh-error', meshError);
     window.addEventListener('online', updateConnectivity); window.addEventListener('offline', updateConnectivity);
     changed(); refreshLocal().catch(() => {});
     const start = async () => {
       if (isNativeBle()) { await startBleReceiver(); if (mounted.current) setReady(true); }
-      if (mounted.current && autoRef.current) await runCycle(); else if (mounted.current) await refreshPhones();
+      if (mounted.current) await refreshPhones();
     };
     start().catch(err => mounted.current && setError(err.message));
-    const interval = setInterval(() => { if (autoRef.current) runCycle(); else if (!document.hidden) refreshLocal().catch(() => {}); }, 30000);
-    const visible = () => { if (!document.hidden && autoRef.current) runCycle(); };
+    const interval = setInterval(() => { if (!document.hidden) { refreshLocal().catch(() => {}); refreshPhones().catch(() => {}); } }, 10000);
+    const visible = () => { if (!document.hidden) { refreshPhones().catch(() => {}); refreshLocal().catch(() => {}); } };
     document.addEventListener('visibilitychange', visible);
     return () => {
       mounted.current = false; clearInterval(interval); unsubscribeOnline(); unsubscribePeers(); unsubscribeSync();
       window.removeEventListener('rescue:reports-changed', changed); window.removeEventListener('rescue:transfers-changed', changed);
       window.removeEventListener('rescue:ble-received', received); window.removeEventListener('online', updateConnectivity); window.removeEventListener('offline', updateConnectivity);
       window.removeEventListener('rescue:ble-state', updateBle);
-      document.removeEventListener('visibilitychange', visible); stopBleReceiver().catch(() => {});
+      window.removeEventListener('rescue:mesh-error', meshError);
+      document.removeEventListener('visibilitychange', visible);
     };
-  }, [refreshData, refreshLocal, refreshPhones, runCycle]);
+  }, [refreshData, refreshLocal, refreshPhones]);
 
   useEffect(() => {
     if (!isNativeBle()) return;
@@ -176,9 +179,9 @@ export default function MeshSyncScanner({ initialPeers = [], onSyncComplete = nu
         <BatteryLabel value={battery.battery} charging={battery.charging} measured={battery.battery_measured_at} />
       </div>
       <div className="mt-3 flex items-center justify-between gap-3 rounded-xl bg-slate-50 p-3 dark:bg-slate-900">
-        <div><p className="text-sm font-semibold">Auto-sync nearby phones</p><p className="text-[11px] text-slate-500">Every 30 seconds while this page is open.</p></div>
+        <div><p className="text-sm font-semibold">Auto-sync nearby phones</p><p className="text-[11px] text-slate-500">Syncs while the app is active. Discovery and presence pings continue in the background.</p></div>
         <input aria-label="Auto-sync nearby phones" type="checkbox" checked={auto} disabled={!isNativeBle()} className="h-5 w-5 accent-cyan-600"
-          onChange={e => { setAuto(e.target.checked); autoRef.current = e.target.checked; localStorage.setItem('rescue.mesh_auto', String(e.target.checked)); if (e.target.checked) runCycle(); }} />
+          onChange={e => { setAuto(e.target.checked); autoRef.current = e.target.checked; localStorage.setItem('rescue.mesh_auto', String(e.target.checked)); window.dispatchEvent(new CustomEvent('rescue:mesh-auto-changed')); }} />
       </div>
     </section>
 
@@ -191,7 +194,7 @@ export default function MeshSyncScanner({ initialPeers = [], onSyncComplete = nu
           <span className="flex items-center gap-1"><RefreshCw size={13} className={busy ? 'animate-spin' : ''} />{busy === 'scan' ? 'Scanning…' : 'Find & sync'}</span></button>
       </div>
       <MeshRadar peers={nearby} location={location} scanning={busy === 'scan'} onSelect={peer => setSelectedPhone(peer.node_id)} />
-      <p className="mb-3 text-xs text-slate-500">Keep Mesh Sync open on both phones. GPS fixes improve distance and bearing; Bluetooth signal gives an estimated range.</p>
+      <p className="mb-3 text-xs text-slate-500">Start RescueMemory on both phones once. Nearby discovery keeps running in the background. GPS fixes improve distance and bearing.</p>
       <div className="space-y-2">{nearby.map(peer => {
         const latest = history.transfers.find(t => t.peer_id === peer.node_id && t.transport === 'bluetooth');
         const position = peerRadarPosition(location, peer);

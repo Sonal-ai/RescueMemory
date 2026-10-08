@@ -14,6 +14,16 @@ public class MeshFramesTest {
             assertArrayEquals(data, result);
         }
     }
+    @Test public void android14Mtu517NeverCreatesOversizedCharacteristicValues() {
+        byte[] payload = ("Large encrypted SOS 🆘 ".repeat(4000)).getBytes(StandardCharsets.UTF_8);
+        for (int limit : new int[]{514, 515}) {
+            MeshFrames.Decoder decoder = new MeshFrames.Decoder(); byte[] result = null;
+            byte[][] frames = MeshFrames.encode(payload, 7, limit);
+            assertEquals(512, frames[0].length);
+            for (byte[] frame : frames) { assertTrue(frame.length <= 512); result = decoder.accept(frame); }
+            assertArrayEquals(payload, result);
+        }
+    }
     @Test(expected = IllegalArgumentException.class) public void rejectOutOfOrder() {
         byte[][] frames = MeshFrames.encode(new byte[100], 4, 20);
         new MeshFrames.Decoder().accept(frames[1]);

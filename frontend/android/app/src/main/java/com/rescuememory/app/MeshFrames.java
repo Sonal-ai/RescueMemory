@@ -6,6 +6,9 @@ import java.io.ByteArrayOutputStream;
 final class MeshFrames {
     static final int HEADER = 9, MAX_BYTES = 262144;
     static byte[][] encode(byte[] payload, int id, int limit) {
+        // Android 14+ negotiates MTU 517 even when 247 was requested. ATT
+        // characteristic values still cannot exceed 512 bytes.
+        limit = Math.min(limit, 512);
         int size = limit - HEADER;
         if (size < 1 || payload.length < 1 || payload.length > MAX_BYTES) throw new IllegalArgumentException("Invalid mesh packet size");
         int count = (payload.length + size - 1) / size;

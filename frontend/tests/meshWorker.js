@@ -16,7 +16,7 @@ registerHooks({
 });
 const storage = () => ({ values: new Map(), getItem(k) { return this.values.get(k) || null; }, setItem(k, v) { this.values.set(k, v); } });
 globalThis.localStorage = storage(); globalThis.sessionStorage = storage();
-globalThis.window = new EventTarget(); globalThis.document = { hidden: false };
+globalThis.window = new EventTarget(); globalThis.document = Object.assign(new EventTarget(), { hidden: false });
 if (workerData.webviewRejectsEcdsa) {
   const importKey = crypto.subtle.importKey.bind(crypto.subtle);
   crypto.subtle.importKey = (...args) => {
@@ -34,6 +34,10 @@ parentPort.on('message', async message => {
     switch (message.action) {
       case 'seed': for (const report of message.reports) await db.saveOfflineReport(report); result = true; break;
       case 'location': result = await engine.publishMeshLocation(message.location); break;
+      case 'hidden': document.hidden = message.hidden; document.dispatchEvent(new Event('visibilitychange')); result = true; break;
+      case 'scan': result = await engine.scanForNearbyPhones(); break;
+      case 'startRuntime': { const runtime = await import('../src/brain/meshRuntime.js'); runtime.startAppMesh(); result = true; break; }
+      case 'detachRuntime': { const runtime = await import('../src/brain/meshRuntime.js'); runtime.detachAppMesh(); result = true; break; }
       case 'sync': {
         const [peer] = await engine.scanForNearbyPhones();
         result = await engine.syncWithBlePeer(peer); break;
