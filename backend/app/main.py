@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .cloud import check_cloud_connection, mirror_to_qdrant_server
+from .cloud import check_cloud_connection, mirror_to_qdrant_server, read_cloud_records
 from .config import Settings
 from .discovery import PeerDiscovery
 from .schemas import (AssessRequest, ChatRequest, CreateGroupRequest, DeviceLocationUpdate,
@@ -396,6 +396,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(400, str(exc))
         except Exception as exc:
             raise HTTPException(502, f"Qdrant Cloud communication failed: {exc}")
+
+    @app.get("/api/sync/cloud-records")
+    def cloud_records(collection: str, offset: str | None = None,
+                      limit: int = Query(default=50, ge=1, le=100),
+                      s: RescueService = Depends(service), _admin: None = Depends(require_admin)):
+        cursor = int(offset) if offset is not None and offset.isdigit() else offset
+        return read_cloud_records(s, collection, cursor, limit)
 
     @app.api_route("/api/admin/reset-all", methods=["GET", "POST"])
     def admin_reset_all(

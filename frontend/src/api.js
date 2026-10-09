@@ -6,7 +6,7 @@ import {
   triggerAutoSync,
   onSyncStateChange,
 } from './brain/offlineBrain.js';
-import { getAllLocalReports, getUnsyncedReports, getAllLocalGuides, saveOfflineReport, markReportsSynced } from './brain/offlineStorage.js';
+import { getAllLocalReports, getUnsyncedReports, getAllLocalGuides, saveOfflineReport, markReportsSynced, getMeshHistory } from './brain/offlineStorage.js';
 import {
   distM,
   bearingDeg,
@@ -31,6 +31,7 @@ import {
 } from './brain/bleMesh.js';
 import { ensureMeshIdentity, getPhoneBattery, publishMeshLocation } from './brain/bleMesh.js';
 import { mergePeers } from './brain/meshProtocol.js';
+import { readCloudSnapshot, readCloudRecords, localRecordProvenance } from './brain/cloudInspector.js';
 
 export {
   distM,
@@ -241,9 +242,10 @@ export function invalidateApiCache(prefix = '') {
 
 export async function api(path, options = {}) {
   const { method = 'GET', body, admin = false, responder = false, group = false } = options;
+  const liveCloud = path.startsWith('/api/sync/cloud-');
   const cacheKey = `${method}:${path}:${admin ? 'a' : ''}:${responder ? 'r' : ''}:${group ? 'g' : ''}`;
 
-  if (method === 'GET' && !options.noCache && options.preferCache) {
+  if (method === 'GET' && !liveCloud && !options.noCache && options.preferCache) {
     const cached = getCachedApi(cacheKey);
     if (cached) return cached;
   }
@@ -252,7 +254,7 @@ export async function api(path, options = {}) {
   if (!isOnlineMode() || (typeof navigator !== 'undefined' && navigator.onLine === false)) {
     setStandaloneMode(true);
     const cached = getCachedApi(cacheKey);
-    if (cached) return cached;
+    if (cached && !liveCloud) return cached;
     return handleOfflineFallback(path, method, body);
   }
 
@@ -298,7 +300,7 @@ export async function api(path, options = {}) {
         throw new Error(`SERVER_UNREACHABLE_${response.status}`);
       }
       const detail = typeof data.detail === 'string' ? data.detail : `Request failed (${response.status})`;
-      throw new Error(detail);
+      const failure = new Error(detail); failure.status = response.status; throw failure;
     }
 
     // Network call succeeded - we are connected to edge node / hub
@@ -321,8 +323,9 @@ export async function api(path, options = {}) {
     return data;
   } catch (err) {
     if (timeoutId) clearTimeout(timeoutId);
+    if (liveCloud && [401, 403].includes(err.status)) throw err;
     const cached = getCachedApi(cacheKey);
-    if (cached) {
+    if (cached && !liveCloud) {
       console.log(`[API] Returning cached SWR data for ${path}`);
       return cached;
     }
@@ -828,26 +831,8 @@ async function handleOfflineFallback(path, method, body) {
   if (path.startsWith('/api/provenance/')) {
     const evtId = path.split('/').pop().split('?')[0];
     const reports = await getAllLocalReports();
-    const match = reports.find((r) => r.id === evtId) || { text: 'Field observation held on edge node', origin_device: 'survivor-1' };
-    const devId = match.origin_device || 'survivor-1';
-    return {
-      id: `prov_${evtId}`,
-      event_id: evtId,
-      idempotency_key: evtId,
-      origin_node: devId,
-      event: { text: match.text || 'Operational field observation', id: evtId },
-      known_nodes: [devId, 'mesh-relay-alpha', 'central_HQ'],
-      hops: [
-        { id: `hop-1-${evtId}`, from_node: devId, to_node: 'mesh-relay-alpha', synced_at: new Date(Date.now() - 60000).toISOString() },
-        { id: `hop-2-${evtId}`, from_node: 'mesh-relay-alpha', to_node: 'central_HQ', synced_at: new Date().toISOString() },
-      ],
-      signature_status: 'verified_local_sha256',
-      mesh_hops: 2,
-      verified: true,
-      cloud_mirrored: isOnlineMode(),
-      timestamp: new Date().toISOString(),
-      local_fallback: true,
-    };
+    const match = reports.find(r => r.id === evtId);
+    return localRecordProvenance(match, await getMeshHistory(), getDeviceId());
   }
 
   // 6d2. Entity Timeline Fallback
@@ -886,56 +871,25 @@ async function handleOfflineFallback(path, method, body) {
     };
   }
 
-  // 6e. Cloud Status Healthcheck
+  // Direct cloud inspection uses actual counts/records; offline is unknown.
+  const cloudOptions = () => ({ url: QDRANT_CLOUD_URL, key: QDRANT_CLOUD_KEY,
+    online: isOnlineMode() && (typeof navigator === 'undefined' || navigator.onLine !== false) });
   if (path === '/api/sync/cloud-status') {
-    try {
-      const res = await universalRequest(`${QDRANT_CLOUD_URL}/collections`, {
-        method: 'GET',
-        headers: { 'api-key': QDRANT_CLOUD_KEY },
-        timeout: 3000,
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const cols = (data.result?.collections || []).map((c) => c.name);
-        return {
-          connected: true,
-          configured: true,
-          url: QDRANT_CLOUD_URL,
-          collections: cols,
-          shards: {
-            rescue_approved_guides: 6,
-            rescue_public_events: 8,
-            rescue_group_events: 4,
-            rescue_responder_events: 6,
-          },
-          total_points: 24,
-          event_collections_found: cols.filter((c) => c.startsWith('rescue_')),
-          guides_collection_found: cols.includes('rescue_approved_guides'),
-          local_fallback: true,
-        };
-      }
-    } catch {
-      // offline
-    }
-    return {
-      connected: false,
-      configured: true,
-      url: QDRANT_CLOUD_URL,
-      reason: 'Device currently offline or cloud unreachable',
-      local_fallback: true,
-    };
+    return { ...await readCloudSnapshot(universalRequest, cloudOptions()), local_fallback: true };
   }
-
-  // 6f. Cloud Mirror Trigger
+  if (path.startsWith('/api/sync/cloud-records')) {
+    const params = new URL(path, 'https://local.invalid').searchParams;
+    const rawOffset = params.get('offset');
+    const offset = rawOffset !== null && /^\d+$/.test(rawOffset) ? Number(rawOffset) : rawOffset;
+    return { ...await readCloudRecords(universalRequest, { ...cloudOptions(), collection: params.get('collection'),
+      offset, limit: Number(params.get('limit') || 50) }), local_fallback: true };
+  }
   if (path === '/api/sync/cloud-mirror' || path === '/api/sync/mirror') {
+    const snapshot = await readCloudSnapshot(universalRequest, cloudOptions());
+    if (!snapshot.connected) return { mirrored: false, status: cloudOptions().online ? 'unreachable' : 'offline', reason: snapshot.reason };
     const syncRes = await triggerAutoSync();
-    return {
-      mirrored: true,
-      synced_events: syncRes.synced,
-      imported_events: syncRes.imported,
-      status: 'ok',
-      local_fallback: true,
-    };
+    return { mirrored: false, mode: 'report_sync', synced_events: syncRes.synced,
+      imported_events: syncRes.imported, status: syncRes.status, local_fallback: true };
   }
 
   // 6g. Volunteer Sync Endpoints

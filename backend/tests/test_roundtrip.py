@@ -98,11 +98,19 @@ def test_scoped_qdrant_cloud_mirror_and_pull(tmp_path, monkeypatch):
         assert result.status_code == 200, result.text
         assert result.json()["events_uploaded"] == {"public": 1, "group": 1, "responders": 1}
         assert result.json()["guides_uploaded"] == 1
+        assert result.json()["counts_verified"] is True
+        assert result.json()["total_points"] == 4
 
         status_res = first.get("/api/sync/cloud-status", headers=ADMIN)
         assert status_res.status_code == 200
         assert status_res.json()["connected"] is True
         assert "rescue_public_events" in status_res.json()["collections"]
+        assert status_res.json()["total_points"] == 4
+        for collection in [*cloud.EVENT_COLLECTIONS.values(), cloud.GUIDES_COLLECTION]:
+            page = first.get("/api/sync/cloud-records", params={"collection": collection}, headers=ADMIN)
+            assert page.status_code == 200, page.text
+            assert len(page.json()["items"]) == status_res.json()["shards"][collection]
+            assert page.json()["next_offset"] is None
 
     remote = QdrantClient(path=cloud_dir)
     try:
@@ -122,5 +130,7 @@ def test_scoped_qdrant_cloud_mirror_and_pull(tmp_path, monkeypatch):
         assert result.json()["events_downloaded"] == {"public": 1, "group": 1, "responders": 1}
         assert result.json()["guides_downloaded"] == 1
         assert restored.get("/health").json()["events"] == 3
-        assert restored.post("/api/sync/cloud-mirror", headers=ADMIN).json()["events_uploaded"] == {
+        repeated = restored.post("/api/sync/cloud-mirror", headers=ADMIN).json()
+        assert repeated["events_uploaded"] == {
             "public": 0, "group": 0, "responders": 0}
+        assert repeated["guides_uploaded"] == 0

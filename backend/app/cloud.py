@@ -23,6 +23,43 @@ EVENT_COLLECTIONS = {
 GUIDES_COLLECTION = "rescue_approved_guides"
 
 
+def _cloud_inventory(client: QdrantClient, available: list[str]) -> dict:
+    """Count the same application collections the cloud record browser reads."""
+    shards, errors = {}, {}
+    for name in [*EVENT_COLLECTIONS.values(), GUIDES_COLLECTION]:
+        if name not in available:
+            shards[name] = 0  # Collection list confirmed it is absent.
+            continue
+        try:
+            shards[name] = client.count(name, exact=True).count
+        except Exception as exc:
+            shards[name] = None
+            errors[name] = str(exc)
+    return {"shards": shards, "count_errors": errors, "counts_verified": not errors,
+            "total_points": sum(shards.values()) if not errors else None,
+            "checked_at": datetime.now(timezone.utc).isoformat(), "source": "qdrant_cloud"}
+
+
+def read_cloud_records(service: RescueService, collection: str, offset=None, limit: int = 50) -> dict:
+    if collection not in [*EVENT_COLLECTIONS.values(), GUIDES_COLLECTION]:
+        raise HTTPException(422, "Invalid cloud collection")
+    if not service.settings.qdrant_url:
+        raise HTTPException(503, "Cloud connection is not configured")
+    client = QdrantClient(url=service.settings.qdrant_url,
+                          api_key=service.settings.qdrant_api_key, timeout=10)
+    try:
+        points, next_offset = (client.scroll(collection, offset=offset, limit=limit,
+                                           with_payload=True, with_vectors=False)
+                               if client.collection_exists(collection) else ([], None))
+        return {"collection": collection, "items": [{"point_id": str(p.id), "payload": p.payload or {}} for p in points],
+                "next_offset": next_offset, "source": "qdrant_cloud",
+                "checked_at": datetime.now(timezone.utc).isoformat()}
+    except Exception as exc:
+        raise HTTPException(502, f"Cloud records could not be read: {exc}") from exc
+    finally:
+        client.close()
+
+
 def _point_id(record_id: str) -> str:
     return str(uuid5(NAMESPACE_URL, record_id))
 
@@ -74,24 +111,12 @@ def check_cloud_connection(service: RescueService) -> dict:
     try:
         raw_collections = client.get_collections().collections
         collections = [c.name for c in raw_collections]
-        shards = {}
-        total_points = 0
-        for name in collections:
-            try:
-                info = client.get_collection(name)
-                pts = info.points_count or 0
-                shards[name] = pts
-                total_points += pts
-            except Exception:
-                shards[name] = 0
-
         return {
             "connected": True,
             "configured": True,
             "url": service.settings.qdrant_url,
             "collections": collections,
-            "shards": shards,
-            "total_points": total_points,
+            **_cloud_inventory(client, collections),
             "event_collections_found": [c for c in EVENT_COLLECTIONS.values() if c in collections],
             "guides_collection_found": GUIDES_COLLECTION in collections,
         }
@@ -126,22 +151,9 @@ def purge_cloud_data(service: RescueService) -> dict:
                     client.delete(c, points_selector=models.PointIdsList(points=ids), wait=True)
                     purged_counts[c] += len(ids)
 
-        shards = {}
-        total_points = 0
-        for c in collections:
-            try:
-                info = client.get_collection(c)
-                pts = info.points_count or 0
-                shards[c] = pts
-                total_points += pts
-            except Exception:
-                shards[c] = 0
-
         return {
-            "purged": True,
-            "purged_counts": purged_counts,
-            "shards": shards,
-            "total_points": total_points,
+            "purged": True, "purged_counts": purged_counts,
+            **_cloud_inventory(client, [c.name for c in client.get_collections().collections]),
         }
     finally:
         client.close()
@@ -209,6 +221,7 @@ def mirror_to_qdrant_server(service: RescueService) -> dict:
                 guide = point.payload
                 try:
                     result["guides_downloaded"] += service.import_guides([guide])["imported"]
+                    existing_guides[guide["id"]] = guide
                 except Exception:
                     pass
             to_upload = [guide for guide in service.signed_guides()
@@ -218,18 +231,8 @@ def mirror_to_qdrant_server(service: RescueService) -> dict:
                         lambda item: f"{item['title']} {item['keywords']} {item['summary']}")
             result["guides_uploaded"] = len(to_upload)
 
-        shards = {}
-        total_points = 0
-        for name in list(EVENT_COLLECTIONS.values()) + [GUIDES_COLLECTION]:
-            try:
-                info = client.get_collection(name)
-                pts = info.points_count or 0
-                shards[name] = pts
-                total_points += pts
-            except Exception:
-                pass
-        result["shards"] = shards
-        result["total_points"] = total_points
+        result.update(_cloud_inventory(client, [c.name for c in client.get_collections().collections]))
+        result.update({"mirrored": True, "status": "ok"})
         return result
     finally:
         client.close()

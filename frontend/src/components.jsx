@@ -232,7 +232,7 @@ export function Shell({ title, subtitle, children }) {
   const [navDrawerOpen, setNavDrawerOpen] = useState(false);
   const [theme, setTheme] = useState(() => {
     const saved = localStorage.getItem('rescue.theme') || localStorage.getItem('theme');
-    return saved === 'dark' ? 'dark' : 'light';
+    return saved === 'light' ? 'light' : 'dark';
   });
   const [online, setOnline] = useState(() => isOnlineMode());
 
@@ -251,6 +251,7 @@ export function Shell({ title, subtitle, children }) {
     }
     localStorage.setItem('rescue.theme', theme);
     localStorage.setItem('theme', theme);
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#081822' : '#f2f7f4');
   }, [theme]);
 
   const isSurvivorActive = location.pathname === '/' || ['/chat', '/compass', '/find', '/map', '/radar', '/report', '/beacon'].includes(location.pathname);
@@ -259,15 +260,13 @@ export function Shell({ title, subtitle, children }) {
     <div className="app-shell min-h-screen bg-[#f0f5fa] dark:bg-[#080d19] text-slate-900 dark:text-slate-100 flex flex-col pb-16 sm:pb-0">
       {/* Top Tactical Navigation Header */}
       <header className="app-header border-b border-[#dbe6f0] dark:border-cyan-500/15 bg-white/95 dark:bg-[#0b1528]/95 sticky top-0 z-40 backdrop-blur-xl shadow-xs">
-        <div className="h-0.5 w-full bg-gradient-to-r from-red-500 via-cyan-400 to-emerald-400 opacity-90" />
+        <div className="brand-rule h-0.5 w-full" />
         <div className="max-w-7xl mx-auto px-2 sm:px-6 py-1.5 sm:py-2 flex items-center justify-between gap-1.5 sm:gap-3">
           
           {/* Logo & Tactical Identity */}
           <Link to="/" className="flex items-center gap-1.5 sm:gap-2 font-black tracking-tight text-sm sm:text-base group shrink-0">
-            <span className="h-7 w-7 sm:h-8 sm:w-8 rounded-lg bg-gradient-to-br from-red-500 via-rose-500 to-red-600 flex items-center justify-center text-white shadow-sm shadow-red-500/25 group-hover:scale-105 transition-transform shrink-0">
-              <Activity size={15} />
-            </span>
-            <span className="font-extrabold text-sm sm:text-base tracking-tight text-slate-900 dark:text-white">
+            <img className="brand-mark h-7 w-7 sm:h-8 sm:w-8 rounded-lg shrink-0" src="/favicon.svg" alt="" width="32" height="32" />
+            <span className="brand-wordmark font-extrabold text-sm sm:text-base tracking-tight text-slate-900 dark:text-white">
               RescueMemory
             </span>
           </Link>
@@ -282,7 +281,7 @@ export function Shell({ title, subtitle, children }) {
                   to={path}
                   className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
                     isActive
-                      ? 'bg-cyan-600 text-white shadow-xs'
+                      ? 'nav-link-active text-white'
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-slate-800/60'
                   }`}
                 >

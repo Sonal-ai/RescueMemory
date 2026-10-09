@@ -8,7 +8,7 @@
     <link rel="apple-touch-icon" href="/icon-192.png" />
     <link rel="manifest" href="/manifest.json" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <meta name="theme-color" content="#08111d" />
+    <meta name="theme-color" content="#081822" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="RescueMemory" />
@@ -17,8 +17,16 @@
     <script>
       (function() {
         try {
-          var t = localStorage.getItem('rescue.theme') || 'light';
+          var requested = new URLSearchParams(window.location.search).get('theme');
+          var t = requested === 'light' || requested === 'dark'
+            ? requested
+            : localStorage.getItem('rescue.theme') || localStorage.getItem('theme') || 'dark';
+          if (requested === 'light' || requested === 'dark') {
+            localStorage.setItem('rescue.theme', requested);
+            localStorage.setItem('theme', requested);
+          }
           document.documentElement.dataset.theme = t;
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', t === 'light' ? '#f2f7f4' : '#081822');
           if (t === 'dark') {
             document.documentElement.classList.add('dark');
             document.documentElement.classList.remove('light');

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Activity,
   AlertTriangle,
@@ -11,6 +11,7 @@ import {
   Clock,
   CloudUpload,
   Cross,
+  Crosshair,
   Database,
   Eye,
   FileCheck,
@@ -53,6 +54,7 @@ import {
 import { Shell, Card, Empty } from '../components';
 import MapPanel from '../MapPanel';
 import MeshSyncScanner from '../components/MeshSyncScanner';
+import { CLOUD_COLLECTIONS, displayCloudCount, cloudMirrorSummary } from '../brain/cloudInspector.js';
 
 const DEFAULT_CENTER = { lat: 28.7041, lon: 77.1025 };
 
@@ -135,7 +137,13 @@ export default function AdminPortal({ initialTab = 'hq' }) {
   // Tab 3 (Cloud Inspector) Specific States
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [recordJourney, setRecordJourney] = useState(null);
-  const [eventFilter, setEventFilter] = useState('all');
+  const [cloudCollection, setCloudCollection] = useState(CLOUD_COLLECTIONS[0].name);
+  const [cloudPage, setCloudPage] = useState(null);
+  const [cloudLoading, setCloudLoading] = useState(false);
+  const [cloudError, setCloudError] = useState('');
+  const [cloudRefresh, setCloudRefresh] = useState(0);
+  const [journeyError, setJourneyError] = useState('');
+  const cloudGeneration = useRef(0), selectionGeneration = useRef(0);
 
   // Ensure default demo admin credentials
   useEffect(() => {
@@ -176,7 +184,7 @@ export default function AdminPortal({ initialTab = 'hq' }) {
         api('/api/sync/status', { preferCache: !forceRefresh, cacheTtl: 10000 }).catch(() => null),
         api('/api/memory?scope=public&limit=100', { preferCache: !forceRefresh, cacheTtl: 10000 }).catch(() => ({ items: [] })),
         api('/api/memory?scope=responders&limit=100', { responder: true, preferCache: !forceRefresh, cacheTtl: 10000 }).catch(() => ({ items: [] })),
-        api('/api/sync/cloud-status', { admin: true, preferCache: !forceRefresh, cacheTtl: 15000 }).catch(() => null),
+        api('/api/sync/cloud-status', { admin: true, noCache: true }).catch(err => ({ connected: false, counts_verified: false, error: err.message })),
         getDiscoveredPeers().catch(() => ({ peers: [] })),
       ]);
 
@@ -207,6 +215,38 @@ export default function AdminPortal({ initialTab = 'hq' }) {
     const timer = setInterval(() => loadData(false), 15000);
     return () => clearInterval(timer);
   }, [loadData]);
+
+  useEffect(() => {
+    if (activeTab !== 'inspector') return;
+    let cancelled = false;
+    const generation = ++cloudGeneration.current;
+    selectionGeneration.current++;
+    const fetchPage = async () => {
+      setCloudLoading(true); setCloudError(''); setCloudPage(null);
+      setSelectedRecord(null); setRecordJourney(null); setJourneyError('');
+      try {
+        const result = await api(`/api/sync/cloud-records?collection=${encodeURIComponent(cloudCollection)}&limit=50`, { admin: true, noCache: true });
+        if (!Array.isArray(result.items) || result.source !== 'qdrant_cloud') throw new Error('Cloud record page was not confirmed.');
+        if (!cancelled && generation === cloudGeneration.current) setCloudPage(result);
+      } catch (err) { if (!cancelled) setCloudError(err.message); }
+      finally { if (!cancelled) setCloudLoading(false); }
+    };
+    const first = setTimeout(fetchPage, 0);
+    return () => { cancelled = true; clearTimeout(first); cloudGeneration.current++; };
+  }, [activeTab, cloudCollection, cloudRefresh]);
+  const loadMoreCloud = async () => {
+    if (cloudLoading || cloudPage?.next_offset == null) return;
+    setCloudLoading(true); setCloudError('');
+    const collection = cloudCollection;
+    const generation = cloudGeneration.current;
+    try {
+      const result = await api(`/api/sync/cloud-records?collection=${encodeURIComponent(collection)}&limit=50&offset=${encodeURIComponent(cloudPage.next_offset)}`, { admin: true, noCache: true });
+      if (!Array.isArray(result.items) || result.source !== 'qdrant_cloud') throw new Error('Cloud record page was not confirmed.');
+      if (generation !== cloudGeneration.current) return;
+      setCloudPage(previous => previous?.collection === collection ? { ...result, items: Array.from(new Map([...previous.items, ...result.items].map(item => [item.point_id, item])).values()) } : previous);
+    } catch (err) { if (generation === cloudGeneration.current) setCloudError(err.message); }
+    finally { if (generation === cloudGeneration.current) setCloudLoading(false); }
+  };
 
   // Tab 1 Action: Claim / Dispatch Mission
   const claimMission = (casualty) => {
@@ -346,7 +386,8 @@ export default function AdminPortal({ initialTab = 'hq' }) {
     setMessage('');
     try {
       const res = await api('/api/sync/cloud-mirror', { method: 'POST', admin: true });
-      setMessage(`Qdrant Cloud mirror complete! Verified ${res.total_points || 24} points synchronized bidirectionally.`);
+      setMessage(cloudMirrorSummary(res));
+      setCloudRefresh(value => value + 1);
       invalidateApiCache();
       await loadData(true);
     } catch (err) {
@@ -365,11 +406,12 @@ export default function AdminPortal({ initialTab = 'hq' }) {
     setError('');
     setMessage('');
     try {
-      const res = await api('/api/admin/reset-all', { method: 'POST', admin: true });
+      await api('/api/admin/reset-all', { method: 'POST', admin: true });
       invalidateApiCache();
       setMyMissions([]);
       localStorage.setItem('rescue.my_missions', '[]');
-      setMessage(`All database records wiped to 0 points! Local cleared: ${res.events_cleared || 0}, Cloud cleared.`);
+      setSelectedRecord(null); setRecordJourney(null); setCloudRefresh(value => value + 1);
+      setMessage('Database reset finished. Refreshing verified counts.');
       await loadData(true);
     } catch (err) {
       setError(`Reset failed: ${err.message}`);
@@ -378,21 +420,14 @@ export default function AdminPortal({ initialTab = 'hq' }) {
     }
   };
 
-  // Inspect Event Lineage
-  const inspectRecord = async (rec) => {
-    setSelectedRecord(rec);
-    setRecordJourney(null);
-    try {
-      const res = await api(`/api/provenance/${rec.id}`);
-      setRecordJourney(res);
-    } catch {
-      // offline fallback lineage
-      setRecordJourney({
-        event_id: rec.id,
-        origin_node: rec.origin_device || 'survivor-1',
-        hops: [{ from_node: rec.origin_device || 'survivor-1', to_node: 'central-hq', synced_at: rec.observed_at }],
-      });
-    }
+  // Cloud payloads and verified relay receipts are separate evidence.
+  const inspectRecord = async (point) => {
+    const generation = ++selectionGeneration.current;
+    const rec = { ...point.payload, point_id: point.point_id };
+    setSelectedRecord(rec); setRecordJourney(null); setJourneyError('');
+    if (!rec.id) { setJourneyError('No event ID or relay receipts available for this cloud point.'); return; }
+    try { const result = await api(`/api/provenance/${encodeURIComponent(rec.id)}`, { responder: true, noCache: true }); if (generation === selectionGeneration.current) setRecordJourney(result); }
+    catch (err) { if (generation === selectionGeneration.current) setJourneyError(`Relay receipts unavailable: ${err.message}`); }
   };
 
   // Derived Filtered Lists
@@ -413,13 +448,9 @@ export default function AdminPortal({ initialTab = 'hq' }) {
   const rescuedCount = casualties.filter((c) => c.status === 'rescued_transported').length;
   const openSafeHavens = 3 + checkpoints.filter((c) => c.status !== 'blocked' && c.status !== 'compromised' && c.severity !== 'red').length;
 
-  const currentShards = cloudStatus?.shards || {
-    rescue_approved_guides: 6,
-    rescue_public_events: 8,
-    rescue_responder_events: 6,
-    rescue_group_events: 4,
-  };
-  const totalPoints = cloudStatus?.total_points || 24;
+  const currentShards = cloudStatus?.connected ? cloudStatus.shards || {} : {};
+  const totalPoints = cloudStatus?.connected ? displayCloudCount(cloudStatus.total_points) : 'Unavailable';
+
 
   return (
     <Shell
@@ -498,12 +529,12 @@ export default function AdminPortal({ initialTab = 'hq' }) {
 
         {/* Global Refresh Button */}
         <button
-          onClick={() => loadData(true)}
+          onClick={() => { loadData(true); if (activeTab === 'inspector') setCloudRefresh(value => value + 1); }}
           disabled={loading}
           className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-mono font-bold text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
         >
           <RefreshCw size={12} className={loading ? 'animate-spin text-cyan-500' : ''} />
-          <span>Sync ({events.length} records)</span>
+          <span>Refresh · Local feed ({events.length})</span>
         </button>
       </div>
 
@@ -859,20 +890,20 @@ export default function AdminPortal({ initialTab = 'hq' }) {
                     <p className="text-[10px] text-slate-400 font-semibold uppercase">Cloud Vectors</p>
                   </div>
                 </div>
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span title={cloudStatus?.connected ? 'Cloud reachable' : 'Cloud unavailable'} className={`w-2 h-2 rounded-full ${cloudStatus?.connected ? 'bg-emerald-400' : 'bg-slate-500'}`} />
               </div>
               <div className="text-[10px] text-slate-400 font-mono mt-2 pt-1.5 border-t border-slate-800">
-                AWS us-east-1 · Dense 384
+                {cloudStatus?.connected ? cloudStatus.counts_verified ? 'Counts verified' : 'Some counts unavailable' : 'Cloud unavailable'}{cloudStatus?.checked_at ? ` · ${formatTime(cloudStatus.checked_at)}` : ''}
               </div>
             </div>
 
             <div className="stat-card p-3 rounded-2xl border border-slate-800 bg-[#07111e] flex flex-col justify-between">
               <div className="text-[10px] text-slate-400 font-mono uppercase font-bold">Vector Shards</div>
               <div className="grid grid-cols-2 gap-1 mt-1 text-[10px] font-mono">
-                <span className="text-amber-400">📖 Guides: <strong>{currentShards.rescue_approved_guides ?? 0}</strong></span>
-                <span className="text-cyan-400">🌐 Public: <strong>{currentShards.rescue_public_events ?? 0}</strong></span>
-                <span className="text-rose-400">🚨 SOS: <strong>{currentShards.rescue_responder_events ?? 0}</strong></span>
-                <span className="text-emerald-400">👥 Group: <strong>{currentShards.rescue_group_events ?? 0}</strong></span>
+                <span className="text-amber-400">📖 Guides: <strong>{displayCloudCount(currentShards.rescue_approved_guides)}</strong></span>
+                <span className="text-cyan-400">🌐 Public: <strong>{displayCloudCount(currentShards.rescue_public_events)}</strong></span>
+                <span className="text-rose-400">🚨 Responders: <strong>{displayCloudCount(currentShards.rescue_responder_events)}</strong></span>
+                <span className="text-emerald-400">👥 Group: <strong>{displayCloudCount(currentShards.rescue_group_events)}</strong></span>
               </div>
             </div>
 
@@ -901,17 +932,31 @@ export default function AdminPortal({ initialTab = 'hq' }) {
             </div>
           </div>
 
+          {(cloudStatus?.reason || cloudStatus?.error || Object.keys(cloudStatus?.count_errors || {}).length > 0) && <p role="alert" className="break-words text-xs text-amber-400">{cloudStatus.reason || cloudStatus.error || Object.values(cloudStatus.count_errors).join(' · ')}</p>}
+
           {/* MAIN PROVENANCE & FEED GRID */}
           <div className="grid xl:grid-cols-[1.1fr_0.9fr] gap-3 sm:gap-4">
             {/* LEFT: MEMORY FEED */}
-            <Card title="Raw Event Shard Ledger">
+            <Card title="Cloud Collection Records">
+              <p className="mb-2 text-xs text-slate-400">This list reads the cloud collections counted above. The local report feed has {events.length} record(s); guides and group records are separate.</p>
+              <div className="mb-3 flex flex-wrap gap-2">
+                <select aria-label="Cloud collection" className="field min-w-0 flex-1" value={cloudCollection} onChange={e => setCloudCollection(e.target.value)}>
+                  {CLOUD_COLLECTIONS.map(collection => <option key={collection.name} value={collection.name}>{collection.label} ({displayCloudCount(currentShards[collection.name])})</option>)}
+                </select>
+                <button className="rounded-xl border border-slate-700 px-3 py-2 text-xs" disabled={cloudLoading} onClick={() => setCloudRefresh(value => value + 1)}>Refresh records</button>
+              </div>
+              {cloudError && <p role="alert" className="mb-2 break-words text-xs text-amber-400">{cloudError}</p>}
+              {cloudLoading && <p role="status" className="mb-2 text-xs text-slate-400">Reading cloud records…</p>}
+              {cloudPage && <p className="mb-2 text-xs text-slate-400">Showing {cloudPage.items.length} loaded · Collection count: {displayCloudCount(currentShards[cloudCollection])} · Read {formatTime(cloudPage.checked_at)}</p>}
+              {cloudPage && !cloudPage.items.length && <Empty icon={Database}>No records in this cloud collection.</Empty>}
               <div className="max-h-[460px] overflow-y-auto space-y-1.5 pr-1">
-                {events.map((ev) => {
-                  const isSelected = selectedRecord?.id === ev.id;
+                {(cloudPage?.items || []).map((point) => {
+                  const ev = point.payload;
+                  const isSelected = selectedRecord?.point_id === point.point_id;
                   return (
                     <button
-                      key={ev.id}
-                      onClick={() => inspectRecord(ev)}
+                      key={point.point_id}
+                      onClick={() => inspectRecord(point)}
                       className={`w-full text-left p-2.5 rounded-xl border transition-all cursor-pointer ${
                         isSelected
                           ? 'border-cyan-500 bg-cyan-950/40'
@@ -919,14 +964,15 @@ export default function AdminPortal({ initialTab = 'hq' }) {
                       }`}
                     >
                       <div className="flex items-center justify-between text-[10px] font-mono mb-1">
-                        <span className="text-cyan-400 font-bold uppercase">{ev.kind} · {ev.visibility}</span>
-                        <span className="text-slate-500">{formatTime(ev.observed_at)}</span>
+                        <span className="text-cyan-400 font-bold uppercase">{ev.kind || (cloudCollection === 'rescue_approved_guides' ? 'Guide' : 'Record')} · {ev.visibility || CLOUD_COLLECTIONS.find(c => c.name === cloudCollection)?.label}</span>
+                        <span className="text-slate-500">{ev.observed_at ? formatTime(ev.observed_at) : 'Timestamp unavailable'}</span>
                       </div>
-                      <p className="text-xs text-slate-200 line-clamp-2">{ev.text}</p>
+                      <p className="text-xs text-slate-200 line-clamp-2">{ev.text || ev.title || ev.summary || ev.id || point.point_id}</p>
                     </button>
                   );
                 })}
               </div>
+              {cloudPage?.next_offset != null && <button className="mt-3 rounded-xl border border-slate-700 px-3 py-2 text-xs" disabled={cloudLoading} onClick={loadMoreCloud}>Load more cloud records</button>}
             </Card>
 
             {/* RIGHT: CRYPTOGRAPHIC LINEAGE INSPECTOR */}
@@ -935,22 +981,21 @@ export default function AdminPortal({ initialTab = 'hq' }) {
                 <div className="space-y-2 text-xs">
                   <div className="p-2.5 rounded-xl bg-[#07111e] border border-slate-800 font-mono text-[11px]">
                     <div className="text-slate-500 text-[10px] mb-0.5">SHA-256 Content Hash:</div>
-                    <div className="text-emerald-400 font-bold truncate">{selectedRecord.content_hash || selectedRecord.id}</div>
+                    <div className="text-emerald-400 font-bold truncate">{selectedRecord.content_hash || 'Content hash unavailable'}</div>
                   </div>
 
                   <div className="p-2.5 rounded-xl bg-[#07111e] border border-slate-800 text-[11px] font-mono space-y-1">
-                    <div className="text-slate-400">Origin Device: <strong className="text-white">{selectedRecord.origin_device || 'survivor'}</strong></div>
-                    <div className="text-slate-400">Authority Verified: <strong className={selectedRecord.verified ? 'text-emerald-400' : 'text-slate-400'}>{selectedRecord.verified ? 'YES (HMAC Signed)' : 'Field Unsigned'}</strong></div>
+                    <div className="text-slate-400">Origin Device: <strong className="text-white">{selectedRecord.origin_device || 'Unknown'}</strong></div>
+                    <div className="text-slate-400">Authority Verified: <strong className={selectedRecord.verified ? 'text-emerald-400' : 'text-slate-400'}>{selectedRecord.verified ? 'Record marked verified' : 'Not marked verified'}</strong></div>
                   </div>
 
                   <div className="p-2.5 rounded-xl bg-[#07111e] border border-slate-800 font-mono text-[11px]">
                     <div className="text-slate-400 font-bold mb-1">Multi-Hop Relay Lineage:</div>
                     <div className="border-l-2 border-cyan-500 pl-2 space-y-1">
-                      <div>Node: {selectedRecord.origin_device || 'survivor-1'}</div>
-                      <div className="text-cyan-400">↓ Transmitted via BLE Mesh</div>
-                      <div>Uplink: central-hq (Qdrant Edge)</div>
+                      {recordJourney?.hops?.length ? recordJourney.hops.map((hop, index) => <div key={hop.id || index} className="break-words">{hop.from_node} → {hop.to_node}{hop.transport ? ` · ${hop.transport}` : ''}{hop.synced_at ? ` · ${formatTime(hop.synced_at)}` : ''}</div>) : <div className="text-slate-400">{journeyError || 'No confirmed relay receipts available.'}</div>}
                     </div>
                   </div>
+                  <details className="rounded-xl border border-slate-800 p-2.5"><summary>Stored cloud payload</summary><pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-all text-[10px]">{JSON.stringify(selectedRecord, null, 2)}</pre></details>
                 </div>
               ) : (
                 <Empty icon={GitBranch}>Select any record on the left to inspect its cryptographic SHA-256 hash and propagation trail.</Empty>
