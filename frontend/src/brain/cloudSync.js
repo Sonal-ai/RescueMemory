@@ -1,4 +1,5 @@
 import { wireReport, validReport } from './meshProtocol.js';
+import { createPresencePublisher, PRESENCE_TTL_MS } from './cloudPresence.js';
 
 /**
  * RescueMemory Direct Cloud Mesh & Qdrant Sync Engine
@@ -159,54 +160,19 @@ export function cardinalDirection(b) {
 /**
  * Publishes or updates this device's presence beacon in Qdrant Cloud.
  */
-export async function publishPresenceBeacon({
-  deviceId,
-  role = 'survivor',
-  deviceName = '',
-  location = { lat: 28.7041, lon: 77.1025 },
-  battery = undefined,
-  unsyncedCount = 0,
-}) {
-  if (!deviceId) return false;
-  try {
-    const pointId = await strToUuid(`beacon_${deviceId}`);
-    const name = deviceName || `Android Mesh Node (${deviceId.slice(-4)})`;
-    const payload = {
-      id: `beacon_${deviceId}`,
-      node_id: deviceId,
-      kind: 'peer_beacon',
-      visibility: 'public',
-      device_name: name,
-      role,
-      location: {
-        lat: Number(location.lat || 28.7041),
-        lon: Number(location.lon || 77.1025),
-      },
-      unsynced_count: Number(unsyncedCount || 0),
-      last_seen: Date.now(),
-      status: 'active',
-    };
-    if (battery != null) {
-      payload.battery = Number(battery);
-    }
-    const point = {
-      id: pointId,
-      vector: { dense: generateVector384(deviceId) },
-      payload,
-    };
+const presencePublisher = createPresencePublisher({ request: universalRequest, url: QDRANT_CLOUD_URL,
+  key: QDRANT_CLOUD_KEY, collection: PUBLIC_EVENTS_COLLECTION, pointIdFor: strToUuid, vectorFor: generateVector384 });
 
-    const res = await universalRequest(`${QDRANT_CLOUD_URL}/collections/${PUBLIC_EVENTS_COLLECTION}/points`, {
-      method: 'PUT',
-      headers: {
-        'api-key': QDRANT_CLOUD_KEY,
-        'Content-Type': 'application/json',
-      },
-      body: { points: [point] },
-      timeout: 3500,
-    });
-    return res.ok;
-  } catch (err) {
-    console.warn('[CloudMesh] publishPresenceBeacon error:', err.message);
+export const preparePhoneBeaconIndexes = () => presencePublisher.ensureIndexes();
+export const pruneInactivePhoneBeacons = options => presencePublisher.pruneInactive(options);
+
+export async function publishPresenceBeacon(input) {
+  try {
+    const result = await presencePublisher.publish(input);
+    if (result.cleanup_error) console.warn(result.cleanup_error);
+    return result.updated;
+  } catch (error) {
+    console.warn('[CloudMesh] publishPresenceBeacon:', error.message);
     return false;
   }
 }
@@ -240,7 +206,7 @@ export async function queryPeerBeacons(myDeviceId, myLocation = { lat: 28.7041, 
     const points = data?.result?.points || [];
 
     const now = Date.now();
-    const activeCutoffMs = 300000; // Beacons within last 5 minutes
+    const activeCutoffMs = PRESENCE_TTL_MS; // Beacons within last 5 minutes
     const myLat = myLocation?.lat || 28.7041;
     const myLon = myLocation?.lon || 77.1025;
 

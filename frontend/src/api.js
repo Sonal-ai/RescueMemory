@@ -901,18 +901,19 @@ export async function updateDeviceLocation(locationData) {
   }
   const statusStr = locationData?.status || 'active';
 
+  let cloudUpdated = false;
   try {
     const unsynced = await getUnsyncedReports();
-    await publishPresenceBeacon({
+    cloudUpdated = await publishPresenceBeacon({
       deviceId: myDeviceId,
       role: myRole,
       deviceName: myDeviceName,
-      location: { lat, lon },
+      location: { ...loc, lat, lon },
       ...(batteryLevel != null ? { battery: batteryLevel } : {}),
       unsyncedCount: unsynced.length,
     });
-  } catch {
-    // silent
+  } catch (error) {
+    console.warn('[cloud.presence/PUBLISH]', error.message);
   }
 
   const base = getBackendBaseUrl();
@@ -937,7 +938,7 @@ export async function updateDeviceLocation(locationData) {
     }
   }
 
-  return { updated: true, mode: 'automatic_mesh' };
+  return { updated: true, mode: 'automatic_mesh', cloud_updated: cloudUpdated };
 }
 
 export async function syncDiscoveredPeer(syncData = {}) {
