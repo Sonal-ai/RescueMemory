@@ -76,7 +76,7 @@ Setting up Qdrant Cloud for RescueMemory takes less than 5 minutes.
 
 ### Step 2.3: Configure the Central Node
 On your Central Command laptop / server:
-1. Open `.env.central` (or your central environment file in the project root).
+1. Open the project's existing `.env`. For Render, use the service's existing **Environment Variables** instead. No separate `.env.central` file is required, and existing Render variables take precedence over local files.
 2. Set the following environment variables:
 
 ```bash
@@ -87,7 +87,7 @@ NODE_ID=central_HQ_delhi
 # Local Edge & Admin Security
 NODE_ADMIN_KEY=your-secure-command-admin-pass
 MESH_SHARED_KEY=field-mesh-key-999
-RESPONDER_KEY=responder-medical-key-123
+RESPONDER_SHARED_KEY=responder-medical-key-123
 GUIDE_TRUST_KEY=signed-medical-bulletin-authority
 
 # Qdrant Cloud Uplink Configuration
@@ -100,7 +100,9 @@ Start the backend server on the central node:
 ```powershell
 python -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
 ```
-When `NODE_ROLE=central`, the backend automatically loads `.env.central` and recognizes the `QDRANT_URL`.
+The backend reads `QDRANT_URL` and `QDRANT_API_KEY` from the environment, including Render's service variables or the root `.env`. A legacy `.env.central` file is optional; you do not need to move your working settings into it.
+
+If the inspector says **Offline: cloud counts cannot be verified**, enable **Online** in the app's top bar, then refresh the cloud records. This message means the app has disabled online requests; it does not establish that Render or your credentials failed. Deployment logs ending with **Application startup complete** and **Your service is live** show a successful startup. A first-start model-cache miss followed by a successful download is recoverable.
 
 ---
 

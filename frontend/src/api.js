@@ -33,7 +33,8 @@ import {
 } from './brain/bleMesh.js';
 import { ensureMeshIdentity, getPhoneBattery, publishMeshLocation } from './brain/bleMesh.js';
 import { mergePeers } from './brain/meshProtocol.js';
-import { readCloudSnapshot, readCloudRecords, localRecordProvenance } from './brain/cloudInspector.js';
+import { localRecordProvenance } from './brain/cloudInspector.js';
+import { isCloudApi, offlineCloudResult, requestCloudApi } from './brain/cloudApi.js';
 import { isAndroidEdge, preferNativeRetrieval, getQdrantEdgeStatus } from './brain/qdrantEdge.js';
 
 export {
@@ -251,7 +252,7 @@ export async function api(path, options = {}) {
     setStandaloneMode(true);
     return handleOfflineFallback(path, method, body);
   }
-  const liveCloud = path.startsWith('/api/sync/cloud-');
+  const liveCloud = isCloudApi(path);
   const authorityWrite = requiresAuthorityServer(path, method, body);
   const cacheKey = `${method}:${path}:${admin ? 'a' : ''}:${responder ? 'r' : ''}:${group ? 'g' : ''}`;
 
@@ -262,6 +263,7 @@ export async function api(path, options = {}) {
 
   // Immediate offline fallback if offline mode is toggled OR device is known to be offline
   if (!isOnlineMode() || (typeof navigator !== 'undefined' && navigator.onLine === false)) {
+    if (liveCloud) return offlineCloudResult(path);
     if (authorityWrite) throw new Error('Authority signing requires the central server. Nothing was signed or published.');
     setStandaloneMode(true);
     const cached = getCachedApi(cacheKey);
@@ -276,6 +278,15 @@ export async function api(path, options = {}) {
   if (group && setting('groupToken')) headers['X-Group-Token'] = setting('groupToken');
 
   const targetUrl = buildBackendUrl(path);
+
+  if (liveCloud) {
+    const data = await requestCloudApi(fetch, targetUrl, path, {
+      method, headers, body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    setStandaloneMode(false);
+    if (method !== 'GET') invalidateApiCache();
+    return data;
+  }
 
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
   const timeoutId = controller ? setTimeout(() => controller.abort(), 6000) : null;
@@ -725,27 +736,6 @@ async function handleOfflineFallback(path, method, body) {
   if (path.startsWith('/api/entities/')) {
     const entityId = decodeURIComponent(path.split('/').pop().split('?')[0]);
     return storedEntityTimeline(await getAllLocalReports(), entityId);
-  }
-
-  // Direct cloud inspection uses actual counts/records; offline is unknown.
-  const cloudOptions = () => ({ url: QDRANT_CLOUD_URL, key: QDRANT_CLOUD_KEY,
-    online: isOnlineMode() && (typeof navigator === 'undefined' || navigator.onLine !== false) });
-  if (path === '/api/sync/cloud-status') {
-    return { ...await readCloudSnapshot(universalRequest, cloudOptions()), local_fallback: true };
-  }
-  if (path.startsWith('/api/sync/cloud-records')) {
-    const params = new URL(path, 'https://local.invalid').searchParams;
-    const rawOffset = params.get('offset');
-    const offset = rawOffset !== null && /^\d+$/.test(rawOffset) ? Number(rawOffset) : rawOffset;
-    return { ...await readCloudRecords(universalRequest, { ...cloudOptions(), collection: params.get('collection'),
-      offset, limit: Number(params.get('limit') || 50) }), local_fallback: true };
-  }
-  if (path === '/api/sync/cloud-mirror' || path === '/api/sync/mirror') {
-    const snapshot = await readCloudSnapshot(universalRequest, cloudOptions());
-    if (!snapshot.connected) return { mirrored: false, status: cloudOptions().online ? 'unreachable' : 'offline', reason: snapshot.reason };
-    const syncRes = await triggerAutoSync();
-    return { mirrored: false, mode: 'report_sync', synced_events: syncRes.synced,
-      imported_events: syncRes.imported, status: syncRes.status, local_fallback: true };
   }
 
   // 6g. Volunteer Sync Endpoints

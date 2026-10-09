@@ -1,6 +1,8 @@
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+import numpy as np
+
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
@@ -8,6 +10,25 @@ from fastapi.testclient import TestClient
 from backend.app import cloud
 from backend.app.config import Settings
 from backend.app.main import create_app
+
+
+def test_cloud_upload_bounds_embedding_memory_and_preserves_all_records():
+    client = Mock()
+    batches = []
+
+    def embed(texts, *, batch_size):
+        assert batch_size == 16
+        assert len(texts) <= 16
+        batches.append(texts)
+        return (np.zeros(384) for _ in texts)
+
+    service = SimpleNamespace(memory=SimpleNamespace(embedder=SimpleNamespace(embed=embed)))
+    records = [{"id": f"event-{i}", "text": f"report-{i}"} for i in range(35)]
+    cloud._upsert_new(client, "reports", records, service, lambda record: record["text"])
+    assert [len(batch) for batch in batches] == [16, 16, 3]
+    uploaded = [point.payload for call in client.upsert.call_args_list for point in call.kwargs["points"]]
+    assert uploaded == records
+    assert all(call.kwargs["wait"] is True for call in client.upsert.call_args_list)
 
 
 def test_inventory_is_exact_app_only_and_preserves_zero(monkeypatch):

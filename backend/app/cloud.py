@@ -92,9 +92,10 @@ def _cloud_payloads(client: QdrantClient, name: str):
 
 def _upsert_new(client: QdrantClient, name: str, records: list[dict],
                 service: RescueService, text_of) -> None:
-    for start in range(0, len(records), 64):
-        batch = records[start:start + 64]
-        vectors = list(service.memory.embedder.embed([text_of(record) for record in batch]))
+    # Match reference seeding's small batches on memory-limited Render instances.
+    for start in range(0, len(records), 16):
+        batch = records[start:start + 16]
+        vectors = list(service.memory.embedder.embed([text_of(record) for record in batch], batch_size=16))
         client.upsert(name, points=[
             models.PointStruct(id=_point_id(record["id"]),
                                vector={"dense": vector.tolist()}, payload=record)

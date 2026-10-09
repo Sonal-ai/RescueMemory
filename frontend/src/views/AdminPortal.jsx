@@ -49,6 +49,8 @@ import {
   bearingDeg,
   cardinalDirection,
   invalidateApiCache,
+  onOnlineModeChange,
+  isOnlineMode,
   triggerAutoSync,
   getDeviceId
 } from '../api';
@@ -56,6 +58,7 @@ import { Shell, Card, Empty } from '../components';
 import MapPanel from '../MapPanel';
 import MeshSyncScanner from '../components/MeshSyncScanner';
 import { CLOUD_COLLECTIONS, displayCloudCount, cloudMirrorSummary } from '../brain/cloudInspector.js';
+import { offlineCloudResult } from '../brain/cloudApi.js';
 
 import { coordinates, equipmentInventory, dashboardSummary, loadDashboardFeed } from '../brain/adminData.js';
 
@@ -129,6 +132,8 @@ export default function AdminPortal({ initialTab = 'hq' }) {
   const [cloudRefresh, setCloudRefresh] = useState(0);
   const [journeyError, setJourneyError] = useState('');
   const cloudGeneration = useRef(0), selectionGeneration = useRef(0);
+  const dataLoading = useRef(false);
+  const dataGeneration = useRef(0);
 
   // Ensure default demo admin credentials
   useEffect(() => {
@@ -162,6 +167,9 @@ export default function AdminPortal({ initialTab = 'hq' }) {
 
   // Primary SWR Data Fetcher: Fast & Cached
   const loadData = useCallback(async (forceRefresh = false) => {
+    if (dataLoading.current) return;
+    dataLoading.current = true;
+    const generation = ++dataGeneration.current;
     setLoading(true);
     try {
       const [h, s, feed, cloudInfo, disc] = await Promise.all([
@@ -171,14 +179,18 @@ export default function AdminPortal({ initialTab = 'hq' }) {
         api('/api/sync/cloud-status', { admin: true, noCache: true }).catch(err => ({ connected: false, counts_verified: false, error: err.message })),
         getDiscoveredPeers().catch(err => ({ peers: [], error: err.message })),
       ]);
+      if (generation !== dataGeneration.current) return;
       setHealth(h); setSync(s); setCloudStatus(cloudInfo);
       setPeers(disc?.peers || []);
       setFeedState({ ...feed, peerError: disc?.error });
       setEvents(feed.items);
     } catch (err) {
-      setError(err.message);
+      if (generation === dataGeneration.current) setError(err.message);
     } finally {
-      setLoading(false);
+      if (generation === dataGeneration.current) {
+        dataLoading.current = false;
+        setLoading(false);
+      }
     }
   }, []);
 
@@ -187,6 +199,25 @@ export default function AdminPortal({ initialTab = 'hq' }) {
     loadData(false);
     const timer = setInterval(() => loadData(false), 15000);
     return () => clearInterval(timer);
+  }, [loadData]);
+
+  useEffect(() => {
+    const refreshConnection = () => {
+      // Results started before a mode change must not overwrite the new state.
+      dataGeneration.current++;
+      dataLoading.current = false;
+      if (!isOnlineMode() || navigator.onLine === false) setCloudStatus(offlineCloudResult('/api/sync/cloud-status'));
+      loadData(true);
+      setCloudRefresh(value => value + 1);
+    };
+    const unsubscribe = onOnlineModeChange(refreshConnection);
+    window.addEventListener('online', refreshConnection);
+    window.addEventListener('offline', refreshConnection);
+    return () => {
+      unsubscribe();
+      window.removeEventListener('online', refreshConnection);
+      window.removeEventListener('offline', refreshConnection);
+    };
   }, [loadData]);
 
   useEffect(() => {
