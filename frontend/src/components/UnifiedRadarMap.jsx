@@ -16,7 +16,7 @@ import {
   Volume2,
   VolumeX,
 } from 'lucide-react';
-import { getSurvivalRadar, distM, bearingDeg, cardinalDirection, watchNativeOrWebLocation } from '../api';
+import { getSurvivalRadar, distM, bearingDeg, cardinalDirection } from '../api';
 import MapPanel from '../MapPanel';
 
 const COMPASS_SIZE = 220;
@@ -53,7 +53,8 @@ function extractCompassHeading(e) {
 }
 
 export default function UnifiedRadarMap({
-  userLocation = { lat: 28.7041, lon: 77.1025 },
+  userLocation = null,
+  gpsLive = false,
   items = [],
   peers = [],
   onSelectLocation = null,
@@ -77,96 +78,23 @@ export default function UnifiedRadarMap({
   const [isCompassActive, setIsCompassActive] = useState(false);
   const [lastHapticTime, setLastHapticTime] = useState(0);
 
-  // Live Physical GPS Streaming State for Walking Navigation
-  const [liveCoords, setLiveCoords] = useState(() => ({
-    lat: userLocation?.lat ?? 28.7041,
-    lon: userLocation?.lon ?? 77.1025
-  }));
-  const [gpsAccuracy, setGpsAccuracy] = useState(null);
-  const [isLiveWalking, setIsLiveWalking] = useState(false);
+  // The survivor screen owns GPS on every tab; this view uses the same fix.
+  const liveCoords = userLocation;
+  const gpsAccuracy = Number.isFinite(userLocation?.accuracy) ? Math.round(userLocation.accuracy) : null;
+  const isLiveWalking = gpsLive;
   const [totalMetersWalked, setTotalMetersWalked] = useState(0);
-
-  // Keep a fixed physical world anchor for baseline demo facilities so they remain stationary on the ground
-  const baselineAnchorRef = useRef(null);
-  if (!baselineAnchorRef.current) {
-    baselineAnchorRef.current = {
-      lat: userLocation?.lat ?? 28.7041,
-      lon: userLocation?.lon ?? 77.1025
-    };
-  }
-
-  // Update liveCoords if parent explicitly overrides location significantly (>5m)
+  const previousFix = useRef(null);
+  const baselineAnchorRef = useRef(userLocation);
   useEffect(() => {
-    if (userLocation?.lat != null && userLocation?.lon != null) {
-      if (
-        baselineAnchorRef.current &&
-        distM(baselineAnchorRef.current.lat, baselineAnchorRef.current.lon, 28.7041, 77.1025) < 50 &&
-        distM(userLocation.lat, userLocation.lon, 28.7041, 77.1025) >= 50
-      ) {
-        baselineAnchorRef.current = { lat: userLocation.lat, lon: userLocation.lon };
-      }
-      setLiveCoords((prev) => {
-        if (!prev) return { lat: userLocation.lat, lon: userLocation.lon };
-        const delta = distM(prev.lat, prev.lon, userLocation.lat, userLocation.lon);
-        if (delta > 5) {
-          return { lat: userLocation.lat, lon: userLocation.lon };
-        }
-        return prev;
-      });
+    if (!gpsLive || !userLocation) return;
+    const previous = previousFix.current;
+    if (previous && userLocation.timestamp >= previous.timestamp) {
+      const step = distM(previous.lat, previous.lon, userLocation.lat, userLocation.lon);
+      if (step >= 0.4) setTotalMetersWalked(walked => Math.round(walked + step));
     }
-  }, [userLocation]);
-
-  // Continuous Hardware GPS Satellite streaming hook
-  useEffect(() => {
-    let cleanup = null;
-    let isSubscribed = true;
-
-    const startStreamingGps = async () => {
-      try {
-        const unsub = await watchNativeOrWebLocation(
-          (pos) => {
-            if (!isSubscribed) return;
-            const newLat = pos.lat;
-            const newLon = pos.lon;
-            const acc = pos.accuracy ? Math.round(pos.accuracy) : null;
-
-            setLiveCoords((prev) => {
-              if (prev?.lat != null && prev?.lon != null) {
-                const step = distM(prev.lat, prev.lon, newLat, newLon);
-                if (step >= 0.4) {
-                  setTotalMetersWalked((w) => Math.round(w + step));
-                }
-              }
-              return { lat: newLat, lon: newLon };
-            });
-
-            setGpsAccuracy(acc);
-            setIsLiveWalking(true);
-
-            if (onSelectLocation) {
-              onSelectLocation({ lat: newLat, lon: newLon, accuracy: acc });
-            }
-          },
-          (err) => {
-            console.warn('[Radar] GPS streaming notice:', err);
-          }
-        );
-        cleanup = unsub;
-      } catch (err) {
-        console.warn('[Radar] Failed to start GPS watcher:', err);
-      }
-    };
-
-    startStreamingGps();
-
-    return () => {
-      isSubscribed = false;
-      if (typeof cleanup === 'function') {
-        cleanup();
-      }
-    };
-  }, [onSelectLocation]);
-
+    previousFix.current = userLocation;
+    if (!baselineAnchorRef.current) baselineAnchorRef.current = userLocation;
+  }, [userLocation, gpsLive]);
   // Audio Context Ref for offline synthetic radar/compass ping
   const audioCtxRef = useRef(null);
 
@@ -289,10 +217,11 @@ export default function UnifiedRadarMap({
   }, []);
 
   // Fetch Radar Signals from Qdrant Edge Memory
-  const locLat = liveCoords?.lat ?? userLocation?.lat ?? 28.7041;
-  const locLon = liveCoords?.lon ?? userLocation?.lon ?? 77.1025;
+  const locLat = liveCoords?.lat;
+  const locLon = liveCoords?.lon;
 
   const fetchRadar = useCallback(async () => {
+    if (!Number.isFinite(locLat) || !Number.isFinite(locLon)) return;
     setLoading(true);
     setError('');
     try {
@@ -321,7 +250,7 @@ export default function UnifiedRadarMap({
     if (onRefreshGps) {
       await onRefreshGps();
     }
-    if (liveCoords?.lat && liveCoords?.lon) {
+    if (Number.isFinite(liveCoords?.lat) && Number.isFinite(liveCoords?.lon)) {
       baselineAnchorRef.current = { lat: liveCoords.lat, lon: liveCoords.lon };
     }
     fetchRadar();
@@ -604,14 +533,15 @@ export default function UnifiedRadarMap({
               <button
                 type="button"
                 onClick={handleManualRefreshGps}
-                title="Your live walking GPS coordinates. Tap to refresh satellite lock."
+                title={gpsLive ? 'Live GPS coordinates. Tap to refresh.' : 'Last GPS fix. Tap to request a fresh location.'}
                 className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs px-2.5 py-1 rounded-lg border border-cyan-500/40 bg-cyan-50/80 dark:bg-cyan-950/40 text-cyan-900 dark:text-cyan-200 font-mono font-bold shadow-xs hover:border-cyan-400 transition-colors cursor-pointer"
               >
                 <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                  {gpsLive && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>}
+                  <span className={`relative inline-flex rounded-full h-2 w-2 ${gpsLive ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
                 </span>
                 <span className="tabular-nums">
+                  {gpsLive ? 'Live GPS · ' : 'Last GPS fix · '}
                   {(liveCoords?.lat ?? userLocation.lat).toFixed(5)}, {(liveCoords?.lon ?? userLocation.lon).toFixed(5)}
                 </span>
                 {gpsAccuracy != null && (

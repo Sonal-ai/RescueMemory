@@ -56,6 +56,8 @@ export async function getPhoneBattery() {
 export async function publishMeshLocation(value) {
   const location = meshLocation(value?.location || value);
   if (!location) return;
+  const latest = cachedMeshLocation();
+  if (latest && latest.timestamp > location.timestamp) return latest;
   localStorage.setItem('rescue.meshLocation', JSON.stringify(location));
   if (onAndroid) await nativeBle.setLocation({ location });
   return location;

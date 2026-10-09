@@ -1,4 +1,5 @@
 import { reportRadar } from './brain/reportRadar.js';
+import { gpsPosition, hardwareLocationWatch } from './brain/locationTracking.js';
 import { coordinates, requiresAuthorityServer, storedEntityTimeline, localMemoryPage } from './brain/adminData.js';
 import {
   searchKnowledgeLocal,
@@ -788,16 +789,16 @@ export async function getDiscoveredPeers() {
     const peers = mergePeers([getActiveBlePeers()], myDeviceId);
     return { peers, count: peers.length, enabled: isBluetoothSupported(), mode: peers.length ? 'bluetooth' : 'none' };
   }
-  let myLocation = { lat: 28.7041, lon: 77.1025 };
+  let myLocation = null;
   try {
-    const loc = await getNativeOrWebLocation();
-    if (loc?.lat && loc?.lon) myLocation = loc;
+    const loc = await getNativeOrWebLocation({ allowCached: false, allowFallback: false });
+    if (coordinates(loc)) myLocation = loc;
   } catch {
     // silent
   }
 
   // 0. Proactively announce our own presence beacon if online
-  if (isOnlineMode()) {
+  if (isOnlineMode() && myLocation) {
     updateDeviceLocation(myLocation).catch(() => {});
   }
 
@@ -819,8 +820,8 @@ export async function getDiscoveredPeers() {
     console.warn('[Discovery] BLE peer query notice:', bleErr.message);
   }
 
-  // 2. Direct Cloud Mesh Peer Discovery (Qdrant Cloud) - Only when online
-  if (isOnlineMode()) {
+  // 2. Online proximity needs an actual device location.
+  if (isOnlineMode() && myLocation) {
     try {
       const cloudPeers = await queryPeerBeacons(myDeviceId, myLocation);
       if (Array.isArray(cloudPeers)) {
@@ -833,8 +834,8 @@ export async function getDiscoveredPeers() {
     }
   }
 
-  // 3. Central Backend Mesh Relay Discovery (Local Edge Hub or Render) - Only when online
-  if (isOnlineMode()) {
+  // 3. Do not announce a fixed anchor as this phone's position.
+  if (isOnlineMode() && myLocation) {
     const base = getBackendBaseUrl();
     if (base) {
       try {
@@ -876,15 +877,16 @@ export async function getDiscoveredPeers() {
 }
 
 export async function updateDeviceLocation(locationData) {
+  const loc = locationData?.location || locationData;
+  if (!coordinates(loc)) throw new Error('Cannot publish device presence without real coordinates.');
   if (isNativeBle()) await ensureMeshIdentity();
   await publishMeshLocation(locationData).catch(() => {});
   const phoneBattery = await getPhoneBattery().catch(() => ({}));
   if (!isOnlineMode()) {
     return { updated: true, mode: 'offline_local', ...phoneBattery };
   }
-  const loc = locationData?.location || locationData;
-  const lat = Number(loc?.lat ?? 28.7041);
-  const lon = Number(loc?.lon ?? 77.1025);
+  const lat = Number(loc.lat);
+  const lon = Number(loc.lon);
   const myDeviceId = getDeviceId();
   const myRole = setting('role') || 'survivor';
   const myDeviceName = `Survivor Android (${myDeviceId.slice(-4)})`;
@@ -1028,12 +1030,10 @@ export async function assessCasualty(params = {}) {
  * Legacy callers retain the existing fallback. Strict callers can disable cached and fallback locations.
  */
 export async function getNativeOrWebLocation({ allowCached = true, allowFallback = true } = {}) {
-  const saveCached = (lat, lon) => {
+  const saveCached = fix => {
     try {
       localStorage.setItem('rescue.lastLocation', JSON.stringify({
-        lat: Number(lat),
-        lon: Number(lon),
-        updatedAt: Date.now()
+        ...fix, updatedAt: fix.timestamp
       }));
     } catch {
       // silent
@@ -1046,7 +1046,7 @@ export async function getNativeOrWebLocation({ allowCached = true, allowFallback
       if (raw) {
         const parsed = JSON.parse(raw);
         if (coordinates(parsed)) {
-          return { lat: Number(parsed.lat), lon: Number(parsed.lon), isCached: true };
+          return { ...parsed, lat: Number(parsed.lat), lon: Number(parsed.lon), timestamp: parsed.timestamp ?? parsed.updatedAt, isCached: true };
         }
       }
     } catch {
@@ -1078,12 +1078,11 @@ export async function getNativeOrWebLocation({ allowCached = true, allowFallback
       // Tier 1: High accuracy
       try {
         const pos1 = await withTimeout(
-          Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 3500 }),
+          Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 3500, maximumAge: 0 }),
           4000
         );
         if (coordinates({ lat: pos1?.coords?.latitude, lon: pos1?.coords?.longitude })) {
-          saveCached(pos1.coords.latitude, pos1.coords.longitude);
-          return { lat: pos1.coords.latitude, lon: pos1.coords.longitude, accuracy: pos1.coords.accuracy };
+          const fix = gpsPosition(pos1, 'native_gps'); saveCached(fix); return fix;
         }
       } catch (t1Err) {
         console.warn('[GPS] Native high-accuracy failed, trying coarse:', t1Err);
@@ -1092,12 +1091,11 @@ export async function getNativeOrWebLocation({ allowCached = true, allowFallback
       // Tier 2: Coarse / Network location
       try {
         const pos2 = await withTimeout(
-          Geolocation.getCurrentPosition({ enableHighAccuracy: false, timeout: 3000 }),
+          Geolocation.getCurrentPosition({ enableHighAccuracy: false, timeout: 3000, maximumAge: 0 }),
           3500
         );
         if (coordinates({ lat: pos2?.coords?.latitude, lon: pos2?.coords?.longitude })) {
-          saveCached(pos2.coords.latitude, pos2.coords.longitude);
-          return { lat: pos2.coords.latitude, lon: pos2.coords.longitude, accuracy: pos2.coords.accuracy, isCoarse: true };
+          const fix = gpsPosition(pos2, 'native_gps'); saveCached(fix); return { ...fix, isCoarse: true };
         }
       } catch (t2Err) {
         console.warn('[GPS] Native coarse failed:', t2Err);
@@ -1121,12 +1119,11 @@ export async function getNativeOrWebLocation({ allowCached = true, allowFallback
             clearTimeout(timer);
             reject(err);
           },
-          { enableHighAccuracy: true, timeout: 3500, maximumAge: 2000 }
+          { enableHighAccuracy: true, timeout: 3500, maximumAge: 0 }
         );
       });
       if (coordinates({ lat: webPos?.coords?.latitude, lon: webPos?.coords?.longitude })) {
-        saveCached(webPos.coords.latitude, webPos.coords.longitude);
-        return { lat: webPos.coords.latitude, lon: webPos.coords.longitude, accuracy: webPos.coords.accuracy, isWeb: true };
+        const fix = gpsPosition(webPos, 'web_gps'); saveCached(fix); return { ...fix, isWeb: true };
       }
     } catch (webErr) {
       console.warn('[GPS] Web geolocation failed:', webErr);
@@ -1145,7 +1142,6 @@ export async function getNativeOrWebLocation({ allowCached = true, allowFallback
   // Legacy fallback remains for callers pending a separate location migration.
   console.log('[GPS] Using disaster anchor coordinate fallback');
   const anchor = { lat: 28.7041, lon: 77.1025, isFallback: true };
-  saveCached(anchor.lat, anchor.lon);
   return anchor;
 }
 
@@ -1159,110 +1155,16 @@ export async function getNativeOrWebLocation({ allowCached = true, allowFallback
  * @returns {Promise<Function>} unsubscribe - async function to clear the hardware GPS watch
  */
 export async function watchNativeOrWebLocation(onUpdate, onError) {
-  const saveCached = (lat, lon) => {
-    try {
-      localStorage.setItem('rescue.lastLocation', JSON.stringify({
-        lat: Number(lat),
-        lon: Number(lon),
-        updatedAt: Date.now()
-      }));
-    } catch {
-      // silent
-    }
-  };
-
-  // Tier 1: Capacitor Native Geolocation
-  if (typeof window !== 'undefined' && window.Capacitor?.isPluginAvailable?.('Geolocation')) {
-    try {
-      const { Geolocation } = await import('@capacitor/geolocation');
-
-      try {
-        const perm = await Geolocation.checkPermissions();
-        if (perm.location !== 'granted') {
-          await Geolocation.requestPermissions();
-        }
-      } catch (pErr) {
-        console.warn('[GPS Watch] Permission check notice:', pErr);
-      }
-
-      const watchId = await Geolocation.watchPosition(
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 1000 },
-        (position, err) => {
-          if (err) {
-            onError?.(err);
-            return;
-          }
-          if (position?.coords?.latitude != null && position?.coords?.longitude != null) {
-            saveCached(position.coords.latitude, position.coords.longitude);
-            onUpdate({
-              lat: Number(position.coords.latitude),
-              lon: Number(position.coords.longitude),
-              accuracy: position.coords.accuracy || null,
-              speed: position.coords.speed || null,
-              heading: position.coords.heading || null,
-              timestamp: position.timestamp || Date.now(),
-              source: 'native_gps'
-            });
-          }
-        }
-      );
-
-      return async () => {
-        try {
-          await Geolocation.clearWatch({ id: watchId });
-        } catch (cErr) {
-          console.warn('[GPS Watch] Clear native watch error:', cErr);
-        }
-      };
-    } catch (capErr) {
-      console.warn('[GPS Watch] Capacitor watchPosition failed, falling back to Web API:', capErr);
-    }
-  }
-
-  // Tier 2: Browser navigator.geolocation.watchPosition
-  if (typeof navigator !== 'undefined' && navigator.geolocation) {
-    try {
-      const watchId = navigator.geolocation.watchPosition(
-        (pos) => {
-          if (pos?.coords?.latitude != null && pos?.coords?.longitude != null) {
-            saveCached(pos.coords.latitude, pos.coords.longitude);
-            onUpdate({
-              lat: Number(pos.coords.latitude),
-              lon: Number(pos.coords.longitude),
-              accuracy: pos.coords.accuracy || null,
-              speed: pos.coords.speed || null,
-              heading: pos.coords.heading || null,
-              timestamp: pos.timestamp || Date.now(),
-              source: 'web_gps'
-            });
-          }
-        },
-        (err) => {
-          onError?.(err);
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 1000
-        }
-      );
-
-      return () => {
-        try {
-          navigator.geolocation.clearWatch(watchId);
-        } catch {
-          // silent
-        }
-      };
-    } catch (webErr) {
-      console.warn('[GPS Watch] Web watchPosition failed:', webErr);
-    }
-  }
-
-  // Fallback: No hardware GPS watch available
-  return () => {};
+  return hardwareLocationWatch(fix => {
+    try { localStorage.setItem('rescue.lastLocation', JSON.stringify({ ...fix, updatedAt: fix.timestamp })); }
+    catch (error) { console.warn('[GPS cache]', error.message); }
+    onUpdate(fix);
+  }, onError, {
+    nativeAvailable: () => typeof window !== 'undefined' && window.Capacitor?.isPluginAvailable?.('Geolocation'),
+    loadNative: () => import('@capacitor/geolocation'),
+    geolocation: typeof navigator !== 'undefined' ? navigator.geolocation : null,
+  });
 }
-
 // Initialize native status bar and back button when running on Android
 if (typeof window !== 'undefined') {
   import('@capacitor/status-bar')

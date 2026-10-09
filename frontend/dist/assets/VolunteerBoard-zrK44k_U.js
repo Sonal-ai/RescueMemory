@@ -1,0 +1,1 @@
+import{t as e}from"./index-Dodyzqli.js";import t from"./AdminPortal-GXgVPACa.js";var n=e();function r(){return(0,n.jsx)(t,{initialTab:`volunteer`})}export{r as default};
