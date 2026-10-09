@@ -17,8 +17,8 @@ Existing unmanaged beacons are excluded from automatic cleanup. Deleting the 12 
 - 28 Android unit tests passed; production web build and APK assembly succeeded. All 55 release web assets match the APK.
 - Cloud validation was limited to reading actual beacon metadata/counts and adding/verifying indexes. Repeated test pings were not written to the live cloud.
 
-Root APK: `RescueMemory-debug.apk`, version **1.12**, version code **13**.
+Root APK: `RescueMemory-debug.apk`, version **1.13**, version code **14**.
 
-SHA-256: `1c5580246426f923c1d5613a9effee89aa59764d58e3b041ad16f133be4bd18c`.
+SHA-256: `44f07afa143f10d306966e4013e5991df248d7c099e10a3612f1416908b77f13`.
 
-The release is based on main's merged Render connectivity and GPS work (`302bb34`) and excludes unrelated uncommitted edits in the shared checkout.
+The current release retains main's merged Render connectivity, GPS and phone presence work (`ed0f16f`), plus the remaining web Home navigation ordering update. The shared checkout now uses main. Pre-switch edits were retained in a recoverable Git stash; all other substantive changes were already present on main.

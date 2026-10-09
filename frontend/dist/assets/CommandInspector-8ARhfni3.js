@@ -1,0 +1,1 @@
+import{t as e}from"./index-C8Uuqbap.js";import t from"./AdminPortal-B3SrPg1-.js";var n=e();function r(){return(0,n.jsx)(t,{initialTab:`inspector`})}export{r as default};

@@ -1,1 +1,0 @@
-import{t as e}from"./index-DTuLDsxF.js";import t from"./AdminPortal-DEL3zaRW.js";var n=e();function r(){return(0,n.jsx)(t,{initialTab:`hq`})}export{r as default};

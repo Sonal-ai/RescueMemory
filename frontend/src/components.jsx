@@ -26,12 +26,12 @@ import { useNodeStatus } from './hooks/useNodeStatus';
 export { useNodeStatus };
 
 const NAV_LINKS = [
+  ...(!Capacitor.isNativePlatform() ? [{ path: '/', label: 'Home', icon: Globe, desc: 'The RescueMemory journey', badge: 'Home' }] : []),
   { path: '/chat', label: 'Survivor HUD', icon: HeartPulse, desc: 'Chat, Radar & SOS', badge: 'Survivor' },
   { path: '/volunteer', label: 'Responders', icon: Users, desc: 'Medic Field Board', badge: 'Medic' },
   { path: '/safeplace', label: 'Safe Evacuation', icon: ShieldCheck, desc: 'Negative Vector Routing', badge: 'Route' },
   { path: '/hq', label: 'Command HQ', icon: Radio, desc: 'Incident Ledger Relay', badge: 'Central' },
   { path: '/command', label: 'Inspector', icon: Activity, desc: 'Qdrant Cloud & Proofs', badge: 'Dev' },
-  ...(!Capacitor.isNativePlatform() ? [{ path: '/', label: 'Home', icon: Globe, desc: 'The RescueMemory journey', badge: 'Home' }] : []),
 ];
 
 export function SettingsPanel({ onClose }) {
