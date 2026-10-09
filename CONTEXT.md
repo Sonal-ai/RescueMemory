@@ -211,7 +211,7 @@ cd ..
 Copy-Item .env.example .env
 ```
 
-Set distinct long values for `MESH_SHARED_KEY`, `RESPONDER_SHARED_KEY`, `NODE_ADMIN_KEY`, and `GUIDE_TRUST_KEY` in the ignored `.env`. Provision the embedding model before disconnecting; runtime uses local files. Put `QDRANT_URL` and `QDRANT_API_KEY` in ignored `.env.central` on the central host only. `GEMINI_API_KEY` is optional and online-only. Do not commit real keys or put the Cloud key in browser code.
+Set distinct long values for `MESH_SHARED_KEY`, `RESPONDER_SHARED_KEY`, `NODE_ADMIN_KEY`, and `GUIDE_TRUST_KEY` in the ignored `.env`. Provision the embedding model before disconnecting; runtime uses local files. Put `QDRANT_URL` and `QDRANT_API_KEY` in the same ignored root `.env`, or in Render environment variables when hosted; backend settings use no additional environment files. `GEMINI_API_KEY` is optional and online-only. Do not commit real keys or put the Cloud key in browser code.
 
 Run separate processes and separate node data directories:
 

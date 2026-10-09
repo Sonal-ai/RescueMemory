@@ -104,7 +104,6 @@ def ensure_collection(client: QdrantClient, name: str, is_event: bool = True) ->
 
 def main() -> None:
     load_dotenv()
-    load_dotenv(".env.central", override=False)
     url = os.getenv("QDRANT_URL", "")
     key = os.getenv("QDRANT_API_KEY", "")
 

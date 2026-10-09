@@ -27,14 +27,11 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> "Settings":
-        load_dotenv(override=False)
-        load_dotenv(".env.responder", override=False)
+        load_dotenv(Path(__file__).resolve().parents[2] / ".env", override=False)
         node_id = os.getenv("NODE_ID", "survivor-a")
         role = os.getenv("NODE_ROLE", "survivor")
         if role not in {"survivor", "volunteer", "central"}:
             raise ValueError("NODE_ROLE must be survivor, volunteer or central")
-        if Path(".env.central").exists():
-            load_dotenv(".env.central", override=False)
         return cls(
             node_id=node_id,
             role=role,

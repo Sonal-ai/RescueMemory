@@ -11,7 +11,6 @@ from qdrant_client import QdrantClient
 
 def main():
     load_dotenv()
-    load_dotenv(".env.central", override=False)
     url = os.getenv("QDRANT_URL", "")
     key = os.getenv("QDRANT_API_KEY", "")
     parsed = urlparse(url)

@@ -21,7 +21,6 @@ from backend.app.service import RescueService
 
 def main() -> None:
     load_dotenv(override=False)
-    load_dotenv(".env.central", override=False)
     url = os.environ.get("QDRANT_URL", "")
     key = os.environ.get("QDRANT_API_KEY", "")
     if not url.startswith("https://") or not key:
