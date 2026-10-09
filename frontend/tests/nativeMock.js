@@ -3,6 +3,7 @@ import { createPrivateKey, createPublicKey, generateKeyPairSync, sign, verify } 
 
 const callbacks = new Map(), requests = new Map();
 const nativePeers = new Map();
+const calls = { connect: 0, scan: 0 };
 let nextId = 0, certificate = workerData.certificate;
 let privateKey = createPrivateKey(workerData.privateKey), publicKey = workerData.publicKey, keyRotated = false;
 parentPort.on('message', message => {
@@ -45,8 +46,13 @@ const plugin = {
       event: { v: 2, node_id: workerData.id, name: `Phone ${workerData.id}`, address: workerData.id,
         battery: workerData.battery, last_seen_epoch: Date.now() } });
   },
-  async scan() { return { peers: workerData.scanBlind ? [] : [{ address: workerData.peer, rssi: -52 }] }; },
-  async connect() { return { v: 2, node_id: workerData.peer, name: `Phone ${workerData.peer}`, address: workerData.peer, ...workerData.peerBattery }; },
+  async getDiagnostics() { return { calls: { ...calls } }; },
+  async scan() { calls.scan++; return { peers: workerData.scanBlind ? [] : [{ address: workerData.peer, rssi: -52 }] }; },
+  async connect() {
+    calls.connect++;
+    if (workerData.connectError) throw new Error('[gatt.connect/ANDROID_GATT_133] Connection failed at ' + workerData.peer);
+    return { v: 2, node_id: workerData.peer, name: `Phone ${workerData.peer}`, address: workerData.peer, ...workerData.peerBattery };
+  },
   async exchange({ payload }) {
     const id = ++nextId;
     return new Promise((resolve, reject) => {
@@ -59,3 +65,4 @@ const plugin = {
 };
 export const Capacitor = { getPlatform: () => 'android' };
 export const registerPlugin = () => plugin;
+export const advertise = () => callbacks.get('discovered')?.({ address: workerData.peer, rssi: -52, name: 'RescueMemory beacon' });

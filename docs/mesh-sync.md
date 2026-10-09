@@ -1,15 +1,18 @@
-# Nearby Mesh Sync (Android 1.5)
+# Nearby Mesh Sync (Android 1.6)
 
 Install the updated `RescueMemory-debug.apk` on both phones without uninstalling
 the previous app, so existing reports are preserved. Open **Mesh Sync**, enable
-Bluetooth, and allow Nearby devices. No saved Android pairing is required.
+Bluetooth, and allow Nearby devices and precise Location. No saved Android pairing is required.
 
-The app starts an Android foreground service after Nearby devices permission is
-granted. It advertises and scans for eight seconds about every 30 seconds with
-random timing variation, including on other pages and while the app is in the
-background. A persistent **RescueMemory nearby mesh** notification includes a
+The app starts an Android foreground service after the required permissions are
+granted. It advertises continuously and starts eight-second scans about every
+10 seconds while active, or 30 seconds in the background, with random timing
+variation. Scan results are delivered immediately rather than after the window. A persistent **RescueMemory nearby mesh** notification includes a
 **Stop mesh** action; **Find & sync** resumes it. Android 10/11 also require
-Location permission/services for BLE scanning. Android 12+ uses Nearby devices.
+Location services for BLE scanning. Android 12+ requires Nearby devices plus
+precise Location because the radar derives approximate range from scan results.
+The manifest no longer asserts `neverForLocation`, which Android documents can
+filter some BLE beacons. See https://developer.android.com/develop/connectivity/bluetooth/bt-permissions.
 Discovery survives WebView/activity destruction while the service is running;
 force-stopping the app or Android/OEM terminating the service stops it. Open the
 app again to start mesh; this is not a boot receiver or a guarantee against Doze.
@@ -19,12 +22,14 @@ directions, even when only one phone's scan succeeds. Presence is discovery
 telemetry; report access still requires device proofs and encrypted sessions.
 Native peer snapshots repopulate the page when the WebView resumes. Recent
 connectable addresses are retained when an incoming ping uses a different
-Android central-role address. Advertising uses balanced mode.
+Android central-role address. Advertising uses low-latency connectable mode and reports ready only after Android
+confirms advertising succeeded. Startup callbacks have a bounded timeout.
 
 Auto-sync is on by default and runs across every app page while the app is active.
-The smaller device ID gets the first opportunity; the other phone can initiate
-after 20 seconds if that fails. Both phones send and receive in one session.
-**Find & sync** and **Sync now** bypass that tie-breaker. Full report exchanges
+Each fresh observed app beacon schedules identification and report exchange
+automatically, using one connection with a small timing jitter. There is no
+20-second device-ID hold. Both phones send and receive in one session.
+**Find & sync** and **Sync now** remain optional recovery controls. Full report exchanges
 require both apps active; presence pings work while either is backgrounded. The
 native receiver returns that distinction promptly instead of waiting for a paused
 WebView to answer. Bluetooth signal is approximate proximity,
@@ -36,7 +41,7 @@ Online-only nodes appear in the collapsed debugging panel. Battery comes from An
 Bluetooth even with internet disabled. The measurement timestamp is retained.
 
 **Sync debugging** starts collapsed. It contains separate collapsible **Your data**,
-**Online channel**, and **Recent activity** sections. Expand a report to
+**Online channel**, **Recent activity**, and **Bluetooth diagnostics** sections. Expand a report to
 inspect its text, scope, location, original source, observation/receipt timestamps,
 and actual transfer receipts. Data and transfer history survive reopening the app.
 "Copied to" requires a receiver storage acknowledgement. "Confirmed present on"
@@ -80,14 +85,14 @@ nonces and ephemeral keys. Android verifies phone proofs using its native
 `SHA256withECDSA` provider instead of converting them inside the WebView. Both
 DER and fixed-width P1363 signatures are supported. Signing checks the local
 Keystore key pair, and the app rejects stale cached keys explicitly. Altered
-proofs still fail before any reports are shared. Install 1.5 on both phones,
+proofs still fail before any reports are shared. Install 1.6 on both phones,
 then close and reopen Mesh Sync; it adds a new native verification method.
 
 Report messages use ECDH/HKDF/AES-GCM, sequence checks,
 inventory pagination, byte-sized report batches, and acknowledgements after
 IndexedDB commits. Full text is retained. A single encoded report over 60 KB is
 left pending with an explicit error rather than truncated. There is no four-report
-limit. Pre-v2 APKs show **Update required**. Install 1.5 on both phones for
+limit. Pre-v2 APKs show **Update required**. Install 1.6 on both phones for
 the current all-SOS sharing policy and GPS telemetry.
 
 Android 14+ may negotiate MTU 517 even when the app requests 247. Wire frames
@@ -99,8 +104,11 @@ request contents.
 
 Reports retain immutable IDs. Identical repeats add no records; mismatching
 content under one ID is reported as a conflict and never replaces the local copy.
-Cloud upload status is separate from peer receipts. Failed exchanges back off at
-30, 60 and 120 seconds. Leaving the page keeps discovery and the receiver alive.
+Cloud upload status is separate from peer receipts. Automatic failed exchanges retry with exponential backoff starting at
+two seconds, capped at 30 seconds. Recent completed sessions have a short cooldown.
+Scanner starts are limited to four per rolling 30 seconds to avoid restart throttling.
+If filtered scans find nothing, the next foreground scan uses compatibility mode
+and checks the app UUID locally; unrelated Bluetooth devices are never counted. Leaving the page keeps discovery and the receiver alive.
 Foreground scans/transfers take priority over native discovery pings; a
 failed/partial transfer can retry.
 
@@ -124,9 +132,38 @@ exercise the real sync engine, including long Unicode reports, two-way exchange,
 duplicate retry, all-scope SOS sharing, GPS geometry, simultaneous initiation,
 lost acknowledgement, WebView ECDSA import failure with native verification,
 and rejection of invalid proofs in both handshake directions.
-Android tests exercise framing at default/negotiated MTUs and native proof
+Android tests exercise advertising readiness/failure/startup timeout, immediate
+scan observations, actual empty scans, Android scan/GATT failure codes, scanner
+restart limits, framing at default/negotiated MTUs and native proof
 verification with DER/raw signatures, malformed inputs, changed transcripts
 and other-device keys. These do not replace a
 physical two-phone radio test: disable Wi-Fi/mobile data, leave Bluetooth on,
 exchange reports, compare displayed battery with Android, interrupt/retry, and
 verify all SOS types arrive on both unenrolled phones and check radar accuracy.
+
+## Diagnose detection and transfer failures
+
+Expand **Sync debugging → Bluetooth diagnostics → Copy error details** on both
+phones after reproducing the failure. The copied snapshot includes the actual
+phone model, Android/app version, permissions, Location and Bluetooth states,
+confirmed advertising, scan/service state, and bounded native/JavaScript events.
+Native events persist across app reopening and are also logged as `RescueMesh`
+in Android logcat. Report bodies and cryptographic keys/proofs are not logged.
+
+Stages distinguish service binding/foreground startup, advertising, scanning,
+GATT connection/services/MTU, metadata/presence, identity proof, inventories,
+report storage acknowledgements, and cleanup. Numeric Android errors are retained
+(e.g. `ANDROID_SCAN_2`, `ANDROID_ADVERTISE_2`, `ANDROID_GATT_133`). Successful
+empty scans record `NO_APP_ADVERTISEMENTS`; an Android scan failure is an error,
+not a successful empty result. Optional 2M PHY failures retain a diagnostic and
+continue at the available PHY.
+
+Transfer counts are computed only from authenticated inventories and actual
+commit receipts. No peer means no transfer session. A connection attempt does
+not claim report transfer; a successful exchange with equal/empty inventories
+states that no new reports were needed without showing placeholder zero counts.
+The existing navy/cyan radar theme is unchanged.
+
+The audit fixes observable correctness and recovery issues; simulated bridge
+and Android callback tests cannot establish the cause of a particular handset's
+radio failure. If detection still fails, send copied diagnostics from both phones.

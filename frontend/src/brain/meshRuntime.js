@@ -1,42 +1,49 @@
 import { isNativeBle, isBleBackgroundBusy, hasIncomingBleSession, startBleReceiver, getActiveBlePeers, syncWithBlePeer, onBlePeersChange } from './bleMesh.js';
+import { meshTrace } from './meshDiagnostics.js';
 
-// App-owned lifecycle. Native service performs discovery/pings even while this
-// WebView is suspended; this loop exchanges stored reports while the app is active.
-let running = false, busy = false, timer, wakeTimer, unsubscribe;
-const retries = new Map();
-const seen = new Map();
+// Native scanner emits observations as soon as they arrive. This owner connects
+// and transfers without a Mesh page, manual tap, or waiting for a scan window.
+let running = false, busy = false, timer, wakeTimer, unsubscribe, rerun = false, reportsChanged = false;
+const retries = new Map(), observations = new Set(), seen = new Map();
 async function cycle() {
-  if (!running || busy || document.hidden) return;
+  if (!running || document.hidden) return;
+  if (busy) { rerun = true; return; }
   busy = true;
   try {
     if (!await startBleReceiver({ automatic: true })) return;
-    if (isBleBackgroundBusy() || hasIncomingBleSession()) return;
+    if (hasIncomingBleSession() || (isBleBackgroundBusy() && !observations.size)) return;
     if (localStorage.getItem('rescue.mesh_auto') === 'false') return;
+    const forceReports = reportsChanged; reportsChanged = false;
     for (const peer of getActiveBlePeers()) {
-      if (!running || document.hidden) break;
-      if (!peer.available || !peer.sync_ready || (retries.get(peer.node_id)?.next || 0) > Date.now()) continue;
-      // Let the smaller ID initiate first, but allow fallback if discovery was
-      // asymmetric or that initiator never completed a session.
-      const self = localStorage.getItem('rescue.device_id') || '';
-      if (self.localeCompare(peer.node_id) > 0 &&
-        (Date.now() - (peer.first_seen_epoch || peer.last_seen_epoch) < 20000 ||
-          (peer.last_sync?.status === 'complete' && Date.now() - Date.parse(peer.last_sync.started_at) < 60000))) continue;
-      if (peer.last_sync && Date.now() - Date.parse(peer.last_sync.started_at) < 25000) continue;
-      try { await syncWithBlePeer(peer); retries.delete(peer.node_id); }
+      if (!running || document.hidden || hasIncomingBleSession()) break;
+      if (!peer.available || (!peer.sync_ready && !peer.node_id.startsWith('unresolved_'))) continue;
+      if ((retries.get(peer.address)?.next || 0) > Date.now()) continue;
+      observations.delete(peer.address);
+      if (!forceReports && peer.last_sync?.status === 'complete' && Date.now() - Date.parse(peer.last_sync.started_at) < 15000) continue;
+      meshTrace('auto.connect', 'STARTING', 'Detected phone will be identified and exchanged automatically.', { peer: peer.node_id, address: peer.address });
+      try { await syncWithBlePeer(peer); retries.delete(peer.address); }
       catch (error) {
-        const failures = (retries.get(peer.node_id)?.failures || 0) + 1;
-        retries.set(peer.node_id, { failures, next: Date.now() + Math.min(120000, 30000 * 2 ** (failures - 1)) });
+        const failures = (retries.get(peer.address)?.failures || 0) + 1;
+        const delay = Math.min(30000, 2000 * 2 ** (failures - 1));
+        retries.set(peer.address, { failures, next: Date.now() + delay });
+        meshTrace('auto.retry', 'SCHEDULED', error.message, { address: peer.address, retry_in_ms: delay });
         window.dispatchEvent(new CustomEvent('rescue:mesh-error', { detail: { error: error.message, peer: peer.node_id } }));
+        setTimeout(wake, delay);
       }
     }
   } catch (error) {
+    meshTrace('auto.start', 'FAILED', error.message);
     window.dispatchEvent(new CustomEvent('rescue:mesh-error', { detail: { error: error.message } }));
-  } finally { busy = false; }
+  } finally { busy = false; if (rerun) { rerun = false; wake(); } }
 }
 function wake() {
-  if (document.hidden) return;
-  clearTimeout(wakeTimer); wakeTimer = setTimeout(cycle, 1000);
+  if (!running || document.hidden) return;
+  clearTimeout(wakeTimer);
+  // Small jitter reduces simultaneous connection attempts; no 20/30-second hold.
+  wakeTimer = setTimeout(cycle, 50 + Math.floor(Math.random() * 150));
 }
+function detected(event) { observations.add(event.detail.address); wake(); }
+function changed() { reportsChanged = true; wake(); }
 export function startAppMesh() {
   if (!isNativeBle() || running) return;
   running = true; unsubscribe = onBlePeersChange(peers => {
@@ -49,11 +56,17 @@ export function startAppMesh() {
   });
   document.addEventListener('visibilitychange', wake);
   window.addEventListener('rescue:mesh-auto-changed', wake);
-  timer = setInterval(cycle, 30000); cycle();
+  window.addEventListener('rescue:ble-discovered', detected);
+  window.addEventListener('rescue:ble-idle', wake);
+  window.addEventListener('rescue:reports-changed', changed);
+  timer = setInterval(cycle, 10000); cycle();
 }
 export function detachAppMesh() {
   running = false; clearInterval(timer); clearTimeout(wakeTimer); unsubscribe?.();
   document.removeEventListener('visibilitychange', wake);
   window.removeEventListener('rescue:mesh-auto-changed', wake);
-  // Native discovery intentionally survives navigation and WebView destruction.
+  window.removeEventListener('rescue:ble-discovered', detected);
+  window.removeEventListener('rescue:ble-idle', wake);
+  window.removeEventListener('rescue:reports-changed', changed);
+  // The native background receiver remains alive until explicitly stopped.
 }

@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Battery, Bluetooth, CheckCircle2, ChevronDown, ChevronUp, Cloud, RefreshCw,
+import { Battery, Bluetooth, Info, ChevronDown, ChevronUp, Cloud, RefreshCw,
   Search, X, Download, Upload, MapPin, Bug } from 'lucide-react';
 import MeshRadar from './MeshRadar.jsx';
 import { cachedMeshLocation, peerRadarPosition, radarDistance } from '../brain/meshRadar.js';
 import { getDiscoveredPeers, syncDiscoveredPeer, triggerAutoSync, getDeviceId, isOnlineMode,
   onOnlineModeChange, onSyncStateChange, watchNativeOrWebLocation } from '../api';
 import { isNativeBle, startBleReceiver, scanForNearbyPhones, getPhoneBattery,
-  onBlePeersChange, publishMeshLocation } from '../brain/bleMesh.js';
+  onBlePeersChange, publishMeshLocation, getBleDiagnostics, copyBleDiagnostics } from '../brain/bleMesh.js';
+import { transferSummary, meshTrace } from '../brain/meshDiagnostics.js';
 import { getAllLocalReports, getMeshHistory } from '../brain/offlineStorage.js';
 import { wireReport, mergePeers } from '../brain/meshProtocol.js';
 
@@ -33,6 +34,7 @@ export default function MeshSyncScanner({ initialPeers = [], onSyncComplete = nu
   const [filter, setFilter] = useState('all'), [kind, setKind] = useState('all'), [query, setQuery] = useState('');
   const [expanded, setExpanded] = useState(null), [selectedPhone, setSelectedPhone] = useState(null);
   const [debugOpen, setDebugOpen] = useState(false);
+  const [diagnostics, setDiagnostics] = useState(null), [copied, setCopied] = useState(false);
   const mounted = useRef(true), busyRef = useRef(false), autoRef = useRef(auto), retries = useRef(new Map());
   const callback = useRef(onSyncComplete);
   useEffect(() => { callback.current = onSyncComplete; }, [onSyncComplete]);
@@ -56,7 +58,7 @@ export default function MeshSyncScanner({ initialPeers = [], onSyncComplete = nu
       const result = await syncDiscoveredPeer(peer);
       retries.current.delete(peer.node_id);
       if (mounted.current && (manual || result.sent || result.received || result.status === 'partial'))
-        setMessage(`${peer.name}: sent ${result.sent || 0} · received ${result.received || 0} · already present ${result.duplicates || 0}${result.status === 'partial' ? ' · partial; some reports remain pending' : ''}`);
+        setMessage(`${peer.name}: ${transferSummary(result)}`);
       await refreshData(); callback.current?.();
     } catch (err) {
       const retry = retries.current.get(peer.node_id) || { failures: 0 };
@@ -72,7 +74,7 @@ export default function MeshSyncScanner({ initialPeers = [], onSyncComplete = nu
     try {
       let found = [];
       if (isNativeBle()) {
-        await startBleReceiver(); if (mounted.current) setReady(true);
+        const started = await startBleReceiver(); if (mounted.current) setReady(started);
         found = selected ? [selected] : await scanForNearbyPhones();
         const self = getDeviceId();
         for (const peer of found) {
@@ -94,11 +96,11 @@ export default function MeshSyncScanner({ initialPeers = [], onSyncComplete = nu
     const received = event => {
       changed(); callback.current?.();
       const result = event.detail?.result;
-      if (result && (result.sent || result.received)) setMessage(`Data transferred: sent ${result.sent || 0} · received ${result.received || 0}${result.status === 'partial' ? ' · partial; retry to continue' : ''}`);
+      if (result && (result.sent || result.received)) setMessage(`Bluetooth: ${transferSummary(result)}`);
     };
     const unsubscribeSync = onSyncStateChange(state => {
       if (mounted.current && (state.uploadedCount || state.receivedCount)) {
-        setMessage(`Data transferred online: uploaded ${state.uploadedCount || 0} · received ${state.receivedCount || 0}`);
+        setMessage(`Online channel: ${[state.uploadedCount > 0 ? `uploaded ${state.uploadedCount}` : '', state.receivedCount > 0 ? `received ${state.receivedCount}` : ''].filter(Boolean).join(' · ')}`);
         changed();
       }
     });
@@ -115,14 +117,15 @@ export default function MeshSyncScanner({ initialPeers = [], onSyncComplete = nu
     window.addEventListener('rescue:ble-state', updateBle);
     window.addEventListener('rescue:mesh-error', meshError);
     window.addEventListener('online', updateConnectivity); window.addEventListener('offline', updateConnectivity);
-    changed(); refreshLocal().catch(() => {});
+    changed(); refreshLocal().catch(err => meshTrace('telemetry.refresh', 'FAILED', err.message));
     const start = async () => {
-      if (isNativeBle()) { await startBleReceiver(); if (mounted.current) setReady(true); }
+      if (isNativeBle()) { const started = await startBleReceiver(); if (mounted.current) setReady(started); }
       if (mounted.current) await refreshPhones();
     };
     start().catch(err => mounted.current && setError(err.message));
-    const interval = setInterval(() => { if (!document.hidden) { refreshLocal().catch(() => {}); refreshPhones().catch(() => {}); } }, 10000);
-    const visible = () => { if (!document.hidden) { refreshPhones().catch(() => {}); refreshLocal().catch(() => {}); } };
+    const refreshFailure = err => { meshTrace('ui.refresh', 'FAILED', err.message); if (mounted.current) setError(err.message); };
+    const interval = setInterval(() => { if (!document.hidden) { refreshLocal().catch(refreshFailure); refreshPhones().catch(refreshFailure); } }, 10000);
+    const visible = () => { if (!document.hidden) { refreshPhones().catch(err => meshTrace('peers.refresh', 'FAILED', err.message)); refreshLocal().catch(err => meshTrace('telemetry.refresh', 'FAILED', err.message)); } };
     document.addEventListener('visibilitychange', visible);
     return () => {
       mounted.current = false; clearInterval(interval); unsubscribeOnline(); unsubscribePeers(); unsubscribeSync();
@@ -139,8 +142,8 @@ export default function MeshSyncScanner({ initialPeers = [], onSyncComplete = nu
     let cancelled = false, stop;
     watchNativeOrWebLocation(fix => {
       if (cancelled) return;
-      publishMeshLocation(fix).then(value => { if (!cancelled && value) setLocation(value); }).catch(() => {});
-    }).then(unsubscribe => { if (cancelled) unsubscribe?.(); else stop = unsubscribe; }).catch(() => {});
+      publishMeshLocation(fix).then(value => { if (!cancelled && value) setLocation(value); }).catch(err => meshTrace('gps.publish', 'FAILED', err.message));
+    }).then(unsubscribe => { if (cancelled) unsubscribe?.(); else stop = unsubscribe; }).catch(err => meshTrace('gps.watch', 'UNAVAILABLE', err.message));
     return () => { cancelled = true; stop?.(); };
   }, []);
 
@@ -162,16 +165,31 @@ export default function MeshSyncScanner({ initialPeers = [], onSyncComplete = nu
     if (busyRef.current) return; busyRef.current = true; setBusy('cloud'); setError('');
     try {
       const result = await triggerAutoSync(); await refreshData();
-      setMessage(`Online channel: uploaded ${result.synced || 0} · received ${result.imported || 0} · pending ${result.pending || 0}. ${result.status || ''}`);
+      if (result.synced > 0 || result.imported > 0) setMessage(`Online channel: ${[result.synced > 0 ? `uploaded ${result.synced}` : '', result.imported > 0 ? `received ${result.imported}` : ''].filter(Boolean).join(' · ')}`);
+      else setMessage(result.status === 'offline' ? 'Online channel unavailable; reports remain on this phone.' : 'Online check finished; no new reports were uploaded or received.');
       callback.current?.();
     } catch (err) { setError(err.message); } finally { busyRef.current = false; if (mounted.current) setBusy(''); }
+  };
+  const refreshDiagnostics = useCallback(async () => {
+    try { const value = await getBleDiagnostics(); if (mounted.current) setDiagnostics(value); }
+    catch (err) { if (mounted.current) setError(`[diagnostics] ${err.message}`); }
+  }, []);
+  useEffect(() => {
+    if (!debugOpen) return;
+    const first = setTimeout(refreshDiagnostics, 0);
+    const timer = setInterval(refreshDiagnostics, 3000);
+    return () => { clearTimeout(first); clearInterval(timer); };
+  }, [debugOpen, refreshDiagnostics]);
+  const copyDiagnostics = async () => {
+    try { await copyBleDiagnostics(); setCopied(true); }
+    catch (err) { setError(`[diagnostics.copy] ${err.message}`); }
   };
 
   return <div className="mx-auto flex w-full max-w-2xl flex-col gap-3 pb-4 text-slate-900 dark:text-slate-100">
     <section className={panel}>
       <div className="flex items-start justify-between gap-3">
         <div><h2 className="flex items-center gap-2 text-lg font-bold"><Bluetooth size={20} className="text-cyan-500" />Mesh Sync</h2>
-          <p className="mt-1 text-xs text-slate-500">Every SOS type and field report is shared with nearby app phones.</p></div>
+          <p className="mt-1 text-xs text-slate-500">Automatically exchanges every SOS type and field report after connecting to a nearby app phone.</p></div>
       </div>
       <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs">
         <span className={ready ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500'}>{ready ? '● Bluetooth ready' : isNativeBle() ? 'Bluetooth not ready' : 'Bluetooth requires Android app'}</span>
@@ -186,10 +204,10 @@ export default function MeshSyncScanner({ initialPeers = [], onSyncComplete = nu
     </section>
 
     {error && <div role="alert" className="flex items-start justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200"><span>{error}</span><button aria-label="Dismiss error" onClick={() => setError('')}><X size={15} /></button></div>}
-    {message && <div role="status" className="flex items-start gap-2 rounded-xl bg-cyan-50 p-3 text-xs text-cyan-900 dark:bg-cyan-950 dark:text-cyan-100"><CheckCircle2 size={16} className="shrink-0" />{message}</div>}
+    {message && <div role="status" className="flex items-start gap-2 rounded-xl bg-cyan-50 p-3 text-xs text-cyan-900 dark:bg-cyan-950 dark:text-cyan-100"><Info size={16} className="shrink-0" />{message}</div>}
 
     <section className={panel}>
-      <div className="flex items-center justify-between gap-2"><h3 className="text-sm font-bold">Nearby phones ({nearby.filter(p => p.available && p.sync_ready).length})</h3>
+      <div className="flex items-center justify-between gap-2"><h3 className="text-sm font-bold">Nearby phones ({nearby.filter(p => p.available).length})</h3>
         <button className={button} disabled={!!busy || !isNativeBle()} onClick={() => runCycle(true)}>
           <span className="flex items-center gap-1"><RefreshCw size={13} className={busy ? 'animate-spin' : ''} />{busy === 'scan' ? 'Scanning…' : 'Find & sync'}</span></button>
       </div>
@@ -201,19 +219,19 @@ export default function MeshSyncScanner({ initialPeers = [], onSyncComplete = nu
         return <article key={peer.node_id} className={`rounded-xl border p-3 ${selectedPhone === peer.node_id ? 'border-emerald-500 bg-emerald-500/5' : 'border-slate-200 dark:border-slate-800'}`}>
           <div className="flex items-start justify-between gap-2"><div className="min-w-0"><h4 className="break-words text-sm font-bold">{peer.available ? `${nearby.filter(p => p.available).findIndex(p => p.node_id === peer.node_id) + 1}. ` : ''}{peer.name}</h4>
             <div className="mt-1 flex flex-wrap gap-2 text-[10px] text-slate-500"><span>Phone {peer.node_id.slice(-6)}</span><span>Bluetooth{peer.transports?.some(t => t !== 'native_ble') ? ' + Online' : ''}</span>
-              <span>{peer.sync_ready ? peer.available ? 'Available' : `Last seen ${ago(peer.last_seen_epoch)}` : 'Update required'}</span>
-              <span>All SOS types shared</span></div></div>
+              <span>{peer.sync_ready ? peer.available ? 'Identified' : `Last seen ${ago(peer.last_seen_epoch)}` : peer.node_id.startsWith('unresolved_') ? 'Beacon detected · identifying automatically' : 'Update required'}</span>
+              <span>All SOS types eligible for sharing</span></div></div>
             <button className={button} disabled={!!busy || !peer.available || !peer.sync_ready} onClick={() => runCycle(true, peer)}>{busy === peer.node_id ? 'Syncing…' : peer.error ? 'Retry' : 'Sync now'}</button>
           </div>
           <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-500"><BatteryLabel value={peer.battery} charging={peer.charging} measured={peer.battery_measured_at} />
             <span>{radarDistance(position.distance_m)} · {position.source === 'gps' ? 'GPS' : 'signal estimate'}</span>
             {position.bearing_deg != null && <span>{Math.round(position.bearing_deg)}° from north</span>}
             {position.accuracy_m != null && <span>GPS uncertainty ±{Math.round(position.accuracy_m)} m</span>}<span>Measured {ago(peer.battery_measured_at)}</span></div>
-          {latest && <p className="mt-2 text-[11px] text-slate-500">Last exchange: {latest.status} · sent {latest.sent} · received {latest.received} · {time(latest.updated_at)}</p>}
+          {latest && <p className="mt-2 text-[11px] text-slate-500">{transferSummary(latest)} · {time(latest.updated_at)}</p>}
           {peer.error && <p className="mt-1 text-xs text-amber-600">{peer.error}</p>}
         </article>;
       })}</div>
-      {!nearby.length && <p className="py-2 text-center text-xs text-slate-500">No nearby phones found yet. Turn on Bluetooth and allow Nearby devices on both phones.</p>}
+      {!nearby.length && <p className="py-2 text-center text-xs text-slate-500">No nearby phones found yet. Turn on Bluetooth and allow Nearby devices and precise Location on both phones.</p>}
     </section>
 
     <section className={panel}>
@@ -222,6 +240,12 @@ export default function MeshSyncScanner({ initialPeers = [], onSyncComplete = nu
       </button>
       <p className="mt-1 text-[11px] text-slate-500">Check stored SOS, transfer receipts, and recent activity.</p>
       {debugOpen && <div className="mt-4 space-y-4">
+    <details open className="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+      <summary className="cursor-pointer text-sm font-bold">Bluetooth diagnostics</summary>
+      <div className="mt-3 flex flex-wrap gap-2"><button className={button} onClick={refreshDiagnostics}>Refresh details</button><button className={button} onClick={copyDiagnostics}>{copied ? 'Copied details' : 'Copy error details'}</button></div>
+      <p className="mt-2 text-xs text-slate-500">Share copied details from both phones. These contain the device/version, permissions, advertising/scanning states and exact failure stages.</p>
+      {!diagnostics ? <p className="mt-2 text-xs text-slate-500">Reading actual radio state…</p> : <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-slate-50 p-2 text-[10px] dark:bg-slate-900">{JSON.stringify(diagnostics, null, 2)}</pre>}
+    </details>
     <details className="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
       <summary className="cursor-pointer text-sm font-bold">Your data ({visibleReports.length})</summary>
       <div className="mt-3 flex gap-1">{[['all', 'All'], ['received', 'Received'], ['pending', 'Awaiting transfer']].map(([value, label]) =>
@@ -233,7 +257,7 @@ export default function MeshSyncScanner({ initialPeers = [], onSyncComplete = nu
         const originalScope = wireReport(report).visibility;
         return <article key={report.id} className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800">
           <button className="flex w-full items-start justify-between gap-3 p-3 text-left" aria-expanded={open} onClick={() => setExpanded(open ? null : report.id)}>
-            <div className="min-w-0"><div className="flex flex-wrap gap-2 text-[10px] font-bold uppercase"><span className={report.severity === 'red' ? 'text-rose-600' : 'text-cyan-600'}>{report.kind} · {report.severity || 'Unspecified'}</span><span className="text-slate-500">Shared with nearby phones</span></div>
+            <div className="min-w-0"><div className="flex flex-wrap gap-2 text-[10px] font-bold uppercase"><span className={report.severity === 'red' ? 'text-rose-600' : 'text-cyan-600'}>{report.kind} · {report.severity || 'Unspecified'}</span><span className="text-slate-500">{sentIds.has(report.id) ? 'Peer receipt confirmed' : 'Eligible for nearby sharing'}</span></div>
               <p className="mt-1 line-clamp-2 break-words text-sm">{report.text || 'No description'}</p>
               <p className="mt-1 text-[10px] text-slate-500">{report.imported ? `Received from ${report.received_from || report.reporter_id || 'online channel'}` : 'Created on this phone'} · {sentIds.has(report.id) ? 'Known on another phone' : 'Awaiting transfer'}{report.synced ? report.imported ? ' · Received via online channel' : ' · Uploaded' : ''}</p></div>
             {open ? <ChevronUp size={16} className="shrink-0" /> : <ChevronDown size={16} className="shrink-0" />}
@@ -256,7 +280,7 @@ export default function MeshSyncScanner({ initialPeers = [], onSyncComplete = nu
       <p className="mt-2 text-xs text-slate-500">{onlinePeers.length} online node(s). Online presence does not mean a phone is nearby.</p>
       {onlinePeers.map(peer => <p key={peer.node_id} className="mt-2 text-xs">{peer.name || peer.node_id} <span className="text-slate-500">· Online only</span></p>)}
     </details>
-    <details className="rounded-xl border border-slate-200 p-3 dark:border-slate-800"><summary className="cursor-pointer text-sm font-bold">Recent activity</summary><div className="mt-2 space-y-2">{history.transfers.slice(0, 10).map(item => <div key={item.id} className="rounded-xl bg-slate-50 p-3 text-xs dark:bg-slate-900"><p className="font-semibold">{item.transport} · {item.status} · {item.peer_id}</p><p className="mt-1 text-slate-500">Sent {item.sent || 0} · Received {item.received || 0} · Already present {item.duplicates || 0}{item.conflicts ? ` · Conflicts ${item.conflicts}` : ''}</p>{item.error && <p className="mt-1 text-amber-600">{item.error}</p>}<p className="mt-1 text-[10px] text-slate-400">{time(item.updated_at)}</p></div>)}</div>{!history.transfers.length && <p className="mt-2 text-xs text-slate-500">Completed and partial exchanges will appear here.</p>}</details>
+    <details className="rounded-xl border border-slate-200 p-3 dark:border-slate-800"><summary className="cursor-pointer text-sm font-bold">Recent activity</summary><div className="mt-2 space-y-2">{history.transfers.slice(0, 10).map(item => <div key={item.id} className="rounded-xl bg-slate-50 p-3 text-xs dark:bg-slate-900"><p className="font-semibold">{item.transport} · {item.status} · {item.peer_id}</p><p className="mt-1 text-slate-500">{transferSummary(item)}</p>{item.error && <p className="mt-1 text-amber-600">{item.error}</p>}<p className="mt-1 text-[10px] text-slate-400">{time(item.updated_at)}</p></div>)}</div>{!history.transfers.length && <p className="mt-2 text-xs text-slate-500">Completed and partial exchanges will appear here.</p>}</details>
       </div>}
     </section>
 

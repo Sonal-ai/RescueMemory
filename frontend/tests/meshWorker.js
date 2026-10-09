@@ -36,6 +36,8 @@ parentPort.on('message', async message => {
       case 'location': result = await engine.publishMeshLocation(message.location); break;
       case 'hidden': document.hidden = message.hidden; document.dispatchEvent(new Event('visibilitychange')); result = true; break;
       case 'scan': result = await engine.scanForNearbyPhones(); break;
+      case 'advertisement': { const native = await import('./nativeMock.js'); native.advertise(); result = true; break; }
+      case 'diagnostics': result = await engine.getBleDiagnostics(); break;
       case 'startRuntime': { const runtime = await import('../src/brain/meshRuntime.js'); runtime.startAppMesh(); result = true; break; }
       case 'detachRuntime': { const runtime = await import('../src/brain/meshRuntime.js'); runtime.detachAppMesh(); result = true; break; }
       case 'sync': {

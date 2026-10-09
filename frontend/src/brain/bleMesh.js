@@ -2,6 +2,7 @@ import { Capacitor, registerPlugin } from '@capacitor/core';
 import { getAllLocalReports, commitMeshReports, recordMeshSent, saveTransferSession } from './offlineStorage.js';
 import { eligibleReports, reportHash, reportBatches, PROTOCOL_VERSION } from './meshProtocol.js';
 import { cachedMeshLocation, meshLocation } from './meshRadar.js';
+import { meshTrace, meshError, getMeshTrace } from './meshDiagnostics.js';
 import { nonce, ephemeralKey, transcript, sessionKey, seal, unseal, signingBytes,
   verifySignature, verifyResponder, verifySignedDocument, credentialTrustConfigured, cacheRevocations } from './meshSecurity.js';
 
@@ -22,6 +23,15 @@ const notify = () => listeners.forEach(fn => fn(getActiveBlePeers()));
 export const isNativeBle = () => onAndroid;
 export const isBluetoothSupported = () => onAndroid;
 export const onBlePeersChange = fn => { listeners.add(fn); return () => listeners.delete(fn); };
+export async function getBleDiagnostics() {
+  const native = onAndroid ? await nativeBle.getDiagnostics() : { ready: false, detail: 'Native BLE requires Android.' };
+  return { native, javascript: getMeshTrace() };
+}
+export async function copyBleDiagnostics() {
+  const text = JSON.stringify(await getBleDiagnostics(), null, 2);
+  if (onAndroid) await nativeBle.copyDiagnostics({ text });
+  else await navigator.clipboard.writeText(text);
+}
 
 export async function ensureMeshIdentity() {
   if (!onAndroid) return { node_id: localStorage.getItem('rescue.device_id') };
@@ -104,6 +114,7 @@ async function verifyPhoneProof(publicKey, signature, text) {
   return result.valid === true;
 }
 const resultFor = (id, peerId) => ({ id, peer_id: peerId, transport: 'bluetooth', sent: 0, received: 0,
+  inventory_checked: false, phase: 'authenticating',
   duplicates: 0, conflicts: 0, pending: 0, status: 'syncing', started_at: new Date().toISOString() });
 
 async function inventory(reports) {
@@ -140,7 +151,7 @@ async function handleMessage(address, message) {
       key: await sessionKey(ephemeral.privateKey, message.ephemeral, text), inbound: 0, outbound: 0, text,
       remoteIdentity: message.identity, remoteMetadata: message.metadata, authorized: false,
       result: resultFor(reply.session_id, message.identity.node_id), offered: new Set() };
-    session.timer = setTimeout(() => finishIncoming(address, 'Exchange timed out. Retry to continue.').catch(() => {}), 180000);
+    session.timer = setTimeout(() => finishIncoming(address, 'Exchange timed out. Retry to continue.').catch(error => meshTrace('incoming.timeout', 'CLEANUP_FAILED', error.message, { address })), 180000);
     sessions.set(address, session); return reply;
   }
   const session = sessions.get(address);
@@ -150,6 +161,7 @@ async function handleMessage(address, message) {
     if (session.authorized || !await verifyPhoneProof(session.remoteIdentity.public_key, request.proof, session.text))
       throw new Error('Phone identity proof failed.');
     session.authorized = true;
+    session.result.phase = 'connected';
     session.reports = eligibleReports(await getAllLocalReports());
     session.inventory = await inventory(session.reports);
     const previous = peers.get(session.peerId);
@@ -162,6 +174,7 @@ async function handleMessage(address, message) {
   let response;
   switch (request.action) {
     case 'inventory': {
+      session.result.inventory_checked = true; session.result.phase = 'inventory';
       const offset = Number.isSafeInteger(request.offset) && request.offset >= 0 ? request.offset : 0;
       response = { items: session.inventory.slice(offset, offset + 128), more: offset + 128 < session.inventory.length }; break;
     }
@@ -176,6 +189,7 @@ async function handleMessage(address, message) {
     case 'put': {
       if (!Array.isArray(request.reports) || request.reports.length > 128) throw new Error('Invalid report batch.');
       response = await commitMeshReports(request.reports, { sessionId: session.id, peerId: session.peerId });
+      session.result.inventory_checked = true; session.result.phase = 'receiving';
       session.result.received += response.received; session.result.duplicates += response.duplicates; session.result.conflicts += response.conflicts;
       await saveTransferSession(session.result); break;
     }
@@ -204,19 +218,30 @@ export async function startBleReceiver({ automatic = false } = {}) {
       const work = (messageQueues.get(address) || Promise.resolve()).catch(() => {}).then(async () => {
         let response;
         try { response = await handleMessage(address, JSON.parse(payload)); }
-        catch (error) { response = { v: 2, error: error.message }; await finishIncoming(address, error.message); }
+        catch (error) {
+          meshTrace('incoming.request', 'REJECTED', error.message, { address, message_id: messageId });
+          response = { v: 2, error: error.message }; await finishIncoming(address, error.message);
+        }
         await nativeBle.reply({ address, messageId, payload: JSON.stringify(response) });
-      }).catch(error => console.warn('[BLE] Response unavailable:', error.message));
+      }).catch(error => meshTrace('incoming.reply', 'FAILED', error.message, { address, message_id: messageId }));
       messageQueues.set(address, work);
       work.finally(() => { if (messageQueues.get(address) === work) messageQueues.delete(address); });
     });
     await nativeBle.addListener('disconnected', ({ address }) => {
       const work = messageQueues.get(address) || Promise.resolve();
-      work.catch(() => {}).then(() => finishIncoming(address, 'Nearby phone disconnected. Retry to continue.')).catch(() => {});
+      work.catch(() => {}).then(() => finishIncoming(address, 'Nearby phone disconnected. Retry to continue.')).catch(error => meshTrace('incoming.disconnect', 'CLEANUP_FAILED', error.message, { address }));
     });
     await nativeBle.addListener('state', ({ ready }) => {
-      if (!ready) { startup = null; dispatch('rescue:ble-state', { ready: false }); }
+      if (!ready) startup = null;
+      dispatch('rescue:ble-state', { ready: ready === true });
     });
+    await nativeBle.addListener('diagnostic', event => meshTrace(`native.${event.stage}`, event.code, event.detail));
+    await nativeBle.addListener('discovered', observed => {
+      const existing = [...peers.values()].find(peer => peer.address === observed.address);
+      if (existing) remember(existing, observed); else remember({ sync_phase: 'detected' }, observed);
+      dispatch('rescue:ble-discovered', observed);
+    });
+    await nativeBle.addListener('discoveryIdle', () => dispatch('rescue:ble-idle', {}));
     await nativeBle.addListener('presence', meta => {
       remember(meta, { address: meta.address, rssi: meta.rssi, last_seen_epoch: meta.last_seen_epoch });
     });
@@ -224,7 +249,7 @@ export async function startBleReceiver({ automatic = false } = {}) {
     })().catch(error => { attachment = null; throw error; });
     await attachment;
   }
-  if (!startup) startup = nativeBle.start({ automatic }).catch(error => { startup = null; throw error; });
+  if (!startup) startup = nativeBle.start({ automatic }).catch(error => { startup = null; throw meshError('receiver.start', error); });
   await startup;
   const state = await nativeBle.getPeers();
   backgroundBusy = state.background_busy === true;
@@ -265,27 +290,34 @@ export async function scanForNearbyPhones() {
         const meta = await nativeBle.connect({ address: observed.address });
         const peer = remember(meta, observed); if (peer) found.push(peer);
         // Native ping records this phone on the receiver even if its scan misses us.
-        if (peer?.sync_ready) await nativeBle.ping().catch(() => {});
+        if (peer?.sync_ready) await nativeBle.ping().catch(error => meshTrace('discovery.ping', 'FAILED', error.message, { peer: peer.node_id }));
       } catch (error) {
         if (error.message?.includes('Update required')) { const peer = remember({ v: 1, error: error.message }, observed); if (peer) found.push(peer); }
         else {
           const existing = [...peers.values()].find(p => p.address === observed.address);
-          if (existing) { existing.last_seen_epoch = Date.now(); existing.error = error.message; found.push(existing); }
+          meshTrace('discovery.metadata', 'FAILED', error.message, { address: observed.address });
+          if (existing) { existing.error = error.message; found.push(existing); }
         }
-      } finally { await nativeBle.disconnect().catch(() => {}); }
+      } finally { await nativeBle.disconnect().catch(error => meshTrace('discovery.disconnect', 'FAILED', error.message)); }
     }
     notify(); return found;
   });
 }
 
 export async function syncWithBlePeer(peer) {
-  if (!onAndroid || !peer.sync_ready) throw new Error('Update required on both Android phones.');
+  if (!onAndroid || (!peer.sync_ready && !peer.node_id?.startsWith('unresolved_'))) throw new Error('Update required on both Android phones.');
   return serialize(async () => {
-    let result, session;
+    let result, session, stage = 'receiver.start';
     try {
       await startBleReceiver();
+      stage = 'gatt.connect'; meshTrace(stage, 'CONNECTING', 'Connecting to detected advertisement.', { address: peer.address });
       const meta = await nativeBle.connect({ address: peer.address });
+      if (meta.v !== PROTOCOL_VERSION || !meta.node_id) throw new Error('Update required: invalid app metadata or old protocol.');
+      if (peer.node_id.startsWith('unresolved_')) peer = remember(meta, { address: peer.address, rssi: peer.rssi });
+      else if (peer.node_id !== meta.node_id) throw new Error('App identity changed for this Bluetooth address; rescan required.');
+      stage = 'presence.ping';
       await nativeBle.ping();
+      stage = 'handshake.hello';
       const identity = await ensureMeshIdentity(), ephemeral = await ephemeralKey();
       const hello = { v: 2, type: 'hello', identity, nonce: nonce(), ephemeral: ephemeral.public_key,
         metadata: await getPhoneTelemetry() };
@@ -302,17 +334,22 @@ export async function syncWithBlePeer(peer) {
         inbound: 0, outbound: 0, key: await sessionKey(ephemeral.privateKey, reply.ephemeral, text) };
       result = resultFor(session.id, peer.node_id); await saveTransferSession(result);
       const rpc = async message => unseal(session, await exchange(await seal(session, message)));
+      stage = 'handshake.authorize';
       await rpc({ action: 'authorize', proof: await sign(text) });
+      result.phase = 'inventory';
       Object.assign(peer, meta, reply.metadata, { node_id: reply.identity.node_id, last_seen_epoch: Date.now(), error: null });
       peers.set(peer.node_id, peer); notify();
       const local = eligibleReports(await getAllLocalReports());
       const localInventory = new Map((await inventory(local)).map(item => [item.id, item.hash]));
       const remote = [];
+      stage = 'inventory.compare';
       for (let offset = 0; ; offset += 128) { const page = await rpc({ action: 'inventory', offset });
         if (!Array.isArray(page.items) || remote.length > 100000) throw new Error('Invalid remote inventory.');
         remote.push(...page.items); if (!page.more) break;
       }
       const remoteIds = new Map(remote.map(item => [item.id, item.hash]));
+      result.inventory_checked = true;
+      meshTrace(stage, 'CHECKED', 'Authenticated report inventories compared.', { peer: peer.node_id, local_reports: local.length, remote_reports: remote.length });
       result.duplicates = remote.filter(item => localInventory.get(item.id) === item.hash).length;
       const confirmed = remote.filter(item => localInventory.get(item.id) === item.hash).map(item => item.id);
       if (confirmed.length) await recordMeshSent(confirmed, session.id, peer.node_id, 'confirmed');
@@ -321,13 +358,16 @@ export async function syncWithBlePeer(peer) {
       const needed = remote.filter(item => !localInventory.has(item.id)).map(item => item.id);
       result.pending = outgoing.length + needed.length; await saveTransferSession(result);
       for (const batch of reportBatches(outgoing)) {
+        stage = 'reports.send'; result.phase = 'sending';
         const ack = await rpc({ action: 'put', reports: batch });
         if (!Array.isArray(ack.acceptedIds) || ack.acceptedIds.some(id => !batch.some(r => r.id === id))) throw new Error('Invalid storage acknowledgement.');
         await recordMeshSent(ack.acceptedIds, session.id, peer.node_id);
         result.sent += ack.acceptedIds.length; result.pending -= ack.acceptedIds.length; result.conflicts += ack.conflicts || 0;
+        meshTrace(stage, 'RECEIVER_COMMITTED', 'Receiver acknowledged stored reports.', { peer: peer.node_id, reports: ack.acceptedIds.length });
         await saveTransferSession(result);
       }
       while (needed.length) {
+        stage = 'reports.receive'; result.phase = 'receiving';
         const requested = needed.slice(0, 32), data = await rpc({ action: 'get', ids: requested });
         if (!data.reports?.length || data.reports.some(r => !requested.includes(r.id))) throw new Error('Incomplete remote report response.');
         const committed = await commitMeshReports(data.reports, { sessionId: session.id, peerId: peer.node_id });
@@ -335,17 +375,22 @@ export async function syncWithBlePeer(peer) {
         const returned = new Set(data.reports.map(r => r.id));
         for (let i = needed.length - 1; i >= 0; i--) if (returned.has(needed[i])) needed.splice(i, 1);
         result.received += committed.received; result.duplicates += committed.duplicates; result.conflicts += committed.conflicts;
+        meshTrace(stage, 'LOCAL_COMMITTED', 'Reports committed to this phone.', { peer: peer.node_id, reports: committed.received });
         result.pending -= committed.acceptedIds.length; await saveTransferSession(result);
       }
-      await rpc({ action: 'done' }); result.status = result.pending || result.conflicts ? 'partial' : 'complete';
+      stage = 'session.finish';
+      await rpc({ action: 'done' }); result.status = result.pending || result.conflicts ? 'partial' : 'complete'; result.phase = 'finished';
+      result.duration_ms = Date.now() - Date.parse(result.started_at);
+      meshTrace(stage, result.status.toUpperCase(), 'Peer exchange finished.', { peer: peer.node_id, duration_ms: result.duration_ms });
       peer.last_sync = result; await saveTransferSession(result); notify();
       dispatch('rescue:ble-received', { imported: result.received, result });
       return { ...result, success: result.status === 'complete', synced: result.sent, imported: result.received, mode: 'bluetooth_ble' };
     } catch (error) {
-      peer.error = error.message;
-      if (result) { result.status = 'partial'; result.error = error.message; await saveTransferSession(result); }
-      notify(); throw error;
-    } finally { await nativeBle.disconnect().catch(() => {}); }
+      const detailed = meshError(stage, error, { peer: peer.node_id, address: peer.address });
+      peer.error = detailed.message;
+      if (result) { result.status = 'partial'; result.error = detailed.message; result.phase = stage; await saveTransferSession(result); }
+      notify(); throw detailed;
+    } finally { await nativeBle.disconnect().catch(error => meshTrace('session.disconnect', 'FAILED', error.message)); }
   });
 }
 

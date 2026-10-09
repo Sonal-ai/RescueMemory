@@ -20,6 +20,7 @@ function pair(t, verifiedB = false, options = {}) {
         corruptProof: options.corruptPhone === id,
         rotateKeyOnSign: options.rotatePhone === id,
         scanBlind: options.scanBlindPhone === id,
+        connectError: options.connectErrorPhone === id,
         privateKey: key.privateKey.export({ type: 'pkcs8', format: 'pem' }) },
       env: { ...process.env, MESH_TEST_ISSUER: issuerPublic },
     });
@@ -62,6 +63,46 @@ function pair(t, verifiedB = false, options = {}) {
 }
 const report = (id, visibility = 'public') => ({ id, kind: visibility === 'responders' ? 'incident' : 'hazard', visibility,
   text: `Report ${id} 🆘 सहायता `.repeat(300), severity: 'red', location: { lat: 0, lon: 0 }, created_at: '2026-10-08T01:00:00Z' });
+
+test('raw beacon discovery starts automatic bidirectional exchange on one connection without a manual scan', { timeout: 30000 }, async t => {
+  const { command } = pair(t);
+  await command('A', 'seed', { reports: [report('beacon-A')] });
+  await command('B', 'seed', { reports: [report('beacon-B')] });
+  await command('A', 'startRuntime');
+  await command('A', 'advertisement');
+  const end = Date.now() + 5000;
+  let a, b;
+  do {
+    a = await command('A', 'read'); b = await command('B', 'read');
+    if (a.history.transfers.some(r => r.status === 'complete')) break;
+    await new Promise(resolve => setTimeout(resolve, 50));
+  } while (Date.now() < end);
+  assert.deepEqual(a.reports.map(r => r.id).sort(), ['beacon-A', 'beacon-B']);
+  assert.deepEqual(b.reports.map(r => r.id).sort(), ['beacon-A', 'beacon-B']);
+  assert.equal(a.history.transfers[0].inventory_checked, true);
+  const diagnostics = await command('A', 'diagnostics');
+  assert.equal(diagnostics.native.calls.scan, 0);
+  assert.equal(diagnostics.native.calls.connect, 1);
+});
+
+test('no discovered phone creates no transfer record; failed connection preserves exact stage and Android code', { timeout: 30000 }, async t => {
+  const { command } = pair(t, false, { connectErrorPhone: 'A' });
+  await command('A', 'seed', { reports: [report('never-transferred')] });
+  await command('A', 'startRuntime');
+  await new Promise(resolve => setTimeout(resolve, 250));
+  assert.equal((await command('A', 'read')).history.transfers.length, 0);
+  await command('A', 'advertisement');
+  const end = Date.now() + 5000;
+  let diagnostics;
+  do {
+    diagnostics = await command('A', 'diagnostics');
+    if (diagnostics.javascript.some(e => e.detail.includes('ANDROID_GATT_133'))) break;
+    await new Promise(resolve => setTimeout(resolve, 50));
+  } while (Date.now() < end);
+  assert.ok(diagnostics.javascript.some(e => e.stage === 'gatt.connect' && e.detail.includes('ANDROID_GATT_133')));
+  assert.equal((await command('A', 'read')).history.transfers.length, 0);
+  assert.equal((await command('B', 'read')).reports.length, 0);
+});
 
 test('one-way scan announces the scanning phone back to a background peer without sharing reports', { timeout: 30000 }, async t => {
   const { command } = pair(t, false, { scanBlindPhone: 'B' });
