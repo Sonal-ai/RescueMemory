@@ -21,6 +21,9 @@ function pair(t, verifiedB = false, options = {}) {
         rotateKeyOnSign: options.rotatePhone === id,
         scanBlind: options.scanBlindPhone === id,
         connectError: options.connectErrorPhone === id,
+        incompleteMetadata: options.incompleteMetadataPhone === id,
+        duplicateMetadata: options.duplicateMetadataPhone === id,
+        migratedMetadata: options.migratedMetadataPhone === id,
         privateKey: key.privateKey.export({ type: 'pkcs8', format: 'pem' }) },
       env: { ...process.env, MESH_TEST_ISSUER: issuerPublic },
     });
@@ -63,6 +66,60 @@ function pair(t, verifiedB = false, options = {}) {
 }
 const report = (id, visibility = 'public') => ({ id, kind: visibility === 'responders' ? 'incident' : 'hazard', visibility,
   text: `Report ${id} 🆘 सहायता `.repeat(300), severity: 'red', location: { lat: 0, lon: 0 }, created_at: '2026-10-08T01:00:00Z' });
+
+test('incomplete Bluetooth metadata reports the stage and automatically retries to exchange both inventories', { timeout: 30000 }, async t => {
+  const { command } = pair(t, false, { incompleteMetadataPhone: 'A' });
+  await command('A', 'seed', { reports: [report('retry-A')] });
+  await command('B', 'seed', { reports: [report('retry-B')] });
+  await command('A', 'startRuntime'); await command('A', 'advertisement');
+  const end = Date.now() + 8000;
+  let a;
+  do {
+    a = await command('A', 'read');
+    if (a.history.transfers.some(r => r.status === 'complete')) break;
+    await new Promise(resolve => setTimeout(resolve, 50));
+  } while (Date.now() < end);
+  assert.deepEqual(a.reports.map(r => r.id).sort(), ['retry-A', 'retry-B']);
+  assert.deepEqual((await command('B', 'read')).reports.map(r => r.id).sort(), ['retry-A', 'retry-B']);
+  const diagnostics = await command('A', 'diagnostics');
+  assert.ok(diagnostics.javascript.some(e => e.stage === 'gatt.metadata' && e.code === 'INVALID_METADATA'));
+  assert.ok(!diagnostics.javascript.some(e => e.detail.includes('Cannot read properties')));
+});
+
+test('duplicate node identity keeps the beacon and exact error without inventing a transfer', { timeout: 30000 }, async t => {
+  const { command } = pair(t, false, { duplicateMetadataPhone: 'A' });
+  await command('A', 'advertisement');
+  await assert.rejects(command('A', 'syncDetected'), /\[gatt.metadata\].*same mesh identity/);
+  const a = await command('A', 'read');
+  assert.equal(a.peers.length, 1);
+  assert.match(a.peers[0].error, /same mesh identity/);
+  assert.equal(a.history.transfers.length, 0);
+  assert.equal((await command('B', 'read')).reports.length, 0);
+  assert.ok((await command('A', 'diagnostics')).javascript.some(e => e.code === 'DUPLICATE_NODE_ID'));
+  const scanned = await command('A', 'scan');
+  assert.equal(scanned.length, 1);
+  assert.match(scanned[0].error, /\[discovery.metadata\].*same mesh identity/);
+  assert.equal((await command('A', 'read')).history.transfers.length, 0);
+});
+
+test('native identity migration replaces the stale row and still authenticates the new identity', { timeout: 30000 }, async t => {
+  const { command } = pair(t, false, { migratedMetadataPhone: 'A' });
+  await command('B', 'seed', { reports: [report('migrated-phone-report')] });
+  const [legacy] = await command('A', 'scan');
+  assert.equal(legacy.node_id, 'legacy-peer-id');
+  const result = await command('A', 'syncPeer', { peer: legacy });
+  assert.equal(result.status, 'complete'); assert.equal(result.peer_id, 'B');
+  const a = await command('A', 'read');
+  assert.deepEqual(a.peers.map(p => p.node_id), ['B']);
+  assert.equal(a.reports[0].id, 'migrated-phone-report');
+});
+
+test('an absent Bluetooth peer returns a selection error without a connection or transfer', { timeout: 30000 }, async t => {
+  const { command } = pair(t);
+  await assert.rejects(command('A', 'syncDetected'), /\[peer.select\].*No detected Bluetooth phone/);
+  assert.equal((await command('A', 'diagnostics')).native.calls.connect, 0);
+  assert.equal((await command('A', 'read')).history.transfers.length, 0);
+});
 
 test('raw beacon discovery starts automatic bidirectional exchange on one connection without a manual scan', { timeout: 30000 }, async t => {
   const { command } = pair(t);

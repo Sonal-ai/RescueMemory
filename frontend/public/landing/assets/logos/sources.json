@@ -1,0 +1,10 @@
+{
+  "react.svg": "https://raw.githubusercontent.com/reactjs/react.dev/main/public/images/brand/logo_light.svg",
+  "vite.svg": "https://vite.dev/logo-without-border.svg",
+  "capacitor.png": "https://raw.githubusercontent.com/ionic-team/capacitor-docs/main/static/img/meta/favicon.png",
+  "javascript.svg": "https://raw.githubusercontent.com/voodootikigod/logo.js/master/js.svg",
+  "bluetooth.png": "https://www.bluetooth.com/wp-content/uploads/Sitecore-Media-Library/2018/logo-full-white.png",
+  "bluetooth.ico": "https://www.bluetooth.com/wp-content/uploads/Sitecore-Media-Library/2018/favicon.ico",
+  "fastapi.svg": "https://raw.githubusercontent.com/fastapi/fastapi/master/docs/en/docs/img/icon-white.svg",
+  "qdrant.png": "https://qdrant.tech/favicon/apple-touch-icon.png"
+}

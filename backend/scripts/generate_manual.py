@@ -582,7 +582,7 @@ for idx, g in enumerate(guides):
     if "walk" in terms:
         raise ValueError(f"Guide {g['id']} contains 'walk' which breaks test_gemini.py!")
 
-out_path = Path("E:/hackthon/code cubical/RescueMemory/backend/data/knowledge.json")
+out_path = Path(__file__).resolve().parents[1] / "data" / "knowledge.json"
 with open(out_path, "w", encoding="utf-8") as f:
     json.dump(guides, f, indent=2, ensure_ascii=False)
     f.write("\n")

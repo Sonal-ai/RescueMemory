@@ -1,4 +1,4 @@
-const CACHE_NAME = 'rescue-memory-pwa-v4';
+const CACHE_NAME = 'rescue-memory-pwa-v5';
 const PRECACHE_ASSETS = [
   '/',
   '/index.html',

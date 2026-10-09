@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "prepare:edge": "node scripts/prepare-qdrant-edge.mjs",
+    "export:edge": "node scripts/export-edge-knowledge.mjs",
     "build:apk": "vite build && npx cap sync android && cd android && gradlew.bat assembleDebug",
     "lint": "oxlint",
     "test": "node --test tests/*.test.js",

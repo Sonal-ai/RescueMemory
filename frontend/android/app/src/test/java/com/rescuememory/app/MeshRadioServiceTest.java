@@ -32,6 +32,14 @@ import static org.robolectric.Shadows.shadowOf;
 public class MeshRadioServiceTest {
     public static class TestRadio extends MeshRadioService {
         BluetoothManager bluetooth;
+        private byte[] publicKey;
+        @Override byte[] identityPublicKey() throws Exception {
+            if (publicKey == null) {
+                java.security.KeyPairGenerator generator = java.security.KeyPairGenerator.getInstance("EC"); generator.initialize(256);
+                publicKey = generator.generateKeyPair().getPublic().getEncoded();
+            }
+            return publicKey;
+        }
         @Override public Object getSystemService(String name) {
             return Context.BLUETOOTH_SERVICE.equals(name) ? bluetooth : super.getSystemService(name);
         }
@@ -45,7 +53,7 @@ public class MeshRadioServiceTest {
     private BluetoothGattServerCallback serverCallback;
     private final List<String> events = new ArrayList<>();
     private static final class Answer {
-        JSObject value; String error; boolean completed;
+        JSObject value; String error; volatile boolean completed;
         MeshCall call(JSObject args) { return new MeshCall(args, (v, e) -> { value = v; error = e; completed = true; }); }
     }
     @Before public void setup() {
@@ -64,6 +72,28 @@ public class MeshRadioServiceTest {
     private void idle() { shadowOf(Looper.getMainLooper()).idle(); }
     @After public void cleanup() { if (radio != null) radio.onDestroy(); }
     private JSObject state() { Answer answer = new Answer(); radio.getPeers(answer.call(new JSObject())); idle(); return answer.value; }
+    private JSObject identity(String proposed) throws Exception {
+        Answer answer = new Answer(); radio.getIdentity(answer.call(new JSObject().put("nodeId", proposed)));
+        long end = System.currentTimeMillis() + 3000;
+        while (!answer.completed && System.currentTimeMillis() < end) Thread.sleep(10);
+        assertTrue(answer.completed); assertNull(answer.error); return answer.value;
+    }
+    @Test public void restoredIdIsReboundBeforeMetadataAndProposedBrowserIdIsIgnored() throws Exception {
+        android.content.SharedPreferences prefs = radio.getSharedPreferences("rescue.mesh", Context.MODE_PRIVATE);
+        prefs.edit().putString("node_id", "copied-phone-id").putString("identity_key_fingerprint", "different-old-key").commit();
+        String actual = identity("copied-phone-id").getString("node_id");
+        assertEquals("node_" + MeshNodeIdentity.fingerprint(radio.identityPublicKey()), actual);
+        assertEquals(actual, identity("another-copied-id").getString("node_id"));
+        assertEquals(actual, prefs.getString("node_id", null));
+    }
+    @Test public void matchingLegacyResponderCredentialKeepsItsEnrolledNodeId() throws Exception {
+        android.content.SharedPreferences prefs = radio.getSharedPreferences("rescue.mesh", Context.MODE_PRIVATE);
+        String publicKey = android.util.Base64.encodeToString(radio.identityPublicKey(), android.util.Base64.NO_WRAP);
+        JSObject claims = new JSObject().put("node_id", "enrolled-phone-id").put("public_key", publicKey);
+        String payload = android.util.Base64.encodeToString(claims.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8), android.util.Base64.NO_WRAP);
+        prefs.edit().putString("node_id", "enrolled-phone-id").putString("certificate", new JSObject().put("payload", payload).toString()).commit();
+        assertEquals("enrolled-phone-id", identity("ignored-browser-id").getString("node_id"));
+    }
     private AdvertiseCallback register() {
         Answer start = new Answer(); radio.start(start.call(new JSObject())); idle();
         assertFalse(start.completed);

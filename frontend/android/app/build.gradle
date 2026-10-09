@@ -1,14 +1,19 @@
 apply plugin: 'com.android.application'
 
 android {
+    ndkVersion "28.2.13676358"
     namespace = "com.rescuememory.app"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
         applicationId "com.rescuememory.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 8
-        versionName "1.7"
+        versionCode 10
+        versionName "1.9"
+        ndk { abiFilters 'arm64-v8a', 'x86_64' }
+        externalNativeBuild {
+            cmake { arguments '-DANDROID_STL=c++_static' }
+        }
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -22,6 +27,12 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
+    externalNativeBuild {
+        cmake {
+            path file('src/main/cpp/CMakeLists.txt')
+            version '3.22.1'
+        }
+    }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_21
         targetCompatibility JavaVersion.VERSION_21
@@ -29,6 +40,26 @@ android {
     testOptions {
         unitTests.includeAndroidResources = true
         unitTests.all { systemProperty 'robolectric.dependency.repo.url', 'https://repo.maven.apache.org/maven2' }
+    }
+}
+
+def frontendRoot = rootProject.projectDir.parentFile
+def edgeScript = new File(frontendRoot, 'scripts/prepare-qdrant-edge.mjs')
+def exportScript = new File(frontendRoot, 'scripts/export-edge-knowledge.mjs')
+tasks.register('prepareQdrantEdge', Exec) {
+    workingDir frontendRoot
+    commandLine 'node', edgeScript.absolutePath
+}
+tasks.register('exportEdgeKnowledge', Exec) {
+    workingDir frontendRoot
+    commandLine 'node', exportScript.absolutePath
+    inputs.file new File(frontendRoot.parentFile, 'backend/data/knowledge.json')
+    inputs.file exportScript
+    outputs.file file('src/main/assets/qdrant/knowledge-pack.json')
+}
+tasks.configureEach { task ->
+    if (task.name == 'preBuild' || task.name.startsWith('configureCMake')) {
+        task.dependsOn 'prepareQdrantEdge', 'exportEdgeKnowledge'
     }
 }
 

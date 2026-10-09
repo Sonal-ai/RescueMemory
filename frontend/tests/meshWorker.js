@@ -38,6 +38,8 @@ parentPort.on('message', async message => {
       case 'scan': result = await engine.scanForNearbyPhones(); break;
       case 'advertisement': { const native = await import('./nativeMock.js'); native.advertise(); result = true; break; }
       case 'diagnostics': result = await engine.getBleDiagnostics(); break;
+      case 'syncDetected': result = await engine.syncWithBlePeer(engine.getActiveBlePeers()[0]); break;
+      case 'syncPeer': result = await engine.syncWithBlePeer(message.peer); break;
       case 'startRuntime': { const runtime = await import('../src/brain/meshRuntime.js'); runtime.startAppMesh(); result = true; break; }
       case 'detachRuntime': { const runtime = await import('../src/brain/meshRuntime.js'); runtime.detachAppMesh(); result = true; break; }
       case 'sync': {

@@ -12,7 +12,8 @@ export default function MapPanel({
   onSelect,
   onMarker,
   onSelectPeer,
-  dark = false
+  dark = false,
+  originLabel = 'YOU (SURVIVOR)'
 }) {
   const mapBg = dark ? '#091927' : 'var(--map-bg)';
   const mapGrid = dark ? '#18334b' : 'var(--map-grid)';
@@ -149,7 +150,7 @@ export default function MapPanel({
               fontWeight="bold"
               style={{ textShadow: '0 1px 4px rgba(0,0,0,0.9)' }}
             >
-              YOU (SURVIVOR)
+              {originLabel}
             </text>
           </g>
 

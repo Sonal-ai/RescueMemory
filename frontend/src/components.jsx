@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
+import { Capacitor } from '@capacitor/core';
 import {
   Activity,
   ChevronDown,
@@ -25,12 +26,12 @@ import { useNodeStatus } from './hooks/useNodeStatus';
 export { useNodeStatus };
 
 const NAV_LINKS = [
-  { path: '/', label: 'Survivor HUD', icon: HeartPulse, desc: 'Chat, Radar & SOS', badge: 'Survivor' },
+  { path: '/chat', label: 'Survivor HUD', icon: HeartPulse, desc: 'Chat, Radar & SOS', badge: 'Survivor' },
   { path: '/volunteer', label: 'Responders', icon: Users, desc: 'Medic Field Board', badge: 'Medic' },
   { path: '/safeplace', label: 'Safe Evacuation', icon: ShieldCheck, desc: 'Negative Vector Routing', badge: 'Route' },
   { path: '/hq', label: 'Command HQ', icon: Radio, desc: 'Incident Ledger Relay', badge: 'Central' },
   { path: '/command', label: 'Inspector', icon: Activity, desc: 'Qdrant Cloud & Proofs', badge: 'Dev' },
-  { path: '/about', label: 'Overview', icon: Globe, desc: 'Landing Page & System Specs', badge: 'Landing' },
+  ...(!Capacitor.isNativePlatform() ? [{ path: '/', label: 'Home', icon: Globe, desc: 'The RescueMemory journey', badge: 'Home' }] : []),
 ];
 
 export function SettingsPanel({ onClose }) {
@@ -202,11 +203,11 @@ export function QuietTelemetryPill({ health, sync, error }) {
 
           <div className="mt-3 pt-2.5 border-t border-slate-800 flex items-center justify-between text-[11px]">
             <Link
-              to="/about"
+              to={Capacitor.isNativePlatform() ? '/chat' : '/'}
               onClick={() => setOpen(false)}
               className="text-cyan-400 hover:underline font-bold"
             >
-              Project Overview & Specs →
+              {Capacitor.isNativePlatform() ? 'Open Survivor app →' : 'Explore RescueMemory →'}
             </Link>
             {health?.role === 'central' && (
               <Link
@@ -264,7 +265,7 @@ export function Shell({ title, subtitle, children }) {
         <div className="max-w-7xl mx-auto px-2 sm:px-6 py-1.5 sm:py-2 flex items-center justify-between gap-1.5 sm:gap-3">
           
           {/* Logo & Tactical Identity */}
-          <Link to="/" className="flex items-center gap-1.5 sm:gap-2 font-black tracking-tight text-sm sm:text-base group shrink-0">
+          <Link to={Capacitor.isNativePlatform() ? '/chat' : '/'} className="flex items-center gap-1.5 sm:gap-2 font-black tracking-tight text-sm sm:text-base group shrink-0">
             <img className="brand-mark h-7 w-7 sm:h-8 sm:w-8 rounded-lg shrink-0" src="/favicon.svg" alt="" width="32" height="32" />
             <span className="brand-wordmark font-extrabold text-sm sm:text-base tracking-tight text-slate-900 dark:text-white">
               RescueMemory
@@ -274,7 +275,7 @@ export function Shell({ title, subtitle, children }) {
           {/* Desktop Navigation Links */}
           <nav className="hidden lg:flex items-center gap-1 bg-[#e2ecf5] dark:bg-slate-900/80 p-1 rounded-xl border border-[#cbdbe9] dark:border-slate-800 text-xs font-semibold">
             {NAV_LINKS.map(({ path, label, icon: Icon }) => {
-              const isActive = path === '/' ? isSurvivorActive : location.pathname === path;
+              const isActive = path === '/chat' ? isSurvivorActive : location.pathname === path;
               return (
                 <Link
                   key={path}
@@ -401,7 +402,7 @@ export function Shell({ title, subtitle, children }) {
 
             <nav className="flex-1 space-y-2 overflow-y-auto pr-1">
               {NAV_LINKS.map(({ path, label, icon: Icon, desc, badge }) => {
-                const isActive = path === '/' ? isSurvivorActive : location.pathname === path;
+                const isActive = path === '/chat' ? isSurvivorActive : location.pathname === path;
                 return (
                   <Link
                     key={path}
@@ -451,7 +452,7 @@ export function Shell({ title, subtitle, children }) {
       {/* Mobile Bottom Quick-Access Dock */}
       <div className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-[#0b1626]/95 border-t border-[#dbe6f0] dark:border-slate-800 backdrop-blur-xl px-2 py-1 flex items-center justify-around shadow-lg">
         {[
-          { path: '/', label: 'Survivor', icon: HeartPulse, isMatch: isSurvivorActive },
+          { path: '/chat', label: 'Survivor', icon: HeartPulse, isMatch: isSurvivorActive },
           { path: '/volunteer', label: 'Responders', icon: Users, isMatch: location.pathname === '/volunteer' },
           { path: '/safeplace', label: 'Evac Route', icon: ShieldCheck, isMatch: location.pathname === '/safeplace' },
           { path: '/hq', label: 'Command HQ', icon: Radio, isMatch: location.pathname === '/hq' },

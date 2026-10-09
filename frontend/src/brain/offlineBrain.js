@@ -7,7 +7,7 @@
  * Features:
  * 1. In-Browser Vector Engine (Cosine similarity, Float32 dot products).
  * 2. Negative Vector Facility Recommendation (V_target = normalize(V_base - 0.5 * V_hazard)).
- * 3. Offline BM25 / Semantic Retrieval over 419 pre-indexed emergency cards.
+ * 3. Native Android Qdrant Edge BM25 retrieval; browser keyword fallback.
  * 4. Auto-Sync outbox manager that synchronizes local reports when connection is restored.
  */
 
@@ -26,6 +26,8 @@ import {
   pullGuidesFromCloud,
 } from './cloudSync.js';
 import staticCards from '../../public/data/knowledge_cards.json';
+import { isAndroidEdge, searchEdgeGuidance, getQdrantEdgeStatus } from './qdrantEdge.js';
+import { formatGuidanceCards } from './guidanceFormat.js';
 
 let cachedCards = Array.isArray(staticCards) ? staticCards : [];
 let cachedVectors = null;
@@ -204,24 +206,13 @@ export async function recommendAlternativeLocal(compromisedId, avoidHazardText =
   candidates.sort((a, b) => b.score - a.score);
   const best = candidates[0];
 
-  if (!best) {
-    return {
-      recommended_entity_id: 'shelter_alpha',
-      title: 'Shelter Alpha (Primary Relief Camp)',
-      score: 0.812,
-      facilities: ['food', 'clean_water', 'emergency_power', 'first_aid'],
-      location: { lat: 28.6145, lon: 77.2095 },
-      reasoning: 'Calculated on-device via local vector arithmetic avoiding flood zone.',
-      safe_guidance: 'Approach via eastern high-ground ridge. Avoid low-lying underpasses.',
-      on_device: true,
-    };
-  }
+  if (!best) return null;
 
   return {
     recommended_entity_id: best.card.entity_id || best.card.id,
     title: best.card.title,
     score: best.score,
-    facilities: best.card.facilities || ['shelter', 'medical_triage', 'clean_water'],
+    facilities: best.card.facilities || [],
     location: best.card.location,
     reasoning: `Selected by on-device vector arithmetic (score: ${best.score}) neutralizing hazard "${avoidHazardText}".`,
     safe_guidance: 'Check route visibility before movement. Follow marked high-ground evacuation path.',
@@ -287,6 +278,18 @@ function extractStepsFromCard(card) {
  * Client-Side Semantic & Keyword Search over 419 Emergency Cards
  */
 export async function searchKnowledgeLocal(queryText, limit = 5) {
+  if (isAndroidEdge()) {
+    if (/^(hi|hello|hey|greetings|halo|howdy)([\s,!.]+.*)?$/i.test((queryText || '').trim())) {
+      const status = await getQdrantEdgeStatus();
+      return { ...status, source_cards: [], warnings: [], is_greeting: true, mode: 'native_qdrant_edge',
+        text: `### Rescue Assistant Ready\n\n${status.indexed_cards} emergency reference cards are indexed on this phone. Describe the injury or hazard to search them offline.` };
+    }
+    // Reconcile the durable guide inventory before querying, including writes
+    // committed just before a crash or while native indexing was unavailable.
+    const result = await searchEdgeGuidance(queryText || '', limit, await getAllLocalGuides());
+    const { cards, ...metadata } = result;
+    return formatGuidanceCards(cards, metadata);
+  }
   try {
     await initOfflineBrain();
   } catch (e) {
@@ -352,7 +355,7 @@ export async function searchKnowledgeLocal(queryText, limit = 5) {
   const matchesFound = scoredCards.length > 0;
   const topCards = matchesFound
     ? scoredCards.slice(0, limit).map((sc) => sc.card)
-    : cards.slice(0, limit);
+    : [];
 
   const mappedCards = topCards.map((c) => ({
     id: c.id,
@@ -417,6 +420,9 @@ export async function searchKnowledgeLocal(queryText, limit = 5) {
     text: formattedText,
     warnings: allWarnings.slice(0, 3),
     on_device: true,
+    engine: 'javascript-keyword',
+    retrieval: 'keyword',
+    mode: 'browser_keyword_fallback',
   };
 }
 

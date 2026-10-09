@@ -514,6 +514,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
         memory_hits: result.memory_hits,
         timestamp: new Date(),
         isAi: Boolean(result.ai_answer),
+         retrievalEngine: result.engine || result.answer?.engine,
         score: (result.cards || result.answer?.source_cards)?.[0]?.score
       };
       setMessages((prev) => [...prev, asstMsg]);
@@ -926,7 +927,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                           ) : (
                             <>
                               <span className="h-1.5 w-1.5 rounded-full bg-amber-500"></span>
-                              <span className="text-amber-600 dark:text-amber-400 font-bold">RescueMemory Edge RAG</span>
+                                <span className="text-amber-600 dark:text-amber-400 font-bold">{msg.retrievalEngine === 'qdrant-edge' ? 'Qdrant Edge · On-device BM25' : 'Local emergency guidance'}</span>
                             </>
                           )}
                         </span>
