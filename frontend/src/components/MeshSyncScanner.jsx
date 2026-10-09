@@ -79,7 +79,7 @@ export default function MeshSyncScanner({ initialPeers = [], onSyncComplete = nu
         const self = getDeviceId();
         for (const peer of found) {
           if (!mounted.current || document.hidden || (!manual && !autoRef.current)) break;
-          if (!peer.sync_ready || (!manual && self.localeCompare(peer.node_id) > 0)) continue;
+          if ((!peer.sync_ready && !peer.node_id.startsWith('unresolved_')) || (!manual && self.localeCompare(peer.node_id) > 0)) continue;
           if (!manual && (retries.current.get(peer.node_id)?.next || 0) > Date.now()) continue;
           await exchangePhone(peer, manual);
         }
@@ -221,12 +221,12 @@ export default function MeshSyncScanner({ initialPeers = [], onSyncComplete = nu
             <div className="mt-1 flex flex-wrap gap-2 text-[10px] text-slate-500"><span>Phone {peer.node_id.slice(-6)}</span><span>Bluetooth{peer.transports?.some(t => t !== 'native_ble') ? ' + Online' : ''}</span>
               <span>{peer.sync_ready ? peer.available ? 'Identified' : `Last seen ${ago(peer.last_seen_epoch)}` : peer.node_id.startsWith('unresolved_') ? 'Beacon detected · identifying automatically' : 'Update required'}</span>
               <span>All SOS types eligible for sharing</span></div></div>
-            <button className={button} disabled={!!busy || !peer.available || !peer.sync_ready} onClick={() => runCycle(true, peer)}>{busy === peer.node_id ? 'Syncing…' : peer.error ? 'Retry' : 'Sync now'}</button>
+            <button className={button} disabled={!!busy || !peer.available || (!peer.sync_ready && !peer.node_id.startsWith('unresolved_'))} onClick={() => runCycle(true, peer)}>{busy === peer.node_id ? 'Syncing…' : peer.error ? 'Retry' : 'Sync now'}</button>
           </div>
           <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-500"><BatteryLabel value={peer.battery} charging={peer.charging} measured={peer.battery_measured_at} />
             <span>{radarDistance(position.distance_m)} · {position.source === 'gps' ? 'GPS' : 'signal estimate'}</span>
             {position.bearing_deg != null && <span>{Math.round(position.bearing_deg)}° from north</span>}
-            {position.accuracy_m != null && <span>GPS uncertainty ±{Math.round(position.accuracy_m)} m</span>}<span>Measured {ago(peer.battery_measured_at)}</span></div>
+            {position.accuracy_m != null && <span>GPS uncertainty ±{Math.round(position.accuracy_m)} m</span>}<span>{peer.battery_measured_at ? `Battery measured ${ago(peer.battery_measured_at)}` : 'Battery not measured yet'}</span></div>
           {latest && <p className="mt-2 text-[11px] text-slate-500">{transferSummary(latest)} · {time(latest.updated_at)}</p>}
           {peer.error && <p className="mt-1 text-xs text-amber-600">{peer.error}</p>}
         </article>;

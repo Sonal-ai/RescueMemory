@@ -51,6 +51,9 @@ const plugin = {
   async connect() {
     calls.connect++;
     if (workerData.connectError) throw new Error('[gatt.connect/ANDROID_GATT_133] Connection failed at ' + workerData.peer);
+    if (workerData.incompleteMetadata && calls.connect === 1) return undefined;
+    if (workerData.duplicateMetadata) return { v: 2, node_id: workerData.id };
+    if (workerData.migratedMetadata && calls.connect === 1) return { v: 2, node_id: 'legacy-peer-id', name: 'Legacy phone' };
     return { v: 2, node_id: workerData.peer, name: `Phone ${workerData.peer}`, address: workerData.peer, ...workerData.peerBattery };
   },
   async exchange({ payload }) {

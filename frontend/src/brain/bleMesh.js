@@ -37,6 +37,8 @@ export async function ensureMeshIdentity() {
   if (!onAndroid) return { node_id: localStorage.getItem('rescue.device_id') };
   if (!identityPromise) identityPromise = nativeBle.getIdentity({ nodeId: localStorage.getItem('rescue.device_id'),
     name: sessionStorage.getItem('rescue.reporterId') || 'RescueMemory phone' }).then(identity => {
+    if (identity?.v !== PROTOCOL_VERSION || typeof identity.node_id !== 'string' || !identity.node_id || typeof identity.public_key !== 'string' || !identity.public_key)
+      throw meshError('identity.initialize', new Error('Android returned incomplete phone identity. Retry initialization.'));
     localStorage.setItem('rescue.device_id', identity.node_id); return identity;
   }).catch(error => { identityPromise = null; throw error; });
   return identityPromise;
@@ -268,9 +270,12 @@ export async function stopBleReceiver() {
 }
 
 function remember(meta, observed) {
+  if (!meta || typeof meta !== 'object' || !observed?.address)
+    throw new Error('Incomplete Bluetooth identity or address.');
   const id = meta.node_id || `unresolved_${observed.address}`;
   if (meta.node_id === localStorage.getItem('rescue.device_id')) return;
-  peers.delete(`unresolved_${observed.address}`);
+  // Address rotation and a native identity migration must not leave stale rows.
+  for (const [oldId, oldPeer] of peers) if (oldPeer.address === observed.address && oldId !== id) peers.delete(oldId);
   const old = peers.get(id);
   const peer = { ...old, ...meta, node_id: id, address: observed.address, device_id: observed.address,
     first_seen_epoch: old?.first_seen_epoch || observed.last_seen_epoch || Date.now(),
@@ -281,6 +286,15 @@ function remember(meta, observed) {
   peers.set(id, peer); notify(); return peer;
 }
 
+function identifyConnectedPeer(meta, observed) {
+  if (meta?.v !== PROTOCOL_VERSION || typeof meta.node_id !== 'string' || !meta.node_id || meta.node_id.length > 100)
+    throw Object.assign(new Error('Nearby phone returned incomplete app metadata. Update both phones; automatic retry will continue.'), { code: 'INVALID_METADATA' });
+  const identified = remember(meta, observed);
+  if (!identified)
+    throw Object.assign(new Error('Both phones have the same mesh identity. Install the latest APK on both phones to repair restored device IDs.'), { code: 'DUPLICATE_NODE_ID' });
+  return identified;
+}
+
 export async function scanForNearbyPhones() {
   if (!onAndroid) throw new Error('Nearby Bluetooth sync requires the Android app.');
   return serialize(async () => {
@@ -288,15 +302,15 @@ export async function scanForNearbyPhones() {
     for (const observed of result.peers || []) {
       try {
         const meta = await nativeBle.connect({ address: observed.address });
-        const peer = remember(meta, observed); if (peer) found.push(peer);
+        const peer = identifyConnectedPeer(meta, observed); found.push(peer);
         // Native ping records this phone on the receiver even if its scan misses us.
         if (peer?.sync_ready) await nativeBle.ping().catch(error => meshTrace('discovery.ping', 'FAILED', error.message, { peer: peer.node_id }));
       } catch (error) {
         if (error.message?.includes('Update required')) { const peer = remember({ v: 1, error: error.message }, observed); if (peer) found.push(peer); }
         else {
-          const existing = [...peers.values()].find(p => p.address === observed.address);
-          meshTrace('discovery.metadata', 'FAILED', error.message, { address: observed.address });
-          if (existing) { existing.error = error.message; found.push(existing); }
+          const existing = [...peers.values()].find(p => p.address === observed.address) || remember({ sync_phase: 'detected' }, observed);
+          const detailed = meshError('discovery.metadata', error, { address: observed.address });
+          existing.error = detailed.message; found.push(existing);
         }
       } finally { await nativeBle.disconnect().catch(error => meshTrace('discovery.disconnect', 'FAILED', error.message)); }
     }
@@ -305,16 +319,16 @@ export async function scanForNearbyPhones() {
 }
 
 export async function syncWithBlePeer(peer) {
-  if (!onAndroid || (!peer.sync_ready && !peer.node_id?.startsWith('unresolved_'))) throw new Error('Update required on both Android phones.');
+  if (!peer?.address || typeof peer.node_id !== 'string') throw meshError('peer.select', new Error('No detected Bluetooth phone is available to connect.'));
+  if (!onAndroid || (!peer.sync_ready && !peer.node_id.startsWith('unresolved_'))) throw new Error('Update required on both Android phones.');
   return serialize(async () => {
     let result, session, stage = 'receiver.start';
     try {
       await startBleReceiver();
       stage = 'gatt.connect'; meshTrace(stage, 'CONNECTING', 'Connecting to detected advertisement.', { address: peer.address });
       const meta = await nativeBle.connect({ address: peer.address });
-      if (meta.v !== PROTOCOL_VERSION || !meta.node_id) throw new Error('Update required: invalid app metadata or old protocol.');
-      if (peer.node_id.startsWith('unresolved_')) peer = remember(meta, { address: peer.address, rssi: peer.rssi });
-      else if (peer.node_id !== meta.node_id) throw new Error('App identity changed for this Bluetooth address; rescan required.');
+      stage = 'gatt.metadata';
+      peer = identifyConnectedPeer(meta, { address: peer.address, rssi: peer.rssi });
       stage = 'presence.ping';
       await nativeBle.ping();
       stage = 'handshake.hello';
@@ -388,7 +402,9 @@ export async function syncWithBlePeer(peer) {
     } catch (error) {
       const detailed = meshError(stage, error, { peer: peer.node_id, address: peer.address });
       peer.error = detailed.message;
-      if (result) { result.status = 'partial'; result.error = detailed.message; result.phase = stage; await saveTransferSession(result); }
+      peers.set(peer.node_id, peer);
+      if (result) { result.status = 'partial'; result.error = detailed.message; result.phase = stage;
+        await saveTransferSession(result).catch(storageError => meshTrace('session.persist', 'FAILED', storageError.message, { peer: peer.node_id })); }
       notify(); throw detailed;
     } finally { await nativeBle.disconnect().catch(error => meshTrace('session.disconnect', 'FAILED', error.message)); }
   });

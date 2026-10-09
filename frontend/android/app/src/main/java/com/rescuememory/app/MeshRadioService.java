@@ -38,6 +38,7 @@ public class MeshRadioService extends android.app.Service {
         state.put("advertising", advertisingReady); state.put("server_open", server != null); state.put("scan_requested", scanCallback != null);
         state.put("service_running", running); state.put("app_foreground", bridgeActive); state.put("android_sdk", Build.VERSION.SDK_INT);
         state.put("device", Build.MANUFACTURER + " " + Build.MODEL); state.put("nearby_permission", permitted());
+        state.put("local_node_id", preferences().getString("node_id", ""));
         state.put("precise_location_permission", ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED);
         try { android.location.LocationManager location = getSystemService(android.location.LocationManager.class); state.put("location_services_enabled", location != null && (Build.VERSION.SDK_INT >= 28 ? location.isLocationEnabled() : location.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER) || location.isProviderEnabled(android.location.LocationManager.NETWORK_PROVIDER))); } catch (Exception e) { state.put("location_state_error", e.getClass().getSimpleName()); }
         try { BluetoothManager manager = getSystemService(BluetoothManager.class); BluetoothAdapter a = manager == null ? null : manager.getAdapter(); state.put("bluetooth_enabled", a != null && a.isEnabled()); }
@@ -144,7 +145,8 @@ public class MeshRadioService extends android.app.Service {
     }
     private void rememberPresence(JSObject meta, String address, JSObject observed, boolean outbound) {
         String id = meta.optString("node_id", "");
-        if (id.isEmpty() || id.length() > 100 || id.equals(preferences().getString("node_id", ""))) return;
+        if (id.isEmpty() || id.length() > 100) { log("peer.identity", "INVALID_NODE_ID", "Missing or invalid identity at " + address); return; }
+        if (id.equals(preferences().getString("node_id", ""))) { log("peer.identity", "DUPLICATE_NODE_ID", "Remote address " + address + " returned this phone's node ID. Update both phones to bind identity to their own signing keys."); return; }
         JSObject previous = knownPeers.get(id);
         // Android may use different random addresses in its central/peripheral
         // roles. Keep a recently discovered connectable address on incoming pings.
@@ -234,13 +236,30 @@ public class MeshRadioService extends android.app.Service {
     private JSObject identity() throws Exception {
         String id = nodeId();
         JSObject obj = new JSObject(); obj.put("node_id", id); obj.put("name", deviceName); obj.put("v", 2);
-        obj.put("public_key", Base64.encodeToString(keyStore().getCertificate(KEY_ALIAS).getPublicKey().getEncoded(), Base64.NO_WRAP));
+        obj.put("public_key", Base64.encodeToString(identityPublicKey(), Base64.NO_WRAP));
         String cert = preferences().getString("certificate", null); if (cert != null) obj.put("certificate", new JSObject(cert));
         return obj;
     }
-    private synchronized String nodeId() {
-        String id = preferences().getString("node_id", null);
-        if (id == null) { id = "node_" + UUID.randomUUID(); preferences().edit().putString("node_id", id).commit(); }
+    byte[] identityPublicKey() throws Exception { return keyStore().getCertificate(KEY_ALIAS).getPublicKey().getEncoded(); }
+    private synchronized String nodeId() throws Exception {
+        byte[] publicKey = identityPublicKey();
+        String fingerprint = MeshNodeIdentity.fingerprint(publicKey);
+        SharedPreferences prefs = preferences();
+        String previous = prefs.getString("node_id", null), binding = prefs.getString("identity_key_fingerprint", null);
+        boolean credentialMatches = false;
+        String certificate = prefs.getString("certificate", null);
+        if (certificate != null) try {
+            JSObject envelope = new JSObject(certificate);
+            JSObject claims = new JSObject(new String(Base64.decode(envelope.getString("payload"), Base64.DEFAULT), StandardCharsets.UTF_8));
+            credentialMatches = previous != null && previous.equals(claims.optString("node_id"))
+                && Base64.encodeToString(publicKey, Base64.NO_WRAP).equals(claims.optString("public_key"));
+        } catch (Exception e) { failure("identity.binding", "INVALID_CREDENTIAL", e); }
+        String id = MeshNodeIdentity.resolve(previous, binding, credentialMatches, fingerprint);
+        if (!id.equals(previous) || !fingerprint.equals(binding)) {
+            if (!prefs.edit().putString("node_id", id).putString("identity_key_fingerprint", fingerprint).commit())
+                throw new IllegalStateException("Could not persist phone identity binding.");
+            log("identity.binding", id.equals(previous) ? "BOUND" : "MIGRATED", "Phone identity bound to its Android signing key; stored reports retained.");
+        }
         return id;
     }
     private JSObject battery() {
@@ -258,8 +277,6 @@ public class MeshRadioService extends android.app.Service {
     }
     public void getIdentity(MeshCall call) {
         String name = call.getString("name"); if (name != null && !name.isEmpty()) deviceName = name.substring(0, Math.min(name.length(), 80));
-        String proposed = call.getString("nodeId");
-        if (!preferences().contains("node_id") && proposed != null && !proposed.isEmpty()) preferences().edit().putString("node_id", proposed).commit();
         cryptoWorker.execute(() -> { try { call.resolve(identity()); } catch (Exception e) { call.reject(failure("identity.initialize", "KEYSTORE_EXCEPTION", e)); } });
     }
     public void getBattery(MeshCall call) { try { call.resolve(battery()); } catch (Exception e) { call.reject(failure("telemetry.battery", "BATTERY_EXCEPTION", e)); } }
