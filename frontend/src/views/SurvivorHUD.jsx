@@ -44,19 +44,17 @@ import {
   onBrainStatusChange,
   onSyncStateChange,
   getDiscoveredPeers,
-  updateDeviceLocation,
   syncDiscoveredPeer,
   getSurvivalRadar,
-  triggerAutoSync,
-  getNativeOrWebLocation
+  triggerAutoSync
 } from '../api';
 import { Card, Empty, Shell } from '../components';
 import MapPanel from '../MapPanel';
 import UnifiedRadarMap from '../components/UnifiedRadarMap';
 import MeshSyncScanner from '../components/MeshSyncScanner';
 import MarkdownContent from '../components/MarkdownContent';
-
-const DEFAULT_CENTER = { lat: 28.7041, lon: 77.1025 };
+import useLiveGps from '../hooks/useLiveGps.js';
+import { formatCoordinates, gpsStatusText } from '../brain/locationTracking.js';
 
 const TABS = [
   ['ask', 'Assistant', HeartPulse],
@@ -159,9 +157,16 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
   const [selectedMaterials, setSelectedMaterials] = useState([]); // ['cloth', 'stick', 'water', 'belt']
 
   const targetLoc = navTarget?.location || (navTarget?.lat != null && navTarget?.lon != null ? { lat: navTarget.lat, lon: navTarget.lon } : null);
+  const gps = useLiveGps();
+  const [gpsNoticeDismissed, setGpsNoticeDismissed] = useState(false);
   const [shareLocation, setShareLocation] = useState(true);
-  const [center, setCenter] = useState(() => targetLoc || DEFAULT_CENTER);
-  const [pin, setPin] = useState(() => targetLoc || DEFAULT_CENTER);
+  const [centerOverride, setCenter] = useState(() => targetLoc || null);
+  const [manualPin, setManualPin] = useState(null);
+  const center = centerOverride || gps.fix;
+  const pin = manualPin || gps.fix;
+  const setPin = useCallback(point => {
+    if (Number.isFinite(point?.lat) && Number.isFinite(point?.lon)) setManualPin({ ...point, source: 'manual_pin' });
+  }, []);
   const [items, setItems] = useState([]);
   const [peers, setPeers] = useState([]);
   const [selectedPeer, setSelectedPeer] = useState(null);
@@ -185,7 +190,6 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
       const loc = navTarget.location || (navTarget.lat != null && navTarget.lon != null ? { lat: navTarget.lat, lon: navTarget.lon } : null);
       if (loc) {
         setCenter(loc);
-        setPin(loc);
       }
     }
   }, [navTarget]);
@@ -208,10 +212,11 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
   }, [messages, tab]);
 
   // Poll survival radar to detect nearest survivor in real-time
-  const pinLat = pin?.lat ?? 28.7041;
-  const pinLon = pin?.lon ?? 77.1025;
+  const pinLat = gps.fix?.lat;
+  const pinLon = gps.fix?.lon;
 
   const refreshRadarSummary = useCallback(async () => {
+    if (pinLat == null || pinLon == null) return;
     try {
       const data = await getSurvivalRadar({
         lat: pinLat,
@@ -306,10 +311,11 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
   }, [refreshPeers]);
 
   // Refresh nearby map observations
-  const centerLat = center?.lat ?? 28.7041;
-  const centerLon = center?.lon ?? 77.1025;
+  const centerLat = gps.fix?.lat;
+  const centerLon = gps.fix?.lon;
 
   const refreshMap = useCallback(async () => {
+    if (centerLat == null || centerLon == null) return;
     try {
       const groupId = setting('groupId');
       const result = await api('/api/map/nearby', {
@@ -380,38 +386,10 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
     }
   };
 
-  // Live GPS geolocation (Native Capacitor Satellite GPS with Web fallback)
-  const locateWithGps = async () => {
-    try {
-      const position = await getNativeOrWebLocation();
-      const location = {
-        lat: Number(position.lat.toFixed(5)),
-        lon: Number(position.lon.toFixed(5))
-      };
-      setCenter(location);
-      setPin(location);
-      setError('');
-      const tag = position.isFallback ? 'Disaster Reference' : position.isCached ? 'Last Known GPS' : 'Live GPS';
-      setMessage(`📍 Location locked via ${tag} (${location.lat}, ${location.lon}).`);
-      updateDeviceLocation({
-        lat: location.lat,
-        lon: location.lon,
-        status: 'survivor_active'
-      }).catch(() => {});
-    } catch {
-      // Never block the user with hard errors
-      const fallback = { lat: 28.7041, lon: 77.1025 };
-      setCenter(fallback);
-      setPin(fallback);
-      setMessage('📍 Location set to disaster operations center (28.7041, 77.1025).');
-    }
-  };
-
-  // Initial GPS lock on component mount
-  useEffect(() => {
-    locateWithGps();
-  }, []);
-
+  const locateWithGps = useCallback(async () => {
+    setManualPin(null); setCenter(null); setGpsNoticeDismissed(false);
+    await gps.refresh();
+  }, [gps.refresh]);
   // Peer Wi-Fi sync
   const handleSyncPeer = async (peer) => {
     setSyncingPeer(true);
@@ -712,7 +690,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
           id: `sos_ack_${Date.now()}`,
           role: 'assistant',
           text: `### 🚨 EMERGENCY SOS TRANSMITTED (#${evtId})\n\n` +
-            `Your emergency distress beacon is **ACTIVE and BROADCASTING** across the local disaster mesh from coordinates **(${pin.lat.toFixed(4)}, ${pin.lon.toFixed(4)})**.\n\n` +
+            `Your emergency distress beacon is **ACTIVE and BROADCASTING** across the local disaster mesh. Location: **${formatCoordinates(pin, 4)}**.\n\n` +
             `**Reported Situation:**\n` +
             `• ${reportText}\n` +
             (breathingStatus === false ? `• ⚠️ **CRITICAL:** Casualty NOT breathing. Initiate immediate chest compressions (100-120/min).\n` : '') +
@@ -756,6 +734,10 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
           <button onClick={() => setError('')} className="text-xs text-red-600 dark:text-red-300 hover:underline font-semibold ml-2">Dismiss</button>
         </div>
       )}
+      {!gpsNoticeDismissed && <div role="status" className={`mb-4 p-4 rounded-2xl border text-sm flex items-center justify-between gap-3 ${gps.status === 'live' ? 'border-emerald-200 dark:border-emerald-800/80 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200' : 'border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200'}`}>
+        <span className="flex items-center gap-2.5"><MapPin size={18} className="shrink-0" />{gpsStatusText(gps)}</span>
+        <button onClick={() => setGpsNoticeDismissed(true)} className="text-xs font-semibold hover:underline">Dismiss</button>
+      </div>}
       {message && (
         <div role="status" className="mb-4 p-4 rounded-2xl border border-emerald-200 dark:border-emerald-800/80 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 text-sm flex items-center justify-between shadow-sm">
           <div className="flex items-center gap-2.5">
@@ -953,7 +935,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                               PRIORITY 1 · IMMEDIATE
                             </span>
                             <span className="text-[11px] text-red-700 dark:text-red-300 font-mono">
-                              GPS: {pin.lat.toFixed(4)}, {pin.lon.toFixed(4)}
+                              GPS: {formatCoordinates(pin, 4)}
                             </span>
                           </div>
                           <p className="text-[11px] text-red-900 dark:text-red-200 mb-2">
@@ -1264,9 +1246,10 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
       {/* ========================================================================= */}
       {/* TAB 2: UNIFIED RADAR MAP & 360° SURVIVAL COMPASS */}
       {/* ========================================================================= */}
-      {tab === 'map' && (
+      {tab === 'map' && (gps.fix ? (
         <UnifiedRadarMap
-          userLocation={pin}
+          userLocation={gps.fix}
+          gpsLive={gps.status === 'live'}
           items={items}
           peers={peers}
           onRefreshGps={locateWithGps}
@@ -1283,7 +1266,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
           }}
           role="survivor"
         />
-      )}
+      ) : <Card title="Radar & Compass"><p className="text-sm text-slate-600 dark:text-slate-300">{gpsStatusText(gps)}</p><button onClick={locateWithGps} className="mt-3 text-sm font-bold text-cyan-600">Retry GPS</button></Card>)}
 
       {/* ========================================================================= */}
       {/* ========================================================================= */}
@@ -1517,7 +1500,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                 <div className="flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse"></span>
                   <span className="font-mono text-cyan-950 dark:text-cyan-300 font-bold text-xs sm:text-[13px]">
-                    Location: {pin.lat.toFixed(3)}, {pin.lon.toFixed(3)}
+                    {manualPin ? 'Selected SOS pin' : gps.status === 'live' ? 'Live GPS' : 'Last GPS fix'}: {formatCoordinates(pin, 5)}
                   </span>
                 </div>
                 <button
@@ -1625,7 +1608,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                         Tap Map to Place Location Pin
                       </label>
                       <div className="rounded-lg overflow-hidden border border-slate-200 dark:border-slate-800">
-                        <MapPanel
+                        {center ? <MapPanel
                           center={center}
                           items={items}
                           peers={peers}
@@ -1634,7 +1617,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                           onSelect={setPin}
                           onMarker={handleSelectObservation}
                           onSelectPeer={setSelectedPeer}
-                        />
+                        /> : <p className="p-3 text-xs text-slate-500">A real location is needed before placing a map pin. Enable GPS or retry location.</p>}
                       </div>
                     </div>
                   </div>
@@ -1670,7 +1653,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                   </div>
                   <div className="text-[9px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
                     <span>Target: {report.visibility === 'responders' ? 'Volunteers & HQ' : 'Nearby Devices'}</span>
-                    <span>GPS: {pin.lat.toFixed(4)}, {pin.lon.toFixed(4)}</span>
+                    <span>GPS: {formatCoordinates(pin, 4)}</span>
                   </div>
                 </div>
               )}
@@ -1762,7 +1745,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
             <div className="bg-[#050b14] border border-slate-800 rounded-2xl p-3 text-left space-y-1.5 font-mono text-[11px]">
               <div className="flex justify-between text-slate-400">
                 <span>Coordinates:</span>
-                <strong className="text-cyan-400">{sosBroadcastModal.location.lat.toFixed(4)}, {sosBroadcastModal.location.lon.toFixed(4)}</strong>
+                <strong className="text-cyan-400">{formatCoordinates(sosBroadcastModal.location, 4)}</strong>
               </div>
               <div className="flex justify-between text-slate-400">
                 <span>Target Channel:</span>
