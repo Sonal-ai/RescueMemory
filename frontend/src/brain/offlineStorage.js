@@ -152,7 +152,10 @@ export async function saveImportedGuides(guides) {
       store.put({ ...g, imported: true, imported_at: new Date().toISOString() });
       count++;
     });
-    tx.oncomplete = () => resolve(count);
+    tx.oncomplete = () => {
+      window.dispatchEvent(new Event('rescue:guides-changed'));
+      resolve(count);
+    };
     tx.onerror = () => reject(tx.error);
   });
 }

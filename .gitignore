@@ -69,6 +69,9 @@ dist-ssr/
 Thumbs.db
 tmp/
 .tmp_pytest/
+frontend/.native-cache/
+frontend/android/app/.cxx/
+frontend/android/app/src/main/assets/qdrant/knowledge-pack.json
 *.apk
 !RescueMemory-debug.apk
 

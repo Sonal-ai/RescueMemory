@@ -1,0 +1,11 @@
+cmake_minimum_required(VERSION 3.22.1)
+project(rescue_qdrant_edge LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 17)
+set(EDGE_DIST "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../.native-cache/qdrant-edge-ffi-0.4.1")
+add_library(qdrant_edge_ffi STATIC IMPORTED)
+set_target_properties(qdrant_edge_ffi PROPERTIES IMPORTED_LOCATION
+    "${EDGE_DIST}/android/src/main/jniLibs/${ANDROID_ABI}/libqdrant_edge_ffi.a")
+add_library(rescue_qdrant_edge SHARED qdrant_jni.cpp)
+target_include_directories(rescue_qdrant_edge PRIVATE "${EDGE_DIST}/cpp")
+target_link_options(rescue_qdrant_edge PRIVATE "-Wl,-z,max-page-size=16384" "-Wl,-z,common-page-size=16384" "-Wl,--exclude-libs,ALL")
+target_link_libraries(rescue_qdrant_edge PRIVATE qdrant_edge_ffi log android dl m)

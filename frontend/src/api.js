@@ -34,6 +34,7 @@ import {
 import { ensureMeshIdentity, getPhoneBattery, publishMeshLocation } from './brain/bleMesh.js';
 import { mergePeers } from './brain/meshProtocol.js';
 import { readCloudSnapshot, readCloudRecords, localRecordProvenance } from './brain/cloudInspector.js';
+import { isAndroidEdge, preferNativeRetrieval, getQdrantEdgeStatus } from './brain/qdrantEdge.js';
 
 export {
   distM,
@@ -244,6 +245,12 @@ export function invalidateApiCache(prefix = '') {
 
 export async function api(path, options = {}) {
   const { method = 'GET', body, admin = false, responder = false, group = false } = options;
+  // Execute Android emergency retrieval before any cache/network decision.
+  // Native failure propagates instead of relabeling a fallback as successful Edge.
+  if (preferNativeRetrieval(path)) {
+    setStandaloneMode(true);
+    return handleOfflineFallback(path, method, body);
+  }
   const liveCloud = path.startsWith('/api/sync/cloud-');
   const authorityWrite = requiresAuthorityServer(path, method, body);
   const cacheKey = `${method}:${path}:${admin ? 'a' : ''}:${responder ? 'r' : ''}:${group ? 'g' : ''}`;
@@ -382,7 +389,7 @@ export async function api(path, options = {}) {
  */
 async function handleOfflineFallback(path, method, body) {
   console.log(`[OfflineAPI] Intercepting ${method} ${path} -> running in-browser brain...`);
-  await initOfflineBrain();
+  if (!isAndroidEdge()) await initOfflineBrain();
 
   // 1. Local Search & Emergency Guidance
   if (path === '/api/chat' || path.startsWith('/api/chat')) {
@@ -497,7 +504,7 @@ async function handleOfflineFallback(path, method, body) {
     }
 
     // 1B. Safe Shelter & Evacuation Finder Handler
-    if (isShelterQuery) {
+    if (isShelterQuery && !isAndroidEdge()) {
       const uLat = body?.location?.lat ?? 28.7041;
       const uLon = body?.location?.lon ?? 77.1025;
       const sLat = uLat + 0.0072;
@@ -539,7 +546,7 @@ async function handleOfflineFallback(path, method, body) {
     }
 
     // 1C. Safe Drinking Water & Emergency Purification Handler
-    if (isWaterQuery) {
+    if (isWaterQuery && !isAndroidEdge()) {
       const uLat = body?.location?.lat ?? 28.7041;
       const uLon = body?.location?.lon ?? 77.1025;
       const wLat = uLat + 0.0021;
@@ -592,6 +599,12 @@ async function handleOfflineFallback(path, method, body) {
       local_answer: answer.text,
       text: answer.text,
       answer,
+      engine: answer.engine,
+      engine_version: answer.engine_version,
+      retrieval: answer.retrieval,
+      indexed_cards: answer.indexed_cards,
+      elapsed_ms: answer.elapsed_ms,
+      pack_version: answer.pack_version,
       ai_answer: null,
       ai_status: 'offline_mode',
       suggested_action: isSosQuery
@@ -599,8 +612,15 @@ async function handleOfflineFallback(path, method, body) {
         : (topCard?.title ? { kind: 'protocol', title: `Follow protocol: ${topCard.title}` } : null),
       warnings: answer.warnings || [],
       local_fallback: true,
-      mode: 'standalone_mobile_brain',
+      mode: answer.mode || 'browser_keyword_fallback',
     };
+  }
+
+  if (path === '/api/assess' && isAndroidEdge()) {
+    const answer = await searchKnowledgeLocal(body?.query || '', body?.limit || 3);
+    return { ...answer, cards: answer.source_cards, local_answer: answer.text,
+      assessment_available: false, status: 'retrieval_only',
+      detail: 'Local reference retrieval is available. Automated clinical assessment is not implemented in this APK.' };
   }
 
   // 2. Negative Vector Safe Facility Recommendation
@@ -657,6 +677,13 @@ async function handleOfflineFallback(path, method, body) {
   // 6. Health & Status
   if (path === '/health' || path === '/api/sync/status') {
     const unsynced = await getUnsyncedReports();
+    if (isAndroidEdge()) {
+      const edge = await getQdrantEdgeStatus();
+      return { ...edge, status: 'ok', edge_brain: 'qdrant-edge',
+        node_id: getDeviceId(), unsynced_reports_count: unsynced.length,
+        guides: edge.indexed_cards, events: (await getAllLocalReports()).length,
+        local_fallback: false };
+    }
     return {
       status: 'offline',
       edge_brain: 'standalone_mobile_brain_active',

@@ -35,6 +35,12 @@ jobs:
         working-directory: frontend
         run: npm run build
 
+      - name: Prepare Verified Qdrant Edge Runtime and Knowledge Pack
+        working-directory: frontend
+        run: |
+          npm run prepare:edge
+          npm run export:edge
+
       - name: Sync Capacitor Android Project
         working-directory: frontend
         run: npx cap sync android
@@ -48,7 +54,27 @@ jobs:
 
       - name: Build Android Debug APK
         working-directory: frontend/android
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --stacktrace
+
+      - name: Check Native Engine Is Packaged for Both Android Architectures
+        run: |
+          python - <<'PY'
+          import json, struct
+          from pathlib import Path
+          from zipfile import ZipFile
+          with ZipFile('frontend/android/app/build/outputs/apk/debug/app-debug.apk') as apk:
+              for abi in ('arm64-v8a', 'x86_64'):
+                  engine = apk.read(f'lib/{abi}/librescue_qdrant_edge.so')
+                  assert engine[:5] == b'\x7fELF\x02'
+                  offset = struct.unpack_from('<Q', engine, 32)[0]
+                  size, count = struct.unpack_from('<HH', engine, 54)
+                  load_alignments = [struct.unpack_from('<Q', engine, offset + i * size + 48)[0]
+                      for i in range(count) if struct.unpack_from('<I', engine, offset + i * size)[0] == 1]
+                  assert load_alignments and all(alignment >= 16384 for alignment in load_alignments)
+              pack = json.loads(apk.read('assets/qdrant/knowledge-pack.json'))
+              assert pack['card_count'] == len(pack['cards']) > 0
+              assert pack['cards'] == json.loads(Path('backend/data/knowledge.json').read_text())
+          PY
 
       - name: Upload Installable APK Artifact
         uses: actions/upload-artifact@v4
