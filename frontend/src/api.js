@@ -1,3 +1,5 @@
+import { reportRadar } from './brain/reportRadar.js';
+import { coordinates, requiresAuthorityServer, storedEntityTimeline, localMemoryPage } from './brain/adminData.js';
 import {
   searchKnowledgeLocal,
   recommendAlternativeLocal,
@@ -243,6 +245,7 @@ export function invalidateApiCache(prefix = '') {
 export async function api(path, options = {}) {
   const { method = 'GET', body, admin = false, responder = false, group = false } = options;
   const liveCloud = path.startsWith('/api/sync/cloud-');
+  const authorityWrite = requiresAuthorityServer(path, method, body);
   const cacheKey = `${method}:${path}:${admin ? 'a' : ''}:${responder ? 'r' : ''}:${group ? 'g' : ''}`;
 
   if (method === 'GET' && !liveCloud && !options.noCache && options.preferCache) {
@@ -252,6 +255,7 @@ export async function api(path, options = {}) {
 
   // Immediate offline fallback if offline mode is toggled OR device is known to be offline
   if (!isOnlineMode() || (typeof navigator !== 'undefined' && navigator.onLine === false)) {
+    if (authorityWrite) throw new Error('Authority signing requires the central server. Nothing was signed or published.');
     setStandaloneMode(true);
     const cached = getCachedApi(cacheKey);
     if (cached && !liveCloud) return cached;
@@ -323,7 +327,8 @@ export async function api(path, options = {}) {
     return data;
   } catch (err) {
     if (timeoutId) clearTimeout(timeoutId);
-    if (liveCloud && [401, 403].includes(err.status)) throw err;
+    if (authorityWrite) throw new Error(`Authority request failed: ${err.message}. No local signed publication was created.`);
+    if ((liveCloud || path.startsWith('/api/memory')) && [401, 403].includes(err.status)) throw err;
     const cached = getCachedApi(cacheKey);
     if (cached && !liveCloud) {
       console.log(`[API] Returning cached SWR data for ${path}`);
@@ -632,30 +637,6 @@ async function handleOfflineFallback(path, method, body) {
     };
   }
 
-  // 4. Entity Timeline / Checkpoint History
-  if (path.startsWith('/api/entities/')) {
-    const entityId = path.split('/').pop();
-    const altRec = await recommendAlternativeLocal(entityId, 'flooded entrance live wires');
-    return {
-      entity_id: entityId,
-      status: 'compromised',
-      effective_status: 'compromised',
-      reason: 'Reported flooded in local timeline',
-      observations: [
-        {
-          id: `obs_${entityId}_1`,
-          entity_id: entityId,
-          text: 'Gate flooded and access road submerged. Exposed electrical wires.',
-          observed_at: new Date(Date.now() - 3600000).toISOString(),
-          source: 'Field Survivor Report',
-          status: 'compromised',
-        },
-      ],
-      alternative_recommendation: altRec,
-      local_fallback: true,
-    };
-  }
-
   // 5. Nearby Map Records
   if (path === '/api/map/nearby') {
     const localReports = await getAllLocalReports();
@@ -670,124 +651,7 @@ async function handleOfflineFallback(path, method, body) {
 
   // 5b. Survival Finder Radar
   if (path === '/api/survival-finder/radar') {
-    const lat = body?.lat ?? 28.7041;
-    const lon = body?.lon ?? 77.1025;
-    const radiusM = body?.radius_m ?? 3500;
-    const filterCat = body?.filter_category ?? 'all';
-    const localReports = await getAllLocalReports();
-
-    function distM(lat1, lon1, lat2, lon2) {
-      const R = 6371000;
-      const phi1 = (lat1 * Math.PI) / 180;
-      const phi2 = (lat2 * Math.PI) / 180;
-      const deltaPhi = ((lat2 - lat1) * Math.PI) / 180;
-      const deltaLambda = ((lon2 - lon1) * Math.PI) / 180;
-      const a =
-        Math.sin(deltaPhi / 2) ** 2 +
-        Math.cos(phi1) * Math.cos(phi2) * Math.sin(deltaLambda / 2) ** 2;
-      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    }
-
-    function bearingDeg(lat1, lon1, lat2, lon2) {
-      const phi1 = (lat1 * Math.PI) / 180;
-      const phi2 = (lat2 * Math.PI) / 180;
-      const deltaLambda = ((lon2 - lon1) * Math.PI) / 180;
-      const y = Math.sin(deltaLambda) * Math.cos(phi2);
-      const x =
-        Math.cos(phi1) * Math.sin(phi2) -
-        Math.sin(phi1) * Math.cos(phi2) * Math.cos(deltaLambda);
-      return Math.round(((Math.atan2(y, x) * 180) / Math.PI + 360) % 360);
-    }
-
-    const cardinals = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
-    function cardinal(b) {
-      const idx = Math.round((b % 360) / 22.5) % 16;
-      return cardinals[idx];
-    }
-
-    const radarItems = [];
-    for (const rep of localReports) {
-      if (!rep.location?.lat || !rep.location?.lon) continue;
-      const d = distM(lat, lon, rep.location.lat, rep.location.lon);
-      if (d <= radiusM) {
-        const b = bearingDeg(lat, lon, rep.location.lat, rep.location.lon);
-        const isCas = rep.kind === 'incident' || (rep.text && (rep.text.toLowerCase().includes('trapped') || rep.text.toLowerCase().includes('injured') || rep.text.toLowerCase().includes('cannot walk') || rep.text.toLowerCase().includes('bleeding')));
-        const isHaz = rep.kind === 'hazard';
-        const isShelter = rep.kind === 'checkpoint' && !isHaz;
-        const cat = isCas ? 'casualty' : isHaz ? 'hazard' : isShelter ? 'shelter' : 'resource';
-        radarItems.push({
-          id: rep.id || `rep_${Math.random()}`,
-          name: rep.title || rep.entity_id || `${cat.toUpperCase()} Alert`,
-          category: cat,
-          triage_level: isCas ? (rep.severity === 'red' ? 'immediate_red' : 'delayed_yellow') : isHaz ? 'hazard_warning' : 'safe_green',
-          text: rep.text || '',
-          status: rep.status || 'active',
-          severity: rep.severity || 'yellow',
-          distance_m: Math.round(d),
-          bearing_deg: b,
-          cardinal: cardinal(b),
-          walk_time_min: Math.max(1, Math.round(d / 75)),
-          location: rep.location,
-          signal_source: 'local_indexeddb',
-          verified: rep.verified || false
-        });
-      }
-    }
-
-    // Dynamically anchor baseline disaster shelters relative to the user's active GPS coordinates
-    // This ensures Radar and 360° Compass work anywhere in the world without showing an empty screen
-    const baselineOffsets = [
-      { id: 'shelter_alpha', name: 'Shelter Alpha (Central Evacuation Hub)', dLat: 0.0072, dLon: -0.0041, facilities: ['Shelter', 'Medical Triage', 'Food Rations'], status: 'operational' },
-      { id: 'clinic_beta', name: 'Clinic Beta (Field Emergency Station)', dLat: 0.0042, dLon: -0.0078, facilities: ['Emergency Surgery', 'Clean Water'], status: 'operational' },
-      { id: 'water_tanker_4', name: 'Water Tanker 4 (Potable Water Point)', dLat: 0.0021, dLon: 0.0052, facilities: ['Clean Water', 'Oral Rehydration'], status: 'operational' },
-      { id: 'cp_17', name: 'Checkpoint CP-17 (River Crossing)', dLat: -0.0032, dLon: 0.0028, facilities: ['Checkpoint'], status: 'danger_warning', hazard: 'Flooded road & live fallen wires' }
-    ];
-
-    for (const cp of baselineOffsets) {
-      const cLat = lat + cp.dLat;
-      const cLon = lon + cp.dLon;
-      const d = distM(lat, lon, cLat, cLon);
-      const b = bearingDeg(lat, lon, cLat, cLon);
-      const isDanger = cp.status === 'danger_warning';
-      radarItems.push({
-        id: cp.id,
-        name: cp.name,
-        category: isDanger ? 'hazard' : 'shelter',
-        triage_level: isDanger ? 'hazard_warning' : 'safe_green',
-        text: cp.hazard || `Verified disaster shelter with facilities: ${cp.facilities.join(', ')}`,
-        status: cp.status,
-        severity: isDanger ? 'red' : 'green',
-        distance_m: Math.round(d),
-        bearing_deg: b,
-        cardinal: cardinal(b),
-        walk_time_min: Math.max(1, Math.round(d / 75)),
-        location: { lat: cLat, lon: cLon },
-        facilities: cp.facilities,
-        signal_source: 'reference_baseline',
-        verified: true
-      });
-    }
-
-    radarItems.sort((a, b) => a.distance_m - b.distance_m);
-    const casualties = radarItems.filter(i => i.category === 'casualty');
-    const shelters = radarItems.filter(i => i.category === 'shelter');
-    const urgent = casualties.filter(c => c.triage_level === 'immediate_red');
-
-    return {
-      center: { lat, lon },
-      radius_m: radiusM,
-      total_found: radarItems.length,
-      summary: {
-        urgent_casualties: urgent.length,
-        total_casualties: casualties.length,
-        operational_shelters: shelters.length,
-        active_peers: 0,
-        nearest_casualty: casualties[0] || null,
-        nearest_shelter: shelters[0] || null,
-      },
-      radar_items: filterCat === 'all' ? radarItems : radarItems.filter(i => i.category === filterCat || (filterCat === 'casualties' && i.category === 'casualty') || (filterCat === 'shelters' && i.category === 'shelter') || (filterCat === 'hazards' && i.category === 'hazard')),
-      local_fallback: true
-    };
+    return reportRadar(await getAllLocalReports(), body || {});
   }
 
   // 6. Health & Status
@@ -803,16 +667,11 @@ async function handleOfflineFallback(path, method, body) {
     };
   }
 
-  // 6b. Memory & Ledger Endpoint
+  // Scope and page the actual local report feed, using the backend response shape.
   if (path.startsWith('/api/memory')) {
-    const localReports = await getAllLocalReports();
-    return {
-      items: localReports,
-      events: localReports,
-      count: localReports.length,
-      local_fallback: true,
-      mode: 'standalone_mobile_brain',
-    };
+    const params = new URL(path, 'https://local.invalid').searchParams;
+    const scope = params.get('scope'), page = Number(params.get('page') || 0), limit = Number(params.get('limit') || 50);
+    return localMemoryPage(await getAllLocalReports(), { scope, page, limit });
   }
 
   // 6c. Emergency Clinical Guides Endpoint
@@ -835,40 +694,10 @@ async function handleOfflineFallback(path, method, body) {
     return localRecordProvenance(match, await getMeshHistory(), getDeviceId());
   }
 
-  // 6d2. Entity Timeline Fallback
+  // Entity history contains stored observations only, with no invented facilities.
   if (path.startsWith('/api/entities/')) {
     const entityId = decodeURIComponent(path.split('/').pop().split('?')[0]);
-    const reports = await getAllLocalReports();
-    const matches = reports.filter((r) => r.entity_id === entityId || r.id === entityId);
-    return {
-      entity_id: entityId,
-      conflict: false,
-      effective: { status: matches[0]?.status || 'operational', verified: true },
-      alternative_recommendation: {
-        name: 'Shelter Alpha (Central High)',
-        score: '0.94',
-        rationale: 'Verified operational structure outside danger zone with capacity',
-        facilities: ['Shelter', 'Water', 'Medical'],
-      },
-      timeline: matches.length > 0 ? matches.map((m) => ({
-        id: m.id,
-        status: m.status || 'observed',
-        kind: m.kind || 'incident',
-        verified: Boolean(m.verified),
-        observed_at: m.observed_at || new Date().toISOString(),
-        origin_device: m.origin_device || 'survivor-1',
-      })) : [
-        {
-          id: `ev-${entityId}-1`,
-          status: 'operational',
-          kind: 'checkpoint',
-          verified: true,
-          observed_at: new Date().toISOString(),
-          origin_device: 'command-central',
-        }
-      ],
-      local_fallback: true,
-    };
+    return storedEntityTimeline(await getAllLocalReports(), entityId);
   }
 
   // Direct cloud inspection uses actual counts/records; offline is unknown.
@@ -1179,9 +1008,9 @@ export async function assessCasualty(params = {}) {
  * Tier 4: Cached Last-Known Location from localStorage
  * Tier 5: Disaster Zone Anchor ({ lat: 28.7041, lon: 77.1025 })
  *
- * Never rejects or crashes the UI. Always returns a valid { lat, lon }.
+ * Legacy callers retain the existing fallback. Strict callers can disable cached and fallback locations.
  */
-export async function getNativeOrWebLocation() {
+export async function getNativeOrWebLocation({ allowCached = true, allowFallback = true } = {}) {
   const saveCached = (lat, lon) => {
     try {
       localStorage.setItem('rescue.lastLocation', JSON.stringify({
@@ -1199,7 +1028,7 @@ export async function getNativeOrWebLocation() {
       const raw = localStorage.getItem('rescue.lastLocation');
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (parsed?.lat && parsed?.lon) {
+        if (coordinates(parsed)) {
           return { lat: Number(parsed.lat), lon: Number(parsed.lon), isCached: true };
         }
       }
@@ -1235,7 +1064,7 @@ export async function getNativeOrWebLocation() {
           Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 3500 }),
           4000
         );
-        if (pos1?.coords?.latitude && pos1?.coords?.longitude) {
+        if (coordinates({ lat: pos1?.coords?.latitude, lon: pos1?.coords?.longitude })) {
           saveCached(pos1.coords.latitude, pos1.coords.longitude);
           return { lat: pos1.coords.latitude, lon: pos1.coords.longitude, accuracy: pos1.coords.accuracy };
         }
@@ -1249,7 +1078,7 @@ export async function getNativeOrWebLocation() {
           Geolocation.getCurrentPosition({ enableHighAccuracy: false, timeout: 3000 }),
           3500
         );
-        if (pos2?.coords?.latitude && pos2?.coords?.longitude) {
+        if (coordinates({ lat: pos2?.coords?.latitude, lon: pos2?.coords?.longitude })) {
           saveCached(pos2.coords.latitude, pos2.coords.longitude);
           return { lat: pos2.coords.latitude, lon: pos2.coords.longitude, accuracy: pos2.coords.accuracy, isCoarse: true };
         }
@@ -1278,7 +1107,7 @@ export async function getNativeOrWebLocation() {
           { enableHighAccuracy: true, timeout: 3500, maximumAge: 2000 }
         );
       });
-      if (webPos?.coords?.latitude && webPos?.coords?.longitude) {
+      if (coordinates({ lat: webPos?.coords?.latitude, lon: webPos?.coords?.longitude })) {
         saveCached(webPos.coords.latitude, webPos.coords.longitude);
         return { lat: webPos.coords.latitude, lon: webPos.coords.longitude, accuracy: webPos.coords.accuracy, isWeb: true };
       }
@@ -1288,13 +1117,15 @@ export async function getNativeOrWebLocation() {
   }
 
   // Tier 4: Cached location
-  const cached = getCached();
+  const cached = allowCached ? getCached() : null;
   if (cached) {
     console.log('[GPS] Using cached location:', cached);
     return cached;
   }
 
-  // Tier 5: Anchor fallback coordinate
+  if (!allowFallback) throw new Error('GPS unavailable: check location permission and services, or enter the facility coordinates manually.');
+
+  // Legacy fallback remains for callers pending a separate location migration.
   console.log('[GPS] Using disaster anchor coordinate fallback');
   const anchor = { lat: 28.7041, lon: 77.1025, isFallback: true };
   saveCached(anchor.lat, anchor.lon);

@@ -49,14 +49,15 @@ import {
   bearingDeg,
   cardinalDirection,
   invalidateApiCache,
-  triggerAutoSync
+  triggerAutoSync,
+  getDeviceId
 } from '../api';
 import { Shell, Card, Empty } from '../components';
 import MapPanel from '../MapPanel';
 import MeshSyncScanner from '../components/MeshSyncScanner';
 import { CLOUD_COLLECTIONS, displayCloudCount, cloudMirrorSummary } from '../brain/cloudInspector.js';
 
-const DEFAULT_CENTER = { lat: 28.7041, lon: 77.1025 };
+import { coordinates, equipmentInventory, dashboardSummary, loadDashboardFeed } from '../brain/adminData.js';
 
 export default function AdminPortal({ initialTab = 'hq' }) {
   const navigate = useNavigate();
@@ -82,7 +83,7 @@ export default function AdminPortal({ initialTab = 'hq' }) {
     else if (tab === 'inspector' && location.pathname !== '/command') navigate('/command');
   };
 
-  const [center, setCenter] = useState(DEFAULT_CENTER);
+  const [center, setCenter] = useState(null);
   const [health, setHealth] = useState(null);
   const [sync, setSync] = useState(null);
   const [events, setEvents] = useState([]);
@@ -92,6 +93,8 @@ export default function AdminPortal({ initialTab = 'hq' }) {
   const [working, setWorking] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [gpsError, setGpsError] = useState('');
+  const [feedState, setFeedState] = useState(null);
 
   // Tab 1 (Volunteer) Specific States
   const [triageFilter, setTriageFilter] = useState('all');
@@ -103,36 +106,18 @@ export default function AdminPortal({ initialTab = 'hq' }) {
     }
   });
   const [equipment, setEquipment] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem('rescue.equipment') || 'null') || {
-        tourniquet: true,
-        hemostatic_gauze: true,
-        splint_stretcher: true,
-        water_purification: true,
-        burn_dressing: false,
-      };
-    } catch {
-      return { tourniquet: true, hemostatic_gauze: true, splint_stretcher: true, water_purification: true };
-    }
+    try { return equipmentInventory(JSON.parse(localStorage.getItem('rescue.equipment') || 'null')); }
+    catch { return equipmentInventory(null); }
   });
 
   // Tab 2 (Command HQ) Specific States
-  const [mapRadius, setMapRadius] = useState(5000);
   const [selectedEntity, setSelectedEntity] = useState(null);
   const [showHazardVerifyModal, setShowHazardVerifyModal] = useState(false);
-  const [verifyHazardInput, setVerifyHazardInput] = useState({ entity_id: 'cp_17', status: 'blocked', text: 'Bridge submerged with live fallen electrical cables.' });
+  const [verifyHazardInput, setVerifyHazardInput] = useState({ entity_id: '', status: '', severity: '', text: '' });
   const [showProtocolModal, setShowProtocolModal] = useState(false);
-  const [protocolInput, setProtocolInput] = useState({ id: 'flood_water_safety_v2', title: 'Emergency Floodwater Disinfection Guidelines', summary: 'Boil for 1 minute or use purification tablets. Never drink raw surface water.', keywords: 'water, boil, disinfection, purification', steps: 'Bring water to rolling boil for 60s\nAllow to cool in covered sterile container', warnings: 'Boiling does not remove chemical run-offs\nStore away from flood waters' });
+  const [protocolInput, setProtocolInput] = useState({ id: '', title: '', summary: '', keywords: '', steps: '', warnings: '', source: '', reviewer: '' });
   const [showSafeHavenModal, setShowSafeHavenModal] = useState(false);
-  const [safeHavenInput, setSafeHavenInput] = useState({
-    name: 'North Gate Evacuation Complex',
-    type: 'Community Shelter',
-    facilities: ['Water', 'Shelter', 'Medical', 'Food'],
-    capacity: '400 Beds',
-    notes: 'Operational emergency shelter with backup generator and clean water.',
-    lat: DEFAULT_CENTER.lat + 0.0055,
-    lon: DEFAULT_CENTER.lon - 0.0035,
-  });
+  const [safeHavenInput, setSafeHavenInput] = useState({ name: '', type: 'Community Shelter', facilities: [], capacity: '', notes: '', lat: '', lon: '' });
 
   // Tab 3 (Cloud Inspector) Specific States
   const [selectedRecord, setSelectedRecord] = useState(null);
@@ -162,46 +147,34 @@ export default function AdminPortal({ initialTab = 'hq' }) {
     else if (location.pathname === '/hq') setActiveTab('hq');
   }, [location.pathname]);
 
-  // Non-blocking location acquisition on mount
-  useEffect(() => {
-    getNativeOrWebLocation()
-      .then((pos) => {
-        if (pos?.lat && pos?.lon) {
-          const loc = { lat: Number(pos.lat.toFixed(5)), lon: Number(pos.lon.toFixed(5)) };
-          setCenter(loc);
-          updateDeviceLocation({ ...loc, status: 'responder_active' }).catch(() => {});
-        }
-      })
-      .catch(() => {});
+  // Admin locations must be a current GPS fix; legacy anchor/cache is not evidence.
+  const refreshLocation = useCallback(async () => {
+    try {
+      const pos = await getNativeOrWebLocation({ allowCached: false, allowFallback: false });
+      const loc = coordinates(pos);
+      if (!loc) throw new Error('No confirmed GPS coordinates received.');
+      setCenter(loc); setGpsError('');
+      updateDeviceLocation({ ...loc, status: 'responder_active' }).catch(() => {});
+      return loc;
+    } catch (err) { setGpsError(err.message); return null; }
   }, []);
+  useEffect(() => { refreshLocation(); }, [refreshLocation]);
 
   // Primary SWR Data Fetcher: Fast & Cached
   const loadData = useCallback(async (forceRefresh = false) => {
     setLoading(true);
     try {
-      const [h, s, pubMem, respMem, cloudInfo, disc] = await Promise.all([
+      const [h, s, feed, cloudInfo, disc] = await Promise.all([
         api('/health', { preferCache: !forceRefresh, cacheTtl: 10000 }).catch(() => null),
         api('/api/sync/status', { preferCache: !forceRefresh, cacheTtl: 10000 }).catch(() => null),
-        api('/api/memory?scope=public&limit=100', { preferCache: !forceRefresh, cacheTtl: 10000 }).catch(() => ({ items: [] })),
-        api('/api/memory?scope=responders&limit=100', { responder: true, preferCache: !forceRefresh, cacheTtl: 10000 }).catch(() => ({ items: [] })),
+        loadDashboardFeed(api, forceRefresh),
         api('/api/sync/cloud-status', { admin: true, noCache: true }).catch(err => ({ connected: false, counts_verified: false, error: err.message })),
-        getDiscoveredPeers().catch(() => ({ peers: [] })),
+        getDiscoveredPeers().catch(err => ({ peers: [], error: err.message })),
       ]);
-
-      if (h) setHealth(h);
-      if (s) setSync(s);
-      if (cloudInfo) setCloudStatus(cloudInfo);
-      if (disc?.peers) setPeers(disc.peers);
-
-      const combined = [
-        ...(pubMem?.items || []),
-        ...(respMem?.items || []),
-      ];
-      const uniqueEvents = Array.from(new Map(combined.map((e) => [e.id, e])).values());
-      uniqueEvents.sort((a, b) => new Date(b.observed_at || 0) - new Date(a.observed_at || 0));
-      setEvents(uniqueEvents);
-
-      setError('');
+      setHealth(h); setSync(s); setCloudStatus(cloudInfo);
+      setPeers(disc?.peers || []);
+      setFeedState({ ...feed, peerError: disc?.error });
+      setEvents(feed.items);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -265,20 +238,20 @@ export default function AdminPortal({ initialTab = 'hq' }) {
         admin: true,
         body: {
           kind: 'incident',
-          text: `Casualty #${casualty.id.slice(0, 8)} evacuated & transported to safe clinic by responder.`,
+          text: `Casualty #${casualty.id.slice(0, 8)} evacuated & marked evacuated by responder.`,
           entity_id: casualty.entity_id || casualty.id,
           status: 'rescued_transported',
           severity: 'green',
           visibility: 'responders',
-          reporter_id: 'responder-medic-1',
-          location: casualty.location || center,
+          reporter_id: getDeviceId(),
+          location: coordinates(casualty.location),
         }
       });
       const updated = myMissions.filter((id) => id !== casualty.id);
       setMyMissions(updated);
       localStorage.setItem('rescue.my_missions', JSON.stringify(updated));
       invalidateApiCache();
-      setMessage(`Casualty marked evacuated & transported safely!`);
+      setMessage('Evacuation update saved.');
       await loadData(true);
     } catch (err) {
       setError(`Failed to update casualty: ${err.message}`);
@@ -294,7 +267,7 @@ export default function AdminPortal({ initialTab = 'hq' }) {
     setError('');
     setMessage('');
     try {
-      await api('/api/reports', {
+      const res = await api('/api/reports', {
         method: 'POST',
         admin: true,
         body: {
@@ -302,16 +275,16 @@ export default function AdminPortal({ initialTab = 'hq' }) {
           entity_id: verifyHazardInput.entity_id,
           status: verifyHazardInput.status,
           text: verifyHazardInput.text,
-          severity: 'red',
+          severity: verifyHazardInput.severity,
           visibility: 'public',
           location: center,
-          reporter_id: 'central-command',
+          reporter_id: getDeviceId(),
           verified: true,
         }
       });
       setShowHazardVerifyModal(false);
       invalidateApiCache();
-      setMessage(`Official verification signed & broadcasted for checkpoint #${verifyHazardInput.entity_id}! Evacuation vectors updated.`);
+      setMessage(`Hazard report saved for #${verifyHazardInput.entity_id}${res.event?.authority_tag ? ' with a server authority signature' : ''}.`);
       await loadData(true);
     } catch (err) {
       setError(`Verification failed: ${err.message}`);
@@ -331,12 +304,13 @@ export default function AdminPortal({ initialTab = 'hq' }) {
         ...protocolInput,
         steps: protocolInput.steps.split('\n').map((s) => s.trim()).filter(Boolean),
         warnings: protocolInput.warnings.split('\n').map((s) => s.trim()).filter(Boolean),
-        reviewer: 'Emergency Command Board',
+        reviewer: protocolInput.reviewer.trim(),
+        source: protocolInput.source.trim(),
       };
       const res = await api('/api/guides/publish', { method: 'POST', admin: true, body });
       setShowProtocolModal(false);
       invalidateApiCache();
-      setMessage(`Protocol #${res.id || protocolInput.id} cryptographically signed & published to local vector shards!`);
+      setMessage(`Protocol #${res.id || protocolInput.id} published${res.auth_tag ? ' with a server signature' : ''}.`);
       await loadData(true);
     } catch (err) {
       setError(`Publish failed: ${err.message}`);
@@ -352,8 +326,10 @@ export default function AdminPortal({ initialTab = 'hq' }) {
     setError('');
     setMessage('');
     try {
-      const entityId = `shelter_${Date.now()}`;
-      await api('/api/reports', {
+      const loc = coordinates(safeHavenInput);
+      if (!loc) throw new Error('Enter valid facility coordinates or use current GPS.');
+      const entityId = `shelter_${crypto.randomUUID()}`;
+      const res = await api('/api/reports', {
         method: 'POST',
         admin: true,
         body: {
@@ -362,15 +338,15 @@ export default function AdminPortal({ initialTab = 'hq' }) {
           status: 'operational',
           severity: 'green',
           visibility: 'public',
-          text: `${safeHavenInput.name.trim()} (${safeHavenInput.type}). Facilities: ${safeHavenInput.facilities.join(', ')}. Capacity: ${safeHavenInput.capacity || 'Open'}. Notes: ${safeHavenInput.notes || 'Safe checkpoint'}`,
-          location: { lat: Number(safeHavenInput.lat), lon: Number(safeHavenInput.lon) },
-          reporter_id: 'command-hq',
+          text: `${safeHavenInput.name.trim()} (${safeHavenInput.type}). Facilities: ${safeHavenInput.facilities.join(', ') || 'Not reported'}. Capacity: ${safeHavenInput.capacity.trim() || 'Not reported'}. Notes: ${safeHavenInput.notes.trim() || 'Not reported'}`,
+          location: loc,
+          reporter_id: getDeviceId(),
           verified: true,
         }
       });
       setShowSafeHavenModal(false);
       invalidateApiCache();
-      setMessage(`Safe haven "${safeHavenInput.name}" verified and registered across network!`);
+      setMessage(`Safe haven "${safeHavenInput.name}" saved${res.event?.authority_tag ? ' with a server authority signature' : ''}.`);
       await loadData(true);
     } catch (err) {
       setError(`Failed to register safe haven: ${err.message}`);
@@ -430,23 +406,17 @@ export default function AdminPortal({ initialTab = 'hq' }) {
     catch (err) { if (generation === selectionGeneration.current) setJourneyError(`Relay receipts unavailable: ${err.message}`); }
   };
 
-  // Derived Filtered Lists
-  const casualties = events.filter((e) => e.kind === 'incident' || e.kind === 'sos' || e.severity === 'red');
-  const hazards = events.filter((e) => e.kind === 'hazard');
-  const checkpoints = events.filter((e) => e.kind === 'checkpoint' || e.kind === 'resource');
-
-  const filteredCasualties = casualties.filter((c) => {
+  // Latest stored state per entity; a red hazard is not a medical casualty.
+  const { casualties, hazards, havens, redCount, yellowCount, rescuedCount } = dashboardSummary(events);
+  const openSafeHavens = havens.length;
+  const countLabel = value => feedState?.complete ? value : 'Unavailable';
+  const filteredCasualties = casualties.filter(c => {
     const isRescued = c.status === 'rescued_transported';
     if (triageFilter === 'red') return c.severity === 'red' && !isRescued;
     if (triageFilter === 'yellow') return c.severity === 'yellow' && !isRescued;
     if (triageFilter === 'rescued') return isRescued;
     return true;
   });
-
-  const redCount = casualties.filter((c) => c.severity === 'red' && c.status !== 'rescued_transported').length;
-  const yellowCount = casualties.filter((c) => c.severity === 'yellow' && c.status !== 'rescued_transported').length;
-  const rescuedCount = casualties.filter((c) => c.status === 'rescued_transported').length;
-  const openSafeHavens = 3 + checkpoints.filter((c) => c.status !== 'blocked' && c.status !== 'compromised' && c.severity !== 'red').length;
 
   const currentShards = cloudStatus?.connected ? cloudStatus.shards || {} : {};
   const totalPoints = cloudStatus?.connected ? displayCloudCount(cloudStatus.total_points) : 'Unavailable';
@@ -482,6 +452,8 @@ export default function AdminPortal({ initialTab = 'hq' }) {
         </div>
       )}
 
+      {feedState?.errors?.length > 0 && <div role="alert" className="mb-3 p-2.5 rounded-xl border border-amber-500/30 text-amber-600 dark:text-amber-400 text-xs">Report feed incomplete: {feedState.errors.join(' · ')}. Available records remain visible; totals are unavailable.</div>}
+      {feedState?.peerError && <p role="alert" className="mb-3 text-xs text-amber-600 dark:text-amber-400">Discovery unavailable: {feedState.peerError}</p>}
       {/* TOP ROLE SWITCHER TABS */}
       <div className="flex flex-wrap items-center justify-between gap-2 mb-3 bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 p-1.5 rounded-2xl shadow-xs">
         <div className="flex items-center gap-1">
@@ -534,7 +506,7 @@ export default function AdminPortal({ initialTab = 'hq' }) {
           className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-mono font-bold text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
         >
           <RefreshCw size={12} className={loading ? 'animate-spin text-cyan-500' : ''} />
-          <span>Refresh · Local feed ({events.length})</span>
+          <span>Refresh · Local feed ({feedState?.complete ? events.length : 'Unavailable'})</span>
         </button>
       </div>
 
@@ -547,20 +519,20 @@ export default function AdminPortal({ initialTab = 'hq' }) {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
             <div className="bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-900/60 rounded-2xl p-2.5 sm:p-3">
               <div className="text-[10px] font-mono uppercase text-rose-700 dark:text-rose-400 font-bold">Immediate (Red)</div>
-              <div className="text-2xl font-black font-mono text-rose-600 dark:text-rose-500">{redCount}</div>
-              <div className="text-[10px] text-rose-600/80 dark:text-rose-400/80">Massive Hemorrhage & CPR</div>
+              <div className="text-2xl font-black font-mono text-rose-600 dark:text-rose-500">{countLabel(redCount)}</div>
+              <div className="text-[10px] text-rose-600/80 dark:text-rose-400/80">Reports marked red</div>
             </div>
 
             <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-900/60 rounded-2xl p-2.5 sm:p-3">
               <div className="text-[10px] font-mono uppercase text-amber-700 dark:text-amber-400 font-bold">Delayed (Yellow)</div>
-              <div className="text-2xl font-black font-mono text-amber-600 dark:text-amber-500">{yellowCount}</div>
-              <div className="text-[10px] text-amber-600/80 dark:text-amber-400/80">Fractures & Trapped</div>
+              <div className="text-2xl font-black font-mono text-amber-600 dark:text-amber-500">{countLabel(yellowCount)}</div>
+              <div className="text-[10px] text-amber-600/80 dark:text-amber-400/80">Reports marked yellow</div>
             </div>
 
             <div className="bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-900/60 rounded-2xl p-2.5 sm:p-3">
               <div className="text-[10px] font-mono uppercase text-emerald-700 dark:text-emerald-400 font-bold">Rescued / Evacuated</div>
-              <div className="text-2xl font-black font-mono text-emerald-600 dark:text-emerald-500">{rescuedCount}</div>
-              <div className="text-[10px] text-emerald-600/80 dark:text-emerald-400/80">Transported to Clinic Beta</div>
+              <div className="text-2xl font-black font-mono text-emerald-600 dark:text-emerald-500">{countLabel(rescuedCount)}</div>
+              <div className="text-[10px] text-emerald-600/80 dark:text-emerald-400/80">Reports marked evacuated</div>
             </div>
 
             <div className="bg-cyan-50 dark:bg-cyan-950/40 border border-cyan-300 dark:border-cyan-900/60 rounded-2xl p-2.5 sm:p-3">
@@ -577,7 +549,7 @@ export default function AdminPortal({ initialTab = 'hq' }) {
                 <div className="flex items-center gap-1.5">
                   <span className="w-1.5 h-3.5 rounded-full bg-rose-600 inline-block"></span>
                   <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100">
-                    Live START Casualty Triage Queue
+                    Reported Casualty Queue
                   </h3>
                 </div>
 
@@ -604,11 +576,10 @@ export default function AdminPortal({ initialTab = 'hq' }) {
                   filteredCasualties.map((c) => {
                     const isClaimed = myMissions.includes(c.id);
                     const isRescued = c.status === 'rescued_transported';
-                    const cLoc = c.location || center;
-                    const dist = Math.round(distM(center, cLoc));
-                    const bearing = Math.round(bearingDeg(center, cLoc));
-                    const card = cardinalDirection(bearing);
-                    const walkMin = Math.max(1, Math.round(dist / 75));
+                    const cLoc = coordinates(c.location);
+                    const dist = center && cLoc ? Math.round(distM(center, cLoc)) : null;
+                    const card = dist === null ? null : cardinalDirection(bearingDeg(center, cLoc));
+                    const walkMin = dist === null ? null : Math.max(1, Math.round(dist / 75));
 
                     return (
                       <div
@@ -632,7 +603,7 @@ export default function AdminPortal({ initialTab = 'hq' }) {
                                   : 'bg-amber-200 dark:bg-amber-900 text-amber-800 dark:text-amber-200'
                               }`}
                             >
-                              {isRescued ? '✓ Evacuated' : c.severity === 'red' ? '🚨 Immediate (Red)' : '🟡 Delayed'}
+                              {isRescued ? '✓ Evacuated' : c.severity === 'red' ? '🚨 Reported Red' : c.severity === 'yellow' ? '🟡 Reported Yellow' : c.severity === 'green' ? 'Reported Green' : 'Severity unreported'}
                             </span>
                             <span className="text-[11px] font-mono text-slate-500">
                               #{c.id.slice(0, 8)}
@@ -641,7 +612,7 @@ export default function AdminPortal({ initialTab = 'hq' }) {
 
                           <div className="text-[11px] font-mono font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1">
                             <Navigation size={11} className="text-cyan-500 rotate-45" />
-                            <span>{dist}m {card} (~{walkMin} min)</span>
+                            <span>{dist === null ? 'Distance unavailable' : `${dist}m ${card} (~${walkMin} min estimated walk)`}</span>
                           </div>
                         </div>
 
@@ -651,7 +622,7 @@ export default function AdminPortal({ initialTab = 'hq' }) {
 
                         <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200 dark:border-slate-800/80 text-[10px]">
                           <div className="flex items-center gap-2 font-mono text-slate-500">
-                            <span>Origin: {c.origin_device || 'survivor'}</span>
+                            <span>Origin: {c.origin_device || 'Unknown'}</span>
                             <span>·</span>
                             <span>{formatTime(c.observed_at)}</span>
                           </div>
@@ -688,7 +659,7 @@ export default function AdminPortal({ initialTab = 'hq' }) {
                     );
                   })
                 ) : (
-                  <Empty icon={HeartPulse}>No casualties in this triage category.</Empty>
+                  <Empty icon={HeartPulse}>{feedState?.complete ? 'No casualties in this triage category.' : 'Report feed unavailable or incomplete.'}</Empty>
                 )}
               </div>
             </div>
@@ -704,7 +675,7 @@ export default function AdminPortal({ initialTab = 'hq' }) {
                       Tactical Equipment Locker
                     </h3>
                   </div>
-                  <span className="text-[10px] font-mono text-cyan-600 dark:text-cyan-400 font-bold">Field Unit Ready</span>
+                  <span className="text-[10px] font-mono text-cyan-600 dark:text-cyan-400 font-bold">Operator inventory</span>
                 </div>
 
                 <div className="space-y-1.5 text-xs font-semibold">
@@ -714,7 +685,7 @@ export default function AdminPortal({ initialTab = 'hq' }) {
                     ['splint_stretcher', 'Compact Rigid Splint & Extraction Straps'],
                     ['water_purification', 'Chlorine Water Purification Disinfection Kit'],
                   ].map(([key, label]) => {
-                    const active = equipment[key];
+                    const active = equipment[key] === true;
                     return (
                       <button
                         key={key}
@@ -729,7 +700,7 @@ export default function AdminPortal({ initialTab = 'hq' }) {
                             : 'bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-400 line-through'
                         }`}
                       >
-                        <span>{label}</span>
+                        <span>{label}<small className="block font-normal">{equipment[key] === null ? 'Not reported — tap to confirm available' : active ? 'Reported available' : 'Reported unavailable'}</small></span>
                         <span className={`w-2 h-2 rounded-full ${active ? 'bg-cyan-500' : 'bg-slate-400'}`}></span>
                       </button>
                     );
@@ -754,27 +725,27 @@ export default function AdminPortal({ initialTab = 'hq' }) {
           {/* EXECUTIVE DISASTER KPI STATUS */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
             <div className="bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 rounded-2xl p-2.5 sm:p-3 shadow-xs">
-              <div className="text-[10px] font-mono uppercase text-slate-500 font-bold">Threat Level</div>
-              <div className="text-xl sm:text-2xl font-black font-mono text-rose-600 dark:text-rose-400">CRITICAL</div>
-              <div className="text-[10px] text-slate-500 font-mono">Floods + Live Cables</div>
+              <div className="text-[10px] font-mono uppercase text-slate-500 font-bold">Recorded Hazards</div>
+              <div className="text-xl sm:text-2xl font-black font-mono text-rose-600 dark:text-rose-400">{countLabel(hazards.length)}</div>
+              <div className="text-[10px] text-slate-500 font-mono">Latest hazard reports in local feed</div>
             </div>
 
             <div className="bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 rounded-2xl p-2.5 sm:p-3 shadow-xs">
               <div className="text-[10px] font-mono uppercase text-slate-500 font-bold">Casualties Logged</div>
-              <div className="text-xl sm:text-2xl font-black font-mono text-slate-900 dark:text-slate-100">{casualties.length}</div>
-              <div className="text-[10px] text-slate-500 font-mono">{rescuedCount} Rescued to Clinic</div>
+              <div className="text-xl sm:text-2xl font-black font-mono text-slate-900 dark:text-slate-100">{countLabel(casualties.length)}</div>
+              <div className="text-[10px] text-slate-500 font-mono">{countLabel(rescuedCount)} marked evacuated</div>
             </div>
 
             <div className="bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 rounded-2xl p-2.5 sm:p-3 shadow-xs">
-              <div className="text-[10px] font-mono uppercase text-slate-500 font-bold">Safe Havens</div>
-              <div className="text-xl sm:text-2xl font-black font-mono text-emerald-600 dark:text-emerald-400">{openSafeHavens} Open</div>
-              <div className="text-[10px] text-slate-500 font-mono">Shelter Alpha & Active Havens</div>
+              <div className="text-[10px] font-mono uppercase text-slate-500 font-bold">Verified Operational Facilities</div>
+              <div className="text-xl sm:text-2xl font-black font-mono text-emerald-600 dark:text-emerald-400">{countLabel(openSafeHavens)}</div>
+              <div className="text-[10px] text-slate-500 font-mono">Latest reports marked verified & operational</div>
             </div>
 
             <div className="bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 rounded-2xl p-2.5 sm:p-3 shadow-xs">
-              <div className="text-[10px] font-mono uppercase text-slate-500 font-bold">Active Mesh Nodes</div>
-              <div className="text-xl sm:text-2xl font-black font-mono text-cyan-600 dark:text-cyan-400">{peers.length + 1}</div>
-              <div className="text-[10px] text-slate-500 font-mono">1 HQ + {peers.length} Field Nodes</div>
+              <div className="text-[10px] font-mono uppercase text-slate-500 font-bold">Detected Nearby Phones</div>
+              <div className="text-xl sm:text-2xl font-black font-mono text-cyan-600 dark:text-cyan-400">{feedState && !feedState.peerError ? peers.length : 'Unavailable'}</div>
+              <div className="text-[10px] text-slate-500 font-mono">Nearby discovery results</div>
             </div>
           </div>
 
@@ -786,11 +757,13 @@ export default function AdminPortal({ initialTab = 'hq' }) {
                   <Radio size={13} className="animate-pulse text-cyan-600" /> Strategic Sector Disaster Map
                 </span>
                 <span className="text-[10px] font-mono text-slate-500">
-                  5.0 km HNSW Radius
+                  Schematic coordinate grid
                 </span>
               </div>
               <div className="flex-1 p-2 min-h-[360px]">
-                <MapPanel center={center} items={events} peers={peers} />
+                {center ? <MapPanel center={center} items={events.filter(e => coordinates(e.location))} peers={peers.filter(p => coordinates(p))} originLabel="YOU (RESPONDER)" /> : <Empty icon={MapPin}>Sector map needs a confirmed GPS fix.</Empty>}
+                {gpsError && <p role="status" className="text-xs text-amber-600 dark:text-amber-400 mt-2">{gpsError}</p>}
+                <button className="btn-secondary mt-2" onClick={refreshLocation}>Refresh GPS</button>
               </div>
             </div>
 
@@ -816,7 +789,7 @@ export default function AdminPortal({ initialTab = 'hq' }) {
                   className="w-full py-2 px-3 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition"
                 >
                   <ShieldCheck size={14} />
-                  <span>Verify Checkpoint / Compromise Bridge</span>
+                  <span>Verify Checkpoint / Hazard</span>
                 </button>
               </div>
 
@@ -1036,6 +1009,13 @@ export default function AdminPortal({ initialTab = 'hq' }) {
                 />
               </div>
               <div>
+                <label className="text-[10px] font-mono text-slate-400 uppercase font-bold">Reported Severity</label>
+                <select className="field w-full mt-1" value={verifyHazardInput.severity} onChange={e => setVerifyHazardInput({ ...verifyHazardInput, severity: e.target.value })} required>
+                  <option value="">Select reported severity</option>
+                  <option value="red">Red</option><option value="yellow">Yellow</option><option value="green">Green</option>
+                </select>
+              </div>
+              <div>
                 <label className="text-[10px] font-mono text-slate-400 uppercase font-bold">Situation Directives</label>
                 <textarea
                   className="field w-full mt-1 min-h-16"
@@ -1122,6 +1102,14 @@ export default function AdminPortal({ initialTab = 'hq' }) {
                   onChange={(e) => setProtocolInput({ ...protocolInput, warnings: e.target.value })}
                 />
               </div>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="text-[10px] font-mono text-slate-400 uppercase font-bold">Source
+                  <input className="field w-full mt-1" value={protocolInput.source} onChange={e => setProtocolInput({ ...protocolInput, source: e.target.value })} placeholder="Document or source URL" minLength={2} required />
+                </label>
+                <label className="text-[10px] font-mono text-slate-400 uppercase font-bold">Reviewer
+                  <input className="field w-full mt-1" value={protocolInput.reviewer} onChange={e => setProtocolInput({ ...protocolInput, reviewer: e.target.value })} placeholder="Actual reviewer name" minLength={2} required />
+                </label>
+              </div>
               <button
                 type="submit"
                 disabled={working === 'protocol'}
@@ -1168,7 +1156,7 @@ export default function AdminPortal({ initialTab = 'hq' }) {
                 <input
                   type="text"
                   required
-                  placeholder="e.g. North Gate Evacuation Complex, St. Jude Clinic"
+                  placeholder="Enter the actual facility name"
                   value={safeHavenInput.name}
                   onChange={(e) => setSafeHavenInput({ ...safeHavenInput, name: e.target.value })}
                   className="field w-full"
@@ -1199,7 +1187,7 @@ export default function AdminPortal({ initialTab = 'hq' }) {
                   </label>
                   <input
                     type="text"
-                    placeholder="e.g. 400 Beds, Unlimited, 5000L"
+                    placeholder="Enter confirmed capacity, if known"
                     value={safeHavenInput.capacity}
                     onChange={(e) => setSafeHavenInput({ ...safeHavenInput, capacity: e.target.value })}
                     className="field w-full"
@@ -1244,7 +1232,7 @@ export default function AdminPortal({ initialTab = 'hq' }) {
                 </label>
                 <textarea
                   rows={2}
-                  placeholder="e.g. Backup diesel generator active, 400 cots ready, clean drinking water filtration."
+                  placeholder="Enter confirmed operational details"
                   value={safeHavenInput.notes}
                   onChange={(e) => setSafeHavenInput({ ...safeHavenInput, notes: e.target.value })}
                   className="field w-full"
@@ -1259,20 +1247,15 @@ export default function AdminPortal({ initialTab = 'hq' }) {
                   <button
                     type="button"
                     onClick={async () => {
-                      const pos = await getNativeOrWebLocation();
-                      if (pos?.lat && pos?.lon) {
-                        setSafeHavenInput({
-                          ...safeHavenInput,
-                          lat: Number(pos.lat.toFixed(5)),
-                          lon: Number(pos.lon.toFixed(5)),
-                        });
-                      }
+                      const pos = await refreshLocation();
+                      if (pos) setSafeHavenInput(previous => ({ ...previous, ...pos }));
                     }}
                     className="text-[10px] font-mono text-cyan-600 dark:text-cyan-400 hover:underline flex items-center gap-1 cursor-pointer"
                   >
                     <Crosshair size={11} /> Use Current GPS
                   </button>
                 </div>
+                {gpsError && <p role="alert" className="mb-2 text-xs text-amber-600 dark:text-amber-400">{gpsError}</p>}
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <span className="text-[9px] font-mono text-slate-400">LATITUDE</span>
@@ -1280,8 +1263,9 @@ export default function AdminPortal({ initialTab = 'hq' }) {
                       type="number"
                       step="0.0001"
                       required
+                      min="-90" max="90"
                       value={safeHavenInput.lat}
-                      onChange={(e) => setSafeHavenInput({ ...safeHavenInput, lat: parseFloat(e.target.value) || 0 })}
+                      onChange={(e) => setSafeHavenInput({ ...safeHavenInput, lat: e.target.value })}
                       className="field w-full font-mono text-xs"
                     />
                   </div>
@@ -1291,8 +1275,9 @@ export default function AdminPortal({ initialTab = 'hq' }) {
                       type="number"
                       step="0.0001"
                       required
+                      min="-180" max="180"
                       value={safeHavenInput.lon}
-                      onChange={(e) => setSafeHavenInput({ ...safeHavenInput, lon: parseFloat(e.target.value) || 0 })}
+                      onChange={(e) => setSafeHavenInput({ ...safeHavenInput, lon: e.target.value })}
                       className="field w-full font-mono text-xs"
                     />
                   </div>

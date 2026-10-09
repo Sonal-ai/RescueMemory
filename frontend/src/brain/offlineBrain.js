@@ -204,24 +204,13 @@ export async function recommendAlternativeLocal(compromisedId, avoidHazardText =
   candidates.sort((a, b) => b.score - a.score);
   const best = candidates[0];
 
-  if (!best) {
-    return {
-      recommended_entity_id: 'shelter_alpha',
-      title: 'Shelter Alpha (Primary Relief Camp)',
-      score: 0.812,
-      facilities: ['food', 'clean_water', 'emergency_power', 'first_aid'],
-      location: { lat: 28.6145, lon: 77.2095 },
-      reasoning: 'Calculated on-device via local vector arithmetic avoiding flood zone.',
-      safe_guidance: 'Approach via eastern high-ground ridge. Avoid low-lying underpasses.',
-      on_device: true,
-    };
-  }
+  if (!best) return null;
 
   return {
     recommended_entity_id: best.card.entity_id || best.card.id,
     title: best.card.title,
     score: best.score,
-    facilities: best.card.facilities || ['shelter', 'medical_triage', 'clean_water'],
+    facilities: best.card.facilities || [],
     location: best.card.location,
     reasoning: `Selected by on-device vector arithmetic (score: ${best.score}) neutralizing hazard "${avoidHazardText}".`,
     safe_guidance: 'Check route visibility before movement. Follow marked high-ground evacuation path.',
