@@ -321,7 +321,7 @@ export default function UnifiedRadarMap({
     }
   }, [selectedTarget]);
 
-  // Build unified destinations list with live relative geodesics, ALWAYS including Paytm Skymark
+  // Build unified destinations list with live relative geodesics
   const destinationOptions = useMemo(() => {
     const list = [...radarItems];
     for (const shelter of shelters) {
@@ -331,23 +331,6 @@ export default function UnifiedRadarMap({
 
     const uLat = liveCoords?.lat ?? userLocation?.lat;
     const uLon = liveCoords?.lon ?? userLocation?.lon;
-
-    // Always ensure Paytm HQ Tower-D One Skymark Noida is in destination options
-    if (!list.some(item => item.id === PAYTM_SKYMARK.id || item.entity_id === PAYTM_SKYMARK.id)) {
-      const dist = (Number.isFinite(uLat) && Number.isFinite(uLon))
-        ? Math.round(distM(uLat, uLon, PAYTM_SKYMARK.lat, PAYTM_SKYMARK.lon))
-        : null;
-      const bearing = (Number.isFinite(uLat) && Number.isFinite(uLon))
-        ? bearingDeg(uLat, uLon, PAYTM_SKYMARK.lat, PAYTM_SKYMARK.lon)
-        : null;
-
-      list.push({
-        ...PAYTM_SKYMARK,
-        distance_m: dist,
-        bearing_deg: bearing,
-        cardinal: bearing !== null ? cardinalDirection(bearing) : null,
-      });
-    }
 
     // If external target passed (e.g. from SafePlace reroute or casualty), inject it at the top
     if (selectedTarget && Number.isFinite(uLat) && Number.isFinite(uLon)) {
@@ -1247,7 +1230,6 @@ export default function UnifiedRadarMap({
                   const isCas = dest.category === 'casualty';
                   const isRes = dest.category === 'resource';
                   const isShelter = dest.category === 'shelter';
-                  const isPaytm = dest.id === PAYTM_SKYMARK.id;
 
                   return (
                     <div
@@ -1259,15 +1241,13 @@ export default function UnifiedRadarMap({
                       className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-start justify-between gap-2.5 ${
                         isSelected
                           ? 'border-cyan-500 bg-cyan-50/80 dark:bg-cyan-950/30 ring-1 ring-cyan-400'
-                          : isPaytm
-                          ? 'border-sky-300 dark:border-sky-800 bg-sky-50/50 dark:bg-sky-950/20 hover:border-cyan-500'
                           : 'border-slate-200 dark:border-slate-800 hover:border-cyan-500/60 bg-white dark:bg-[#07111e]'
                       }`}
                     >
                       <div className="space-y-1 min-w-0 flex-1">
                         <div className="flex items-center gap-2">
                           <span className="text-sm">
-                            {isPaytm ? '🏢' : isCas ? '🆘' : isRes ? '💧' : isShelter ? '🏥' : '📍'}
+                            {isCas ? '🆘' : isRes ? '💧' : isShelter ? '🏥' : '📍'}
                           </span>
                           <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
                             {radarDestinationLabel(dest)}

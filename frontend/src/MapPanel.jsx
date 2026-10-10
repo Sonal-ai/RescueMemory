@@ -90,36 +90,6 @@ export {
 function createIcon(category, isSelected, title) {
   let bg = '#0284c7';
   let emoji = '📍';
-  let isPaytm = category === 'paytm';
-
-  if (isPaytm) {
-    return L.divIcon({
-      className: 'custom-leaflet-marker',
-      html: `
-        <div style="
-          display: flex;
-          align-items: center;
-          gap: 4px;
-          background: #1e1b4b;
-          border: 2px solid ${isSelected ? '#38bdf8' : '#818cf8'};
-          border-radius: 9999px;
-          padding: 3px 8px;
-          box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-          color: white;
-          font-family: system-ui, sans-serif;
-          font-size: 11px;
-          font-weight: 800;
-          white-space: nowrap;
-          transform: translate(-50%, -50%);
-        ">
-          <span>🏢</span>
-          <span>Paytm Skymark</span>
-        </div>
-      `,
-      iconSize: [120, 26],
-      iconAnchor: [60, 13]
-    });
-  }
 
   if (category === 'shelter') {
     bg = '#059669';
@@ -258,8 +228,7 @@ export default function MapPanel({
     const distanceText = formatDistance(meters);
     const etaText = calculateWalkingETA(meters);
 
-    const isPaytm = Math.abs(selectedLoc.lat - PAYTM_SKYMARK.location.lat) < 0.0002 && Math.abs(selectedLoc.lon - PAYTM_SKYMARK.location.lon) < 0.0002;
-    const targetLabel = selected?.name || selected?.title || selected?.entity_id || (isPaytm ? 'Paytm Skymark' : 'Selected Target');
+    const targetLabel = selected?.name || selected?.title || selected?.entity_id || 'Selected Target';
 
     return {
       meters,
@@ -271,13 +240,9 @@ export default function MapPanel({
     };
   }, [origin?.lat, origin?.lon, selectedLoc?.lat, selectedLoc?.lon, selected?.name, selected?.title, selected?.entity_id]);
 
-  // Combine display items with Paytm HQ
+  // Display map items passed from props
   const displayItems = useMemo(() => {
-    const list = Array.isArray(items) ? [...items] : [];
-    if (!list.some(it => it.id === PAYTM_SKYMARK.id || it.entity_id === PAYTM_SKYMARK.id)) {
-      list.push(PAYTM_SKYMARK);
-    }
-    return list;
+    return Array.isArray(items) ? items : [];
   }, [items]);
 
   // Initialize Leaflet Map
@@ -434,20 +399,17 @@ export default function MapPanel({
       const loc = coordinates(item.location || item);
       if (!loc) return;
 
-      const isPaytm = item.id === PAYTM_SKYMARK.id || item.entity_id === PAYTM_SKYMARK.id;
       const isSelected = selectedLoc && (
         (item.id && item.id === selected?.id) ||
         (Math.abs(loc.lat - selectedLoc.lat) < 0.0001 && Math.abs(loc.lon - selectedLoc.lon) < 0.0001)
       );
 
-      const category = isPaytm ? 'paytm' : (
-        item.category ||
-        (item.kind === 'incident' ? 'casualty' : item.kind === 'hazard' ? 'hazard' : item.kind === 'resource' ? 'resource' : 'shelter')
-      );
+      const category = item.category ||
+        (item.kind === 'incident' ? 'casualty' : item.kind === 'hazard' ? 'hazard' : item.kind === 'resource' ? 'resource' : 'shelter');
 
       const marker = L.marker([loc.lat, loc.lon], {
         icon: createIcon(category, isSelected, item.name || item.title),
-        zIndexOffset: isSelected ? 500 : isPaytm ? 400 : 100,
+        zIndexOffset: isSelected ? 500 : 100,
       });
 
       const title = item.name || item.title || item.entity_id || 'Emergency Location';
@@ -541,11 +503,6 @@ export default function MapPanel({
     if (!mapRef.current) return;
     const target = origin || PAYTM_SKYMARK.location;
     mapRef.current.flyTo([target.lat, target.lon], 16, { duration: 0.6 });
-  };
-
-  const handleRecenterPaytm = () => {
-    if (!mapRef.current) return;
-    mapRef.current.flyTo([PAYTM_SKYMARK.location.lat, PAYTM_SKYMARK.location.lon], 16, { duration: 0.6 });
   };
 
   const handleFitRoute = useCallback(() => {
@@ -755,21 +712,12 @@ export default function MapPanel({
           >
             <Crosshair size={15} />
           </button>
-
-          <button
-            type="button"
-            onClick={handleRecenterPaytm}
-            className="w-8 h-8 rounded-xl bg-slate-900/90 backdrop-blur-md border border-indigo-700 text-indigo-300 flex items-center justify-center hover:bg-indigo-600 hover:text-white active:scale-95 transition-all shadow-lg cursor-pointer text-xs font-black"
-            title="Focus Paytm One Skymark (Sector 98)"
-          >
-            🏢
-          </button>
         </div>
 
         {/* Bottom-Left Real Map Badge */}
         <div className="absolute left-3 bottom-3 z-10 bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-xl px-2.5 py-1 text-[10px] font-mono text-slate-300 shadow-lg flex items-center gap-1.5">
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-          <span>Google 2D Map · Sector 98 Noida</span>
+          <span>Google 2D Map</span>
         </div>
       </div>
 
@@ -780,9 +728,6 @@ export default function MapPanel({
         </div>
 
         <div className="flex flex-wrap items-center gap-3 text-[11px] font-mono">
-          <span className="flex items-center gap-1">
-            <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 inline-block"></span> Paytm HQ
-          </span>
           <span className="flex items-center gap-1">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 inline-block"></span> Shelter
           </span>
