@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { reportRadar } from '../src/brain/reportRadar.js';
-import { savedShelters, currentSurvivorReports, mergeSurvivalRadar } from '../src/brain/survivorReports.js';
+import { savedShelters, currentSurvivorReports, mergeSurvivalRadar, targetMeasurements, reportedFacilities } from '../src/brain/survivorReports.js';
 
 const shelter = { id: 'local-shelter', entity_id: 'shelter-entered', kind: 'checkpoint',
   text: 'Community Hall (Shelter). Facilities: Drinking water', status: 'operational',
@@ -46,4 +46,38 @@ test('faraway shelters stay listed while range-limited radar uses actual survivo
   assert.equal(savedShelters([shelter]).length, 1);
   assert.equal(reportRadar([shelter], { lat: 20, lon: 20, radius_m: 5000 }).total_found, 0);
   assert.throws(() => reportRadar([shelter], {}), /valid location/);
+});
+
+test('absent, invalid or fallback coordinates never produce zero distance or north guidance', () => {
+  const unknown = { distance: null, bearing: null, cardinal: null };
+  assert.deepEqual(targetMeasurements(null, shelter.location), unknown);
+  assert.deepEqual(targetMeasurements({ lat: 0, lon: 0 }, null), unknown);
+  assert.deepEqual(targetMeasurements({ lat: 99, lon: 0 }, shelter.location), unknown);
+  assert.deepEqual(targetMeasurements({ lat: 0, lon: 0, isFallback: true }, shelter.location), unknown);
+  assert.deepEqual(targetMeasurements({ lat: 0, lon: 0 }, { lat: 0, lon: 0 }), { distance: 0, bearing: null, cardinal: null });
+  assert.deepEqual(targetMeasurements({ lat: 0, lon: 0 }, shelter.location), { distance: 111, bearing: 90, cardinal: 'E' });
+});
+
+test('unknown report status and severity stay unknown; no assumed walking time or sample shelters', () => {
+  const report = { ...shelter, status: undefined, severity: undefined };
+  const data = reportRadar([report], { lat: 0, lon: 0 });
+  assert.equal(data.radar_items[0].status, null);
+  assert.equal(data.radar_items[0].severity, null);
+  assert.equal(data.radar_items[0].walk_time_min, null);
+  assert.equal(data.radar_items[0].triage_level, 'informational');
+  assert.equal(data.summary.operational_shelters, 0);
+  assert.deepEqual(savedShelters([]), []);
+  assert.deepEqual(reportRadar([], { lat: 0, lon: 0 }).radar_items, []);
+});
+
+test('safe evacuation has no facilities without reports and never invents supplies or capacity', () => {
+  assert.deepEqual(reportedFacilities([], { lat: 0, lon: 0 }), []);
+  const [actual] = reportedFacilities([{ ...shelter, text: 'Entered hall', status: undefined }], null);
+  assert.equal(actual.name, 'Entered hall');
+  assert.deepEqual(actual.facilities, []);
+  assert.equal(actual.status, null);
+  assert.equal(actual.dist_m, null);
+  assert.equal(actual.capacity, undefined);
+  assert.deepEqual(reportedFacilities([shelter], null)[0].facilities, ['Drinking water']);
+  assert.deepEqual(reportedFacilities([shelter], { lat: 0, lon: 0 }, { medical: true }), []);
 });

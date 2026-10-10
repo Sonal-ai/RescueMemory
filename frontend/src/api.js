@@ -466,7 +466,8 @@ async function handleOfflineFallback(path, method, body) {
 
   // 2. Negative Vector Safe Facility Recommendation
   if (path === '/api/checkpoints/recommend-alternative') {
-    const compromisedId = body?.compromised_id || 'cp_17';
+    const compromisedId = body?.compromised_id;
+    if (!compromisedId) throw new Error('Select an actual reported location before requesting an alternative.');
     const hazardText = body?.avoid_hazard || body?.avoid_hazard_text || 'flooded entrance live wires';
     const rec = await recommendAlternativeLocal(compromisedId, hazardText);
     return {
@@ -535,7 +536,7 @@ async function handleOfflineFallback(path, method, body) {
     return {
       status: 'offline',
       edge_brain: 'standalone_mobile_brain_active',
-      node_id: 'survivor_phone_local',
+      node_id: getDeviceId(),
       unsynced_reports_count: unsynced.length,
       discovery_enabled: false,
       local_fallback: true,
@@ -690,7 +691,7 @@ export async function getDiscoveredPeers() {
                   distance_m: ep.distance_m,
                   bearing_deg: ep.bearing_deg,
                   cardinal: ep.cardinal,
-                  walk_time_min: ep.distance_m == null ? undefined : Math.max(1, Math.round(ep.distance_m / 75)),
+                  walk_time_min: null,
                   source: 'server',
                   sync_ready: true,
                 });
@@ -783,10 +784,10 @@ export async function syncDiscoveredPeer(syncData = {}) {
     try {
       const reports = await getAllLocalReports();
       const myDeviceId = getDeviceId();
-      let myLocation = { lat: 28.7041, lon: 77.1025 };
+      let myLocation = null;
       try {
-        const loc = await getNativeOrWebLocation();
-        if (loc?.lat && loc?.lon) myLocation = loc;
+        const loc = await getNativeOrWebLocation({ allowCached: false });
+        if (coordinates(loc)) myLocation = loc;
       } catch {
         // silent
       }
@@ -865,11 +866,9 @@ export async function assessCasualty(params = {}) {
  * Tier 2: Native Coarse / Network GPS (3s timeout)
  * Tier 3: Browser navigator.geolocation (3s timeout)
  * Tier 4: Cached Last-Known Location from localStorage
- * Tier 5: Disaster Zone Anchor ({ lat: 28.7041, lon: 77.1025 })
- *
- * Legacy callers retain the existing fallback. Strict callers can disable cached and fallback locations.
+ * Without a measured or explicitly allowed cached fix, location is unavailable.
  */
-export async function getNativeOrWebLocation({ allowCached = true, allowFallback = true } = {}) {
+export async function getNativeOrWebLocation({ allowCached = true } = {}) {
   const saveCached = fix => {
     try {
       localStorage.setItem('rescue.lastLocation', JSON.stringify({
@@ -977,12 +976,7 @@ export async function getNativeOrWebLocation({ allowCached = true, allowFallback
     return cached;
   }
 
-  if (!allowFallback) throw new Error('GPS unavailable: check location permission and services, or enter the facility coordinates manually.');
-
-  // Legacy fallback remains for callers pending a separate location migration.
-  console.log('[GPS] Using disaster anchor coordinate fallback');
-  const anchor = { lat: 28.7041, lon: 77.1025, isFallback: true };
-  return anchor;
+  throw new Error('GPS unavailable: check location permission and services, or enter the facility coordinates manually.');
 }
 
 /**

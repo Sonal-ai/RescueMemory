@@ -27,9 +27,10 @@ export function reportRadar(reports, request) {
     const cat = isCas ? 'casualty' : isHaz ? 'hazard' : report.kind === 'checkpoint' ? 'shelter' : 'resource';
     if (category !== 'all' && category !== cat && !({ casualties: 'casualty', shelters: 'shelter', hazards: 'hazard', resources: 'resource' }[category] === cat)) continue;
     items.push({ id: report.id, entity_id: report.entity_id, name: report.title || (cat === 'shelter' ? report.text?.split(/\s*\(/)[0] : null) || report.entity_id || `${cat.toUpperCase()} Alert`, category: cat,
-      triage_level: isCas ? (report.severity === 'red' ? 'immediate_red' : 'delayed_yellow') : isHaz ? 'hazard_warning' : 'safe_green',
-      text: report.text || '', status: report.status || 'active', severity: report.severity || 'yellow', distance_m: Math.round(distance),
-      bearing_deg: bearing, cardinal: cardinals[Math.round(bearing / 22.5) % 16], walk_time_min: Math.max(1, Math.round(distance / 75)),
+      triage_level: isCas ? (report.severity === 'red' ? 'immediate_red' : report.severity === 'yellow' ? 'delayed_yellow' : 'informational')
+        : isHaz ? 'hazard_warning' : report.status === 'operational' && report.severity === 'green' ? 'safe_green' : 'informational',
+      text: report.text || '', status: report.status || null, severity: report.severity || null, distance_m: Math.round(distance),
+      bearing_deg: bearing, cardinal: cardinals[Math.round(bearing / 22.5) % 16], walk_time_min: null,
       location, observed_at: report.observed_at || report.created_at, signal_source: 'local_indexeddb', verified: report.verified === true,
       prototype_confirmed: report.prototype_confirmed === true });
   }
@@ -37,5 +38,5 @@ export function reportRadar(reports, request) {
   const casualties = items.filter(i => i.category === 'casualty'), shelters = items.filter(i => i.category === 'shelter');
   return { center, radius_m: radius, total_found: items.length, radar_items: items,
     summary: { urgent_casualties: casualties.filter(c => c.triage_level === 'immediate_red').length, total_casualties: casualties.length,
-      operational_shelters: shelters.length, active_peers: 0, nearest_casualty: casualties[0] || null, nearest_shelter: shelters[0] || null }, local_fallback: true };
+      operational_shelters: shelters.filter(item => item.status === 'operational').length, active_peers: items.filter(item => item.category === 'peer').length, nearest_casualty: casualties[0] || null, nearest_shelter: shelters[0] || null }, local_fallback: true };
 }

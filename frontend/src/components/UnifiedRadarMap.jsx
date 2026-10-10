@@ -14,7 +14,7 @@ import {
 import { getSurvivalRadar, distM, bearingDeg, cardinalDirection } from '../api';
 import MapPanel from '../MapPanel';
 import { radarDestinationLabel, radarDestinationOption } from '../brain/radarLabels.js';
-import { savedShelters } from '../brain/survivorReports.js';
+import { savedShelters, targetMeasurements } from '../brain/survivorReports.js';
 
 const COMPASS_SIZE = 220;
 const COMPASS_CENTER = COMPASS_SIZE / 2;
@@ -293,9 +293,10 @@ export default function UnifiedRadarMap({
           distance_m: d,
           bearing_deg: b,
           cardinal: cardinalDirection(b),
-          walk_time_min: Math.max(1, Math.round(d / 75)),
+          walk_time_min: null,
           location: tLoc,
-          triage_level: selectedTarget.status === 'Operational' ? 'safe_green' : (selectedTarget.severity === 'red' ? 'immediate_red' : 'hazard_warning'),
+          triage_level: selectedTarget.triage_level || 'informational',
+          status: selectedTarget.status || null,
           text: selectedTarget.text || selectedTarget.description || selectedTarget.summary || (Array.isArray(selectedTarget.facilities) ? selectedTarget.facilities.join(', ') : 'Rerouted safe location')
         });
       }
@@ -336,31 +337,15 @@ export default function UnifiedRadarMap({
 
   // Real-time geodesic metrics between live walking GPS and activeTarget.location
   const liveTargetMetrics = useMemo(() => {
-    if (!activeTarget) {
-      return { bearing: 0, distance: 0, cardinal: 'N' };
-    }
-    const tLoc = activeTarget.location || (activeTarget.lat != null && activeTarget.lon != null ? { lat: activeTarget.lat, lon: activeTarget.lon } : null);
-    const uLat = liveCoords?.lat ?? userLocation?.lat;
-    const uLon = liveCoords?.lon ?? userLocation?.lon;
-
-    if (!tLoc || tLoc.lat == null || tLoc.lon == null || uLat == null || uLon == null) {
-      return {
-        bearing: activeTarget.bearing_deg ?? 0,
-        distance: activeTarget.distance_m ?? 0,
-        cardinal: activeTarget.cardinal || 'N'
-      };
-    }
-
-    const d = Math.round(distM(uLat, uLon, tLoc.lat, tLoc.lon));
-    const b = bearingDeg(uLat, uLon, tLoc.lat, tLoc.lon);
-    const c = cardinalDirection(b);
-    return { bearing: b, distance: d, cardinal: c };
+    const tLoc = activeTarget?.location || (activeTarget?.lat != null && activeTarget?.lon != null ? { lat: activeTarget.lat, lon: activeTarget.lon } : null);
+    return targetMeasurements(liveCoords || userLocation, tLoc);
   }, [activeTarget, liveCoords, userLocation]);
 
   const targetBearing = liveTargetMetrics.bearing;
   const targetDistance = liveTargetMetrics.distance;
   const targetCardinal = liveTargetMetrics.cardinal;
-  const hasTargetFix = Boolean(userLocation && (activeTarget?.location || (Number.isFinite(activeTarget?.lat) && Number.isFinite(activeTarget?.lon))));
+  const hasTargetFix = Number.isFinite(targetDistance);
+  const hasTargetDirection = Number.isFinite(targetBearing);
 
   // Dedicated emergency situation description resolver
   const targetDescription = useMemo(() => {
@@ -384,11 +369,12 @@ export default function UnifiedRadarMap({
   }, [activeTarget]);
 
   // Relative Bearing: Difference between device heading and target bearing
-  const relativeAngle = currentHeading === null ? 0 : ((targetBearing - currentHeading + 360) % 360);
+  const relativeAngle = currentHeading === null || !hasTargetDirection ? null : ((targetBearing - currentHeading + 360) % 360);
 
   // Maintain continuous smooth needle rotation (prevents 360° flip spins)
   const [needleAngle, setNeedleAngle] = useState(0);
   useEffect(() => {
+    if (relativeAngle === null) return;
     setNeedleAngle((prev) => {
       let delta = (relativeAngle - (prev % 360) + 540) % 360 - 180;
       return prev + delta;
@@ -397,17 +383,17 @@ export default function UnifiedRadarMap({
 
   // Alignment Calculation with Hysteresis (prevents edge flickering between aligned and turning)
   const [isAligned, setIsAligned] = useState(false);
-  const angularError = Math.abs(((relativeAngle + 180) % 360) - 180);
+  const angularError = relativeAngle === null ? null : Math.abs(((relativeAngle + 180) % 360) - 180);
 
   useEffect(() => {
-    if (currentHeading === null || !hasTargetFix) {
+    if (currentHeading === null || !hasTargetDirection) {
       setIsAligned(false);
     } else if (!isAligned && angularError <= 12) {
       setIsAligned(true);
     } else if (isAligned && angularError >= 18) {
       setIsAligned(false);
     }
-  }, [angularError, isAligned, currentHeading, hasTargetFix]);
+  }, [angularError, isAligned, currentHeading, hasTargetDirection]);
 
   const turnRightAngle = relativeAngle > 180 ? 0 : relativeAngle;
   const turnLeftAngle = relativeAngle > 180 ? 360 - relativeAngle : 0;
@@ -443,7 +429,8 @@ export default function UnifiedRadarMap({
           entity_id: d.id,
           title: d.name,
           kind: d.category === 'casualty' ? 'incident' : d.category === 'hazard' ? 'hazard' : d.category === 'resource' ? 'resource' : 'checkpoint',
-          severity: d.triage_level === 'immediate_red' ? 'red' : 'green',
+          severity: d.severity || null,
+          status: d.status || null,
           location: d.location,
           text: d.text
         });
@@ -639,6 +626,8 @@ export default function UnifiedRadarMap({
               <div className="w-full h-full rounded-xl bg-amber-500/10 border border-amber-500/40 text-amber-900 dark:text-amber-300 font-bold text-xs flex items-center justify-center px-3">
                 Select a destination to start guidance
               </div>
+            ) : !hasTargetDirection ? (
+              <div className="w-full h-full rounded-xl bg-cyan-500/10 border border-cyan-500/40 text-cyan-900 dark:text-cyan-300 font-bold text-xs flex items-center justify-center px-3">{hasTargetFix ? 'At reported coordinates · direction unavailable' : 'Destination coordinates unavailable'}</div>
             ) : currentHeading === null ? (
               <div className="w-full h-full rounded-xl bg-amber-500/10 border border-amber-500/40 text-amber-900 dark:text-amber-300 font-bold text-xs flex items-center justify-center px-3">
                 Compass unavailable · move phone in a figure eight
@@ -727,7 +716,7 @@ export default function UnifiedRadarMap({
                   <line x1={COMPASS_CENTER - 20} y1={COMPASS_CENTER} x2={COMPASS_CENTER + 20} y2={COMPASS_CENTER} stroke="#0e7490" strokeWidth="0.8" opacity="0.3" />
                   <line x1={COMPASS_CENTER} y1={COMPASS_CENTER - 20} x2={COMPASS_CENTER} y2={COMPASS_CENTER + 20} stroke="#0e7490" strokeWidth="0.8" opacity="0.3" />
 
-                  {hasTargetFix && currentHeading !== null && (
+                  {hasTargetDirection && currentHeading !== null && (
                     <g
                       transform={`rotate(${needleAngle} ${COMPASS_CENTER} ${COMPASS_CENTER})`}
                       filter="url(#needleGlow)"
@@ -787,7 +776,7 @@ export default function UnifiedRadarMap({
                     fontWeight="bold"
                     fontFamily="monospace"
                   >
-                    {hasTargetFix ? targetCardinal : 'GPS'}
+                    {hasTargetDirection ? targetCardinal : '—'}
                   </text>
                 </svg>
               </div>
@@ -814,14 +803,14 @@ export default function UnifiedRadarMap({
                 </div>
                 <div className="bg-[#f8fafc] dark:bg-slate-950/80 p-2 rounded-xl border border-[#dbe6f0] dark:border-slate-800">
                   <span className="text-[9px] text-slate-500 uppercase block font-semibold mb-0.5">Azimuth</span>
-                  <strong className="text-xs sm:text-sm font-black text-slate-900 dark:text-cyan-400 tabular-nums">{hasTargetFix ? `${targetBearing}° ${targetCardinal}` : '—'}</strong>
+                  <strong className="text-xs sm:text-sm font-black text-slate-900 dark:text-cyan-400 tabular-nums">{hasTargetDirection ? `${targetBearing}° ${targetCardinal}` : '—'}</strong>
                 </div>
               </div>
 
               <div className="bg-[#f8fafc] dark:bg-slate-950/80 p-1.5 rounded-xl border border-[#dbe6f0] dark:border-slate-800 text-center flex items-center justify-around">
                 <div>
-                  <span className="text-[9px] text-slate-500 uppercase block font-semibold">Est. Walk</span>
-                  <strong className="text-xs sm:text-sm font-black text-slate-900 dark:text-cyan-400 tabular-nums">{hasTargetFix ? `~${Math.max(1, Math.round(targetDistance / 75))} min` : '—'}</strong>
+                  <span className="text-[9px] text-slate-500 uppercase block font-semibold">Reported status</span>
+                  <strong className="text-xs sm:text-sm font-black text-slate-900 dark:text-cyan-400 tabular-nums">{activeTarget?.status || 'Not reported'}</strong>
                 </div>
                 {totalMetersWalked > 0 && (
                   <div className="border-l border-[#dbe6f0] dark:border-slate-800 pl-3">
@@ -867,7 +856,7 @@ export default function UnifiedRadarMap({
                     : activeTarget.category === 'hazard' ? 'HAZARD ALERT' : 'NEARBY PHONE'}
                 </span>
                 <span className="text-[11px] font-mono font-bold text-slate-600 dark:text-slate-400">
-                  {hasTargetFix ? `${targetBearing}° (${targetCardinal})` : 'GPS pending'}
+                  {hasTargetDirection ? `${targetBearing}° (${targetCardinal})` : 'Direction unavailable'}
                 </span>
               </div>
 

@@ -1,4 +1,5 @@
 import { Bluetooth, MapPin, Navigation, Radio, TriangleAlert } from 'lucide-react';
+import { coordinates } from './brain/adminData.js';
 
 const WIDTH = 600;
 const HEIGHT = 340;
@@ -22,8 +23,10 @@ export default function MapPanel({
 
   const span = 0.11;
 
-  const safeCenterLat = (center && !Number.isNaN(Number(center.lat))) ? Number(center.lat) : 28.7041;
-  const safeCenterLon = (center && !Number.isNaN(Number(center.lon))) ? Number(center.lon) : 77.1025;
+  const origin = coordinates(center);
+  if (!origin) return <div className="rounded-2xl border border-slate-700 p-6 text-center text-sm" role="status">Map unavailable · a valid location is required.</div>;
+  const safeCenterLat = origin.lat;
+  const safeCenterLon = origin.lon;
 
   const project = (location) => {
     const lat = location?.lat != null ? Number(location.lat) : safeCenterLat;
@@ -63,7 +66,7 @@ export default function MapPanel({
     }
   };
 
-  const validPeers = (Array.isArray(peers) ? peers : []).filter((p) => p && p.lat != null && p.lon != null);
+  const validPeers = (Array.isArray(peers) ? peers : []).filter(p => coordinates(p));
 
   return (
     <div className="select-none">
@@ -123,7 +126,7 @@ export default function MapPanel({
           </g>
 
           {/* Dynamic Vector Route Line to Selected Destination */}
-          {selected && (
+          {coordinates(selected) && (
             <line
               x1={WIDTH / 2}
               y1={HEIGHT / 2}
@@ -155,7 +158,7 @@ export default function MapPanel({
           </g>
 
           {/* Incident / Hazard / Checkpoint Pins */}
-          {(Array.isArray(items) ? items : []).filter((item) => item && item.location).map((item) => {
+          {(Array.isArray(items) ? items : []).filter(item => coordinates(item?.location)).map((item) => {
             const point = project(item.location);
             const isHazard = item.kind === 'hazard' || item.severity === 'red';
             const isResource = item.kind === 'resource';

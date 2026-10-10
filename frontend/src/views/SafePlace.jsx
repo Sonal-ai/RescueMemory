@@ -17,23 +17,28 @@ import {
 import { useNavigate } from 'react-router-dom';
 import {
   api,
+  getDeviceId,
   recommendAlternativeLocal,
   getNativeOrWebLocation,
-  distM,
   invalidateApiCache
 } from '../api';
 import { Shell } from '../components';
 import MapPanel from '../MapPanel';
+import useLiveGps from '../hooks/useLiveGps.js';
+import { coordinates, loadDashboardFeed } from '../brain/adminData.js';
+import { getAllLocalReports } from '../brain/offlineStorage.js';
+import { currentSurvivorReports, reportedFacilities } from '../brain/survivorReports.js';
 
-const DEFAULT_CENTER = { lat: 28.7041, lon: 77.1025 };
+const emptyShelter = () => ({ name: '', type: 'Community Shelter', facilities: [], capacity: '', notes: '', lat: '', lon: '' });
 
 export default function SafePlace() {
   const navigate = useNavigate();
-  const [center, setCenter] = useState(DEFAULT_CENTER);
+  const gps = useLiveGps();
+  const center = gps.fix;
   const [needs, setNeeds] = useState({
-    water: true,
-    medical: true,
-    shelter: true,
+    water: false,
+    medical: false,
+    shelter: false,
     food: false,
   });
   const [avoid, setAvoid] = useState({
@@ -50,172 +55,27 @@ export default function SafePlace() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
-  const [newShelter, setNewShelter] = useState({
-    name: '',
-    type: 'Community Shelter',
-    facilities: ['Water', 'Shelter', 'Medical'],
-    capacity: '250 Beds',
-    notes: 'Operational safe haven with water and shelter cots.',
-    lat: DEFAULT_CENTER.lat,
-    lon: DEFAULT_CENTER.lon,
-  });
-
-  // Auto-acquire live GPS position on mount
-  useEffect(() => {
-    getNativeOrWebLocation().then((pos) => {
-      if (pos?.lat && pos?.lon) {
-        const coords = { lat: Number(pos.lat.toFixed(5)), lon: Number(pos.lon.toFixed(5)) };
-        setCenter(coords);
-        setNewShelter((prev) => ({ ...prev, lat: coords.lat, lon: coords.lon }));
-      }
-    }).catch(() => {});
-  }, []);
+  const [newShelter, setNewShelter] = useState(emptyShelter);
 
   // Load dynamic data from Qdrant Edge Memory & Negative Vector Engine
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      // 1. Get negative vector safe facility recommendation
-      const hazardText = [
-        avoid.flooded ? 'flooded entrance' : '',
-        avoid.electrical ? 'live electrical wires' : ''
-      ].filter(Boolean).join(' ') || 'flooded hazard';
-
-      const recResult = await recommendAlternativeLocal('cp_17', hazardText).catch(() => null);
-
-      // 2. Query nearby map records
-      const mapData = await api('/api/map/nearby', {
-        method: 'POST',
-        body: {
-          location: center,
-          radius_m: radiusKm * 1000,
-          include_responders: false,
-        },
-      }).catch(() => ({ items: [] }));
-
-      setMapItems(mapData.items || []);
-
-      if (recResult?.compromised) {
-        setExcluded(recResult.compromised);
+      const local = await getAllLocalReports();
+      setMapItems(currentSurvivorReports(local));
+      setShelters(reportedFacilities(local, center, needs, radiusKm * 1000));
+      const feed = await loadDashboardFeed(api, false, local);
+      const records = currentSurvivorReports(feed.items, await getAllLocalReports());
+      setMapItems(records);
+      setShelters(reportedFacilities(records, center, needs, radiusKm * 1000));
+      const hazard = records.find(report => report.id && (report.kind === 'hazard'
+        || ['danger', 'blocked', 'flooded', 'compromised'].includes(report.status)));
+      setExcluded(null);
+      if (hazard && (avoid.flooded || avoid.electrical)) {
+        const result = await recommendAlternativeLocal(hazard.entity_id || hazard.id, hazard.text || hazard.status).catch(() => null);
+        if (result?.compromised) setExcluded(result.compromised);
       }
 
-      // Dynamically anchor facilities relative to current center
-      const baseLat = center.lat;
-      const baseLon = center.lon;
-
-      let rawFacilities = [
-        {
-          id: 'shelter_alpha',
-          name: 'Shelter Alpha (Central High)',
-          type: 'Community Hall',
-          dist_m: 510,
-          walk_min: 7,
-          status: 'Operational',
-          facilities: ['Water', 'Food', 'Shelter', '300 Beds'],
-          lat: Number((baseLat + 0.0035).toFixed(5)),
-          lon: Number((baseLon - 0.0028).toFixed(5)),
-        },
-        {
-          id: 'clinic_beta',
-          name: 'Clinic Beta (West District)',
-          type: 'Primary Clinic',
-          dist_m: 530,
-          walk_min: 7,
-          status: 'Operational',
-          facilities: ['Medical', 'Water', 'Resuscitation'],
-          lat: Number((baseLat + 0.0021).toFixed(5)),
-          lon: Number((baseLon - 0.0042).toFixed(5)),
-        },
-        {
-          id: 'water_tanker_4',
-          name: 'Water Tanker 4 (North Gate)',
-          type: 'Municipal Tanker',
-          dist_m: 560,
-          walk_min: 8,
-          status: 'Operational',
-          facilities: ['Water', 'Clean Supply'],
-          lat: Number((baseLat - 0.0025).toFixed(5)),
-          lon: Number((baseLon + 0.0036).toFixed(5)),
-        },
-      ];
-
-      // If negative-vector engine recommended a specific alternative facility:
-      if (recResult?.recommended) {
-        const rec = recResult.recommended;
-        const exists = rawFacilities.some((f) => f.id === rec.id || f.id === rec.entity_id || f.id === rec.recommended_id);
-        if (!exists) {
-          rawFacilities.unshift({
-            id: rec.id || rec.entity_id || rec.recommended_id || 'rec_safe',
-            name: rec.name || rec.title || 'Safe Alternative Shelter',
-            type: 'Rerouted Safe Shelter',
-            dist_m: 620,
-            walk_min: 9,
-            status: 'Operational',
-            facilities: rec.facilities || ['Shelter', 'Water', 'Medical'],
-            lat: Number((baseLat + 0.0045).toFixed(5)),
-            lon: Number((baseLon + 0.0022).toFixed(5)),
-          });
-        }
-      }
-
-      // Merge dynamic checkpoints or resource stations from Edge Memory
-      (mapData.items || []).forEach((item) => {
-        const kind = item.kind || '';
-        const status = (item.status || '').toLowerCase();
-        const isSafe = !['blocked', 'danger', 'flooded', 'closed', 'compromised'].includes(status);
-        if (['checkpoint', 'resource', 'shelter'].includes(kind) && isSafe) {
-          const exists = rawFacilities.some((f) => f.id === item.id || f.id === item.entity_id);
-          if (!exists) {
-            const itemCoords = {
-              lat: item.location?.lat ?? item.lat ?? baseLat,
-              lon: item.location?.lon ?? item.lon ?? baseLon
-            };
-            const dist = Math.round(distM(center, itemCoords)) || 650;
-
-            // Extract facilities from text or metadata
-            let facs = item.facilities || item.details?.facilities || [];
-            if (!facs.length) {
-              const textLower = (item.text || '').toLowerCase();
-              if (textLower.includes('water')) facs.push('Water');
-              if (textLower.includes('medical') || textLower.includes('clinic')) facs.push('Medical');
-              if (textLower.includes('shelter') || textLower.includes('bed') || textLower.includes('cot')) facs.push('Shelter');
-              if (textLower.includes('food') || textLower.includes('ration')) facs.push('Food');
-              if (!facs.length) facs = ['Shelter', 'Water'];
-            }
-
-            const displayName =
-              item.title ||
-              item.details?.name ||
-              (item.text ? item.text.split('(')[0].split('.')[0].trim() : '') ||
-              `Safe Haven ${String(item.id).slice(0, 6)}`;
-
-            rawFacilities.push({
-              id: item.id || item.entity_id,
-              name: displayName,
-              type: kind === 'checkpoint' ? 'Relief Checkpoint' : 'Supply Point',
-              dist_m: dist,
-              walk_min: Math.max(1, Math.round(dist / 75)),
-              status: item.status ? (item.status.charAt(0).toUpperCase() + item.status.slice(1)) : 'Operational',
-              facilities: facs,
-              lat: itemCoords.lat,
-              lon: itemCoords.lon,
-            });
-          }
-        }
-      });
-
-      // Filter based on selected needs
-      const activeNeedNames = Object.entries(needs)
-        .filter(([, v]) => v)
-        .map(([k]) => k.toLowerCase());
-
-      const filtered = rawFacilities.filter((f) => {
-        if (!activeNeedNames.length) return true;
-        const facLower = (f.facilities || []).map((x) => x.toLowerCase());
-        return activeNeedNames.some((n) => facLower.some((fl) => fl.includes(n)));
-      });
-
-      setShelters(filtered.length ? filtered : rawFacilities);
     } catch (err) {
       console.error('Failed to load safe places:', err);
     } finally {
@@ -225,25 +85,19 @@ export default function SafePlace() {
 
   useEffect(() => {
     loadData();
+    window.addEventListener('rescue:reports-changed', loadData);
+    return () => window.removeEventListener('rescue:reports-changed', loadData);
   }, [loadData]);
 
   const toggleNeed = (key) => setNeeds((prev) => ({ ...prev, [key]: !prev[key] }));
   const toggleAvoid = (key) => setAvoid((prev) => ({ ...prev, [key]: !prev[key] }));
 
   const acquireGps = async () => {
-    try {
-      const pos = await getNativeOrWebLocation();
-      if (pos?.lat && pos?.lon) {
-        const coords = { lat: Number(pos.lat.toFixed(5)), lon: Number(pos.lon.toFixed(5)) };
-        setCenter(coords);
-        setNewShelter((prev) => ({ ...prev, lat: coords.lat, lon: coords.lon }));
-      }
-    } catch (err) {
-      console.warn('GPS unavailable:', err);
-    }
+    try { await gps.refresh(); } catch (error) { setToastMessage(error.message); }
   };
 
   const handleNavigate = (shelter) => {
+    if (!coordinates(shelter.location || shelter)) { setToastMessage('This report has no valid coordinates.'); return; }
     navigate('/compass', { state: { target: shelter } });
   };
 
@@ -253,8 +107,10 @@ export default function SafePlace() {
     if (!newShelter.name.trim()) return;
     setSubmitting(true);
     try {
-      const entityId = `safe_${Date.now()}`;
-      await api('/api/reports', {
+      const location = coordinates(newShelter);
+      if (!location) throw new Error('Enter the actual facility coordinates or use GPS.');
+      const entityId = `safe_${crypto.randomUUID()}`;
+      const result = await api('/api/reports', {
         method: 'POST',
         admin: true,
         body: {
@@ -263,24 +119,16 @@ export default function SafePlace() {
           status: 'operational',
           severity: 'green',
           visibility: 'public',
-          text: `${newShelter.name.trim()} (${newShelter.type}). Facilities: ${newShelter.facilities.join(', ')}. Capacity: ${newShelter.capacity || 'Open'}. Notes: ${newShelter.notes || 'Safe checkpoint'}`,
-          location: { lat: Number(newShelter.lat), lon: Number(newShelter.lon) },
-          reporter_id: 'responder-field',
+          text: `${newShelter.name.trim()} (${newShelter.type}). Facilities: ${newShelter.facilities.join(', ') || 'Not reported'}. Capacity: ${newShelter.capacity || 'Not reported'}. Notes: ${newShelter.notes || 'Not reported'}`,
+          location,
+          reporter_id: getDeviceId(),
           verified: true,
         }
       });
       invalidateApiCache();
       setShowAddModal(false);
-      setToastMessage(`Safe haven "${newShelter.name}" registered and broadcasted across offline mesh!`);
-      setNewShelter({
-        name: '',
-        type: 'Community Shelter',
-        facilities: ['Water', 'Shelter', 'Medical'],
-        capacity: '250 Beds',
-        notes: '',
-        lat: center.lat,
-        lon: center.lon,
-      });
+      setToastMessage(`Shelter "${newShelter.name}" saved${result.queued ? " locally · publication pending" : ""}.`);
+      setNewShelter(emptyShelter());
       await loadData();
     } catch (err) {
       alert(`Failed to add safe place: ${err.message}`);
@@ -315,10 +163,10 @@ export default function SafePlace() {
           </div>
           <div>
             <h2 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100">
-              Verified Safe Havens & Supply Checkpoints
+              Reported Shelters & Supply Points
             </h2>
             <p className="text-[10px] text-slate-500 font-mono">
-              Filtered using Qdrant Negative Vector Arithmetic & Offline GPS Relays
+              Saved and received facility reports
             </p>
           </div>
         </div>
@@ -326,7 +174,7 @@ export default function SafePlace() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => {
-              setNewShelter((prev) => ({ ...prev, lat: center.lat, lon: center.lon }));
+              setNewShelter((prev) => ({ ...prev, lat: center?.lat ?? '', lon: center?.lon ?? '' }));
               setShowAddModal(true);
             }}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-xs transition cursor-pointer"
@@ -427,7 +275,7 @@ export default function SafePlace() {
               <span className="text-base sm:text-lg font-bold font-mono text-cyan-700 dark:text-cyan-300">
                 {radiusKm} <span className="text-xs text-slate-500">km</span>
               </span>
-              <span className="text-slate-500 dark:text-slate-400 text-[10px] font-mono">~{Math.round(radiusKm * 14)} min walk</span>
+              <span className="text-slate-500 dark:text-slate-400 text-[10px] font-mono">Search range</span>
             </div>
             <input
               type="range"
@@ -445,9 +293,9 @@ export default function SafePlace() {
         <div className="lg:col-span-4 flex flex-col gap-2.5 sm:gap-3">
           <div className="flex items-center justify-between">
             <h4 className="text-[10px] text-slate-500 dark:text-slate-400 font-bold tracking-widest uppercase font-mono">
-              SUGGESTED SAFE SHELTERS ({shelters.length})
+              REPORTED SHELTERS & SUPPLIES ({shelters.length})
             </h4>
-            <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-bold">● Operational</span>
+            <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-bold">Saved reports</span>
           </div>
 
           {shelters.map((shelter, idx) => (
@@ -462,11 +310,11 @@ export default function SafePlace() {
               <div className="flex justify-between items-start mb-1">
                 <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100">{shelter.name}</h3>
                 <span className="bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700/60 px-2 py-0.5 rounded-full text-[10px] font-bold">
-                  {shelter.status}
+                  {shelter.status || 'Not reported'}
                 </span>
               </div>
               <p className="text-slate-500 dark:text-slate-400 text-[11px] mb-2 font-mono">
-                {shelter.type} · {shelter.dist_m} m away · ~{shelter.walk_min} min walk
+                {shelter.type} · {shelter.dist_m == null ? 'Distance unavailable' : `${shelter.dist_m} m straight line`}
               </p>
               <div className="flex gap-1 mb-2.5 flex-wrap">
                 {(shelter.facilities || []).map((fac) => (
@@ -492,7 +340,7 @@ export default function SafePlace() {
             <div className="bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800 rounded-2xl p-2.5 flex items-center gap-2 text-rose-900 dark:text-rose-300 text-xs shadow-xs">
               <AlertCircle className="w-4 h-4 text-rose-500 dark:text-rose-400 shrink-0" />
               <span className="leading-snug">
-                <strong>{excluded.name || excluded.entity_id || 'CP-17'} Excluded:</strong> {excluded.hazard || 'Flooded entrance, live electrical wires detected.'} Rerouted automatically.
+                <strong>{excluded.name || excluded.entity_id || excluded.id || 'Reported location'} excluded:</strong> {excluded.hazard || excluded.text || 'Hazard details unavailable.'}
               </span>
             </div>
           )}
@@ -505,7 +353,7 @@ export default function SafePlace() {
               TACTICAL FIELD MAP
             </span>
             <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400">
-              Center: {center.lat.toFixed(4)}, {center.lon.toFixed(4)}
+              {center ? `Center: ${center.lat.toFixed(4)}, ${center.lon.toFixed(4)}` : 'GPS unavailable'}
             </span>
           </div>
           <div className="flex-1 p-2">
@@ -528,7 +376,7 @@ export default function SafePlace() {
                     Register New Safe Haven
                   </h3>
                   <p className="text-[10px] text-slate-500 font-mono">
-                    Broadcast operational checkpoint to Edge Memory & Bluetooth Mesh
+                Save the facility details for sharing when a connection is available
                   </p>
                 </div>
               </div>
@@ -579,7 +427,7 @@ export default function SafePlace() {
                   </label>
                   <input
                     type="text"
-                    placeholder="e.g. 350 Beds, Unlimited, 5000L"
+                    placeholder="Enter the reported capacity"
                     value={newShelter.capacity}
                     onChange={(e) => setNewShelter({ ...newShelter, capacity: e.target.value })}
                     className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100"
@@ -639,14 +487,16 @@ export default function SafePlace() {
                   <button
                     type="button"
                     onClick={async () => {
-                      const pos = await getNativeOrWebLocation();
-                      if (pos?.lat && pos?.lon) {
-                        setNewShelter({
-                          ...newShelter,
-                          lat: Number(pos.lat.toFixed(5)),
-                          lon: Number(pos.lon.toFixed(5)),
-                        });
-                      }
+                      try {
+                        const pos = await getNativeOrWebLocation({ allowCached: false });
+                        if (coordinates(pos)) {
+                          setNewShelter({
+                            ...newShelter,
+                            lat: pos.lat,
+                            lon: pos.lon,
+                          });
+                        }
+                      } catch (error) { setToastMessage(error.message); }
                     }}
                     className="text-[10px] font-mono text-cyan-600 dark:text-cyan-400 hover:underline flex items-center gap-1 cursor-pointer"
                   >
@@ -661,7 +511,7 @@ export default function SafePlace() {
                       step="0.0001"
                       required
                       value={newShelter.lat}
-                      onChange={(e) => setNewShelter({ ...newShelter, lat: parseFloat(e.target.value) || 0 })}
+                      onChange={(e) => setNewShelter({ ...newShelter, lat: e.target.value })}
                       className="w-full p-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono text-xs"
                     />
                   </div>
@@ -672,7 +522,7 @@ export default function SafePlace() {
                       step="0.0001"
                       required
                       value={newShelter.lon}
-                      onChange={(e) => setNewShelter({ ...newShelter, lon: parseFloat(e.target.value) || 0 })}
+                      onChange={(e) => setNewShelter({ ...newShelter, lon: e.target.value })}
                       className="w-full p-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono text-xs"
                     />
                   </div>

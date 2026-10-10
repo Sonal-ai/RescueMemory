@@ -47,9 +47,9 @@ test('manual GPS refresh uses a new measured position and cannot return stale GP
 test('unavailable GPS never caches an invented anchor or publishes missing coordinates', async () => {
   values.delete('rescue.lastLocation');
   snapshot = sample(1, Date.now() - 120000);
-  const legacy = await getNativeOrWebLocation({ allowCached: false });
-  assert.equal(legacy.isFallback, true);
+  await assert.rejects(getNativeOrWebLocation({ allowCached: false }), /GPS unavailable/);
+  await assert.rejects(getNativeOrWebLocation({ allowCached: false, allowFallback: true }), /GPS unavailable/);
   assert.equal(localStorage.getItem('rescue.lastLocation'), null);
   await assert.rejects(updateDeviceLocation(null), /real coordinates/);
-  await assert.rejects(updateDeviceLocation(legacy), /real coordinates/);
+  await assert.rejects(updateDeviceLocation({ isFallback: true }), /real coordinates/);
 });

@@ -371,38 +371,22 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
     setSelected(item);
     setAlternativeRec(null);
     if (!item) return;
-    const targetId = item.entity_id || (item.kind === 'checkpoint' ? item.id : null);
+    const targetId = item.entity_id || item.id;
     if (targetId) {
       try {
         setLoadingAltRec(true);
         const entityData = await api(`/api/entities/${encodeURIComponent(targetId)}`);
         if (entityData?.alternative_recommendation) {
           setAlternativeRec(entityData.alternative_recommendation);
-        } else if (item.status === 'danger' || item.status === 'blocked' || item.status === 'flooded') {
+        } else if (['danger', 'blocked', 'flooded'].includes(item.status)) {
           const recData = await api('/api/checkpoints/recommend-alternative', {
             method: 'POST',
-            body: { compromised_id: targetId, avoid_hazard: item.text || 'flooded hazard' }
+            body: { compromised_id: targetId, avoid_hazard: item.text || item.status }
           });
-          if (recData?.recommended) {
-            setAlternativeRec(recData.recommended);
-          }
+          if (recData?.recommended) setAlternativeRec(recData.recommended);
         }
       } catch (err) {
         console.error('Failed to load alternative recommendation:', err);
-      } finally {
-        setLoadingAltRec(false);
-      }
-    } else if (item.status === 'danger' || item.status === 'blocked' || item.status === 'flooded') {
-      try {
-        setLoadingAltRec(true);
-        const recData = await api('/api/checkpoints/recommend-alternative', {
-          method: 'POST',
-          body: { compromised_id: 'cp_17', avoid_hazard: item.text || 'flooded hazard' }
-        });
-        if (recData?.recommended) {
-          setAlternativeRec(recData.recommended);
-        }
-      } catch (err) {
       } finally {
         setLoadingAltRec(false);
       }
