@@ -785,7 +785,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
       subtitle=""
       className={`survivor-shell ${tab === 'ask' ? 'survivor-chat-active' : ''}`}
       bottomBar={bottomBar}
-      headerStatus={<span className="flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap"><span className="truncate">{gps.fix ? Number.isFinite(gps.fix.accuracy) ? `GPS ±${Math.round(gps.fix.accuracy)}m` : 'GPS ready' : 'Finding GPS…'}</span><span aria-hidden="true">·</span><span className="truncate">Mesh {peers.filter(peer => peer.source === 'native_ble' || peer.source === 'web_ble' || peer.transports?.includes('native_ble')).length || 'scanning'}</span>{syncInfo.pendingCount > 0 && <span className="truncate">· {syncInfo.pendingCount} pending</span>}</span>}
+      headerStatus={<span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5"><span className="whitespace-nowrap">{gps.fix ? Number.isFinite(gps.fix.accuracy) ? `${gps.status === 'live' ? 'GPS' : 'Last GPS'} ±${Math.round(gps.fix.accuracy)}m` : gps.status === 'live' ? 'GPS ready' : 'Last GPS fix' : 'Finding GPS…'}</span>{gps.fix && <><span aria-hidden="true">·</span><span className="whitespace-nowrap tabular-nums" aria-label={`Coordinates ${formatCoordinates(gps.fix, 5)}`}>{formatCoordinates(gps.fix, 5)}</span></>}<span aria-hidden="true">·</span><span className="whitespace-nowrap">Mesh {peers.filter(peer => peer.source === 'native_ble' || peer.source === 'web_ble' || peer.transports?.includes('native_ble')).length || 'scanning'}</span>{syncInfo.pendingCount > 0 && <span className="whitespace-nowrap">· {syncInfo.pendingCount} pending</span>}</span>}
     >
       {/* Global Status & Alerts */}
       {error && (

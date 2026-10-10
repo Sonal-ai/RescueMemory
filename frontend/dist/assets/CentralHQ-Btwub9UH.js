@@ -1,1 +1,0 @@
-import{t as e}from"./index-rqmFsv8b.js";import t from"./AdminPortal-CAGOb41A.js";var n=e();function r(){return(0,n.jsx)(t,{initialTab:`hq`})}export{r as default};
