@@ -1,1 +1,0 @@
-import{t as e}from"./index-Cvnrem7w.js";import t from"./AdminPortal-DAR2u3bR.js";var n=e();function r(){return(0,n.jsx)(t,{initialTab:`volunteer`})}export{r as default};
