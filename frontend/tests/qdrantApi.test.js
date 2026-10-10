@@ -52,6 +52,21 @@ test('actual stored guide revisions reach the native index before the next searc
   assert.equal(health.indexed_cards, 420); assert.equal(health.on_device, true); assert.equal(health.local_fallback, false);
   assert.equal(networkCalls, 0);
 });
+test('online production Android API sends its actual native retrieval to Gemini and keeps local evidence', async () => {
+  let context;
+  const original = globalThis.fetch;
+  globalThis.fetch = async (url, options) => {
+    assert.match(url, /\/api\/chat\/format$/);
+    context = JSON.parse(options.body);
+    return { ok: true, json: async () => ({ ai_answer: 'Formatted native guidance [G1]', ai_status: 'answered' }) };
+  };
+  try {
+    const result = await api('/api/chat', { method: 'POST', body: { text: 'water purification', use_ai: true } });
+    assert.equal(context.cards[0].id, 'water'); assert.equal(result.engine, 'qdrant-edge');
+    assert.equal(result.ai_answer, 'Formatted native guidance [G1]'); assert.equal(result.cards[0].id, 'water');
+    assert.ok(result.local_answer);
+  } finally { globalThis.fetch = original; }
+});
 test('empty native results stay empty; a native failure is surfaced without keyword or network fallback', async () => {
   hits = [];
   const result = await api('/api/chat', { method: 'POST', body: { text: 'zxqvunknownword' } });

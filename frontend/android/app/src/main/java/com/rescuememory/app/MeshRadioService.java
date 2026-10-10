@@ -462,24 +462,44 @@ public class MeshRadioService extends android.app.Service {
             }));
         } catch (Exception e) { call.reject(failure("presence.send", "PING_EXCEPTION", e)); }
     }); }
-    public void exchange(MeshCall call) { handler.post(() -> {
-        if (client == null || connectCall != null || exchangeCall != null) { call.reject(failure("transfer.send", "NO_CONNECTION_OR_BUSY", "Bluetooth connection is unavailable or busy.")); return; }
+    public void exchange(MeshCall call) { handler.post(() -> exchangeNow(call, false)); }
+    private void exchangeNow(MeshCall call, boolean identifying) {
+        if (client == null || (!identifying && connectCall != null) || exchangeCall != null) { call.reject(failure("transfer.send", "NO_CONNECTION_OR_BUSY", "Bluetooth connection is unavailable or busy.")); return; }
         try { messageId = new SecureRandom().nextInt();
             byte[][] frames = MeshFrames.encode(call.getString("payload", "").getBytes(StandardCharsets.UTF_8), messageId, mtu - 3);
             outgoing = frames; outgoingIndex = 0; responseDecoder = new MeshFrames.Decoder(); exchangeCall = call; writeNext();
             log("transfer.send", "FRAMES_STARTED", "message=" + messageId + "; frames=" + frames.length + "; MTU=" + mtu + "; bytes=" + call.getString("payload", "").getBytes(StandardCharsets.UTF_8).length);
             handler.postDelayed(() -> { if (exchangeCall == call) failClient(failure("transfer.response", "RESPONSE_TIMEOUT", "No complete response; message=" + messageId + "; MTU=" + mtu + "; written_frames=" + outgoingIndex)); }, 45000);
         } catch (Exception e) { String error = failure("transfer.encode", "ENCODE_EXCEPTION", e); if (exchangeCall == call) failClient(error); else call.reject(error); }
-    }); }
+    }
     private BluetoothGattCharacteristic characteristic(UUID uuid) {
         return client == null || client.getService(SERVICE) == null ? null : client.getService(SERVICE).getCharacteristic(uuid);
     }
     private void readMetadata() {
         if (metadataReadStarted || connectCall == null) return;
         metadataReadStarted = true;
-        BluetoothGattCharacteristic c = characteristic(META);
-        if (c == null) { failClient(failure("gatt.metadata", "META_MISSING", "Nearby phone has no RescueMemory metadata characteristic.")); return; }
-        try { log("gatt.metadata", "READING", "Reading app identity and telemetry."); if (!client.readCharacteristic(c)) failClient(failure("gatt.metadata", "READ_REJECTED", "Android rejected metadata read.")); }
+        // Use the existing framed presence protocol at every MTU. Some Android
+        // stacks return only the first 22 bytes of a JSON characteristic read.
+        // Frames are assembled as bytes before decoding UTF-8/JSON, and the
+        // presence request also identifies us on the other phone.
+        final MeshCall identifying = connectCall;
+        try {
+            JSObject ping = metadata(); ping.put("type", "presence");
+            JSObject args = new JSObject(); args.put("payload", ping.toString());
+            log("gatt.metadata", "FRAMED_PRESENCE", "Exchanging complete identity and battery telemetry; MTU=" + mtu);
+            exchangeNow(new MeshCall(args, (response, error) -> {
+                if (connectCall != identifying) return;
+                if (error != null) { failClient(error); return; }
+                try {
+                    JSObject obj = new JSObject(response.getString("payload"));
+                    if (!"presence".equals(obj.optString("type")) || obj.optInt("v") != 2 || obj.optString("node_id").isEmpty())
+                        throw new IllegalArgumentException(obj.optString("error", "Incomplete phone presence metadata."));
+                    obj.put("address", client.getDevice().getAddress());
+                    rememberPresence(obj, client.getDevice().getAddress(), found.get(client.getDevice().getAddress()), true);
+                    connectCall = null; identifying.resolve(obj);
+                } catch (Exception e) { failClient(failure("gatt.metadata", "INVALID_PRESENCE_REPLY", e)); }
+            }), true);
+        }
         catch (Exception e) { failClient(failure("gatt.metadata", "READ_EXCEPTION", e)); }
     }
     private void writeNext() {

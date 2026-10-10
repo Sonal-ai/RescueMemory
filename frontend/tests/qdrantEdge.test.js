@@ -53,3 +53,10 @@ test('native metadata must confirm a real ready shard; empty results do not inve
   const cited = formatGuidanceCards([{ ...guide('bleeding'), score: 1.2, instructions: ['Apply the cited protocol.', 'Apply the cited protocol.'] }], status());
   assert.equal(cited.source_cards[0].steps.length, 1); assert.match(cited.text, /Reference handbook/);
 });
+
+test('reference-pack example checkpoints cannot become live destinations or Gemini evidence', async () => {
+  const client = createEdgeClient({ async initialize() { return status(); }, async searchGuidance() {
+    return { ...status(), cards: [{ ...guide('example-shelter'), kind: 'checkpoint', score: 9 }, { ...guide('real-guide'), kind: 'protocol', score: 2 }] };
+  } }, () => true);
+  assert.deepEqual((await client.search('shelter')).cards.map(card => card.id), ['real-guide']);
+});

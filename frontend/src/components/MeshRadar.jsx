@@ -81,6 +81,6 @@ export default function MeshRadar({ peers, location, scanning, onSelect }) {
         })}
       </svg>
     </div>
-    <p className="mt-2 text-center text-[10px] leading-relaxed text-slate-500 dark:text-slate-400">{scanning ? 'Scanning nearby phones' : 'Nearby phones'} · {radarDistance(scale)} range · north up<br />Solid dots: GPS position · outlined dots: signal estimate, direction unknown</p>
+    <p title="Solid dots use GPS. Outlined dots use signal strength; direction is unknown." className="mt-2 text-center text-[10px] leading-relaxed text-slate-500 dark:text-slate-400">{scanning ? 'Scanning…' : 'North up'} · {radarDistance(scale)} range</p>
   </div>;
 }

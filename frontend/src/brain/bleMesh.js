@@ -1,6 +1,6 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { getAllLocalReports, commitMeshReports, recordMeshSent, saveTransferSession } from './offlineStorage.js';
-import { eligibleReports, reportHash, reportBatches, PROTOCOL_VERSION } from './meshProtocol.js';
+import { eligibleReports, reportHash, reportBatches, PROTOCOL_VERSION, mergePeerTelemetry } from './meshProtocol.js';
 import { cachedMeshLocation, meshLocation } from './meshRadar.js';
 import { meshTrace, meshError, getMeshTrace } from './meshDiagnostics.js';
 import { nonce, ephemeralKey, transcript, sessionKey, seal, unseal, signingBytes,
@@ -279,7 +279,7 @@ function remember(meta, observed) {
   // Address rotation and a native identity migration must not leave stale rows.
   for (const [oldId, oldPeer] of peers) if (oldPeer.address === observed.address && oldId !== id) peers.delete(oldId);
   const old = peers.get(id);
-  const peer = { ...old, ...meta, node_id: id, address: observed.address, device_id: observed.address,
+  const peer = { ...mergePeerTelemetry(old, meta), node_id: id, address: observed.address, device_id: observed.address,
     first_seen_epoch: old?.first_seen_epoch || observed.last_seen_epoch || Date.now(),
     name: meta.name || observed.name, device_name: meta.name || observed.name, rssi: observed.rssi ?? old?.rssi,
     distance_m: rssiToDistance(observed.rssi ?? old?.rssi), last_seen_epoch: observed.last_seen_epoch || Date.now(), source: 'native_ble',
@@ -312,7 +312,7 @@ export async function scanForNearbyPhones() {
         else {
           const existing = [...peers.values()].find(p => p.address === observed.address) || remember({ sync_phase: 'detected' }, observed);
           const detailed = meshError('discovery.metadata', error, { address: observed.address });
-          existing.error = detailed.message; found.push(existing);
+          if (existing) { existing.error = detailed.message; found.push(existing); }
         }
       } finally { await nativeBle.disconnect().catch(error => meshTrace('discovery.disconnect', 'FAILED', error.message)); }
     }

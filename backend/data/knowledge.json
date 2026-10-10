@@ -13236,5 +13236,25 @@
     ],
     "source": "https://who.int/water_sanitation_health",
     "reviewer": "Disaster Response Command"
+  },
+  {
+    "id": "guide_app_navigation_001",
+    "entity_id": "guide_app_navigation_001",
+    "title": "I am lost: GPS, radar and compass directions",
+    "kind": "protocol",
+    "keywords": "lost directions navigation compass north south east west GPS radar location bearing",
+    "summary": "Use the phone GPS and compass to interpret the radar. A saved report gives a reported destination, not a confirmed safe route.",
+    "instructions": [
+      "Open Radar and wait for a current GPS fix. Without a valid fix, your position and distance to a destination cannot be confirmed.",
+      "Open the Compass control. Use its north indication only when a heading sensor reading is available; the top of the screen alone is not north.",
+      "Select a saved report with a real location to see its bearing. The arrow indicates a straight-line direction, not a checked walking route.",
+      "If no destination is saved, ask for nearby shelter, water or food reports after receiving data from another phone. Use Emergency SOS if you need help."
+    ],
+    "warnings": [
+      "Shared locations may be old. Check the report time and surroundings; do not assume the indicated route is clear or safe.",
+      "If GPS or compass is unavailable, do not rely on an estimated dot to identify a direction."
+    ],
+    "source": "RescueMemory Radar and Compass app controls",
+    "location": null
   }
 ]

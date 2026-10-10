@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -22,6 +22,30 @@ class ChatRequest(BaseModel):
     materials: list[str] = Field(default_factory=list)
     breathing: bool | None = None
     bleeding_type: str | None = None
+
+
+class RetrievedGuide(BaseModel):
+    id: str = Field(max_length=200)
+    title: str = Field(max_length=300)
+    summary: str = Field(default="", max_length=6000)
+    steps: list[Annotated[str, Field(max_length=2000)]] = Field(default_factory=list, max_length=8)
+    warnings: list[Annotated[str, Field(max_length=2000)]] = Field(default_factory=list, max_length=8)
+    source: str = Field(default="", max_length=1000)
+
+
+class RetrievedPublicReport(BaseModel):
+    text: str = Field(max_length=2000)
+    status: str = Field(default="", max_length=80)
+    observed_at: str = Field(default="", max_length=80)
+    visibility: Literal["public"]
+    distance_m: float | None = Field(default=None, ge=0, le=21000000)
+    cardinal: str = Field(default="", max_length=3)
+
+
+class FormatChatRequest(BaseModel):
+    text: str = Field(min_length=2, max_length=2000)
+    cards: list[RetrievedGuide] = Field(default_factory=list, max_length=5)
+    reports: list[RetrievedPublicReport] = Field(default_factory=list, max_length=5)
 
 
 class AssessRequest(BaseModel):

@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync, sign } from 'node:crypto';
 import 'fake-indexeddb/auto';
-import { eligibleReports, mergePeers, reportBatches, reportHash } from '../src/brain/meshProtocol.js';
+import { eligibleReports, mergePeers, mergePeerTelemetry, reportBatches, reportHash } from '../src/brain/meshProtocol.js';
 import { verifyResponder, toBase64, seal, unseal, ephemeralKey, sessionKey } from '../src/brain/meshSecurity.js';
 import { meshLocation, peerRadarPosition } from '../src/brain/meshRadar.js';
-import { saveOfflineReport, commitMeshReports, getAllLocalReports, recordMeshSent, getMeshHistory, getUnsyncedReports } from '../src/brain/offlineStorage.js';
+import { saveOfflineReport, saveImportedReports, commitMeshReports, getAllLocalReports, recordMeshSent, getMeshHistory, getUnsyncedReports } from '../src/brain/offlineStorage.js';
 
 globalThis.window = new EventTarget();
 globalThis.localStorage = { values: new Map(), getItem(k) { return this.values.get(k) || null; }, setItem(k, v) { this.values.set(k, v); } };
@@ -27,6 +27,33 @@ test('current sharing policy exports all scopes and SOS types without responder 
   const reports = [report('public'), report('private', { visibility: 'responders' }), report('group', { visibility: 'group' })];
   assert.deepEqual(eligibleReports(reports).map(r => r.id), ['public', 'private', 'group']);
   assert.equal(eligibleReports([report('legacy', { kind: 'incident', visibility: undefined })]).length, 1);
+});
+
+test('identified address replaces its raw beacon and malformed observations are ignored', () => {
+  const now = Date.now();
+  const rows = mergePeers([[undefined, { node_id: 'unresolved_MAC', address: 'MAC', source: 'native_ble' },
+    { node_id: 'phone-B', address: 'MAC', source: 'native_ble', battery: 65, last_seen_epoch: now }]], 'self', now);
+  assert.equal(rows.length, 1); assert.equal(rows[0].node_id, 'phone-B'); assert.equal(rows[0].battery, 65);
+});
+
+test('scan and older telemetry retain the last real battery, including 0%', () => {
+  const prior = { battery: 0, charging: true, battery_measured_at: 200 };
+  for (const update of [{}, { battery: null }, { battery: 97, battery_measured_at: 100 }]) {
+    assert.deepEqual(mergePeerTelemetry(prior, update), prior);
+  }
+  assert.equal(mergePeerTelemetry(prior, { battery: 1, battery_measured_at: 300 }).battery, 1);
+});
+
+test('unchanged cloud downlinks import once; revisions count once and preserve pending local edits', async () => {
+  const remote = report('cloud-count-once', { synced: true });
+  assert.equal(await saveImportedReports([remote]), 1);
+  assert.equal(await saveImportedReports([{ ...remote, imported_at: 'new transfer time' }]), 0);
+  assert.equal(await saveImportedReports([{ ...remote, text: 'Actual revised report' }]), 1);
+  assert.equal(await saveImportedReports([{ ...remote, text: 'Actual revised report' }]), 0);
+  assert.equal(await saveImportedReports([{ ...remote, text: 'Older cloud copy', observed_at: '2026-10-07T01:00:00Z' }]), 0);
+  assert.equal((await getAllLocalReports()).find(r => r.id === remote.id).text, 'Actual revised report');
+  await saveOfflineReport(report('cloud-local-pending'));
+  assert.equal(await saveImportedReports([report('cloud-local-pending', { text: 'Remote overwrite' })]), 0);
 });
 
 test('more than four long Unicode reports survive byte-sized batching without truncation', async () => {

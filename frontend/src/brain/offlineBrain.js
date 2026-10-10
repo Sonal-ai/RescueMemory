@@ -296,9 +296,9 @@ export async function searchKnowledgeLocal(queryText, limit = 5) {
     console.warn('[OfflineBrain] init check:', e);
   }
 
-  const cards = (cachedCards && cachedCards.length > 0)
+  const cards = ((cachedCards && cachedCards.length > 0)
     ? cachedCards
-    : (Array.isArray(staticCards) ? staticCards : []);
+    : (Array.isArray(staticCards) ? staticCards : [])).filter(card => card.kind !== 'checkpoint');
 
   const isGreetingQuery = /^(hi|hello|hey|greetings|halo|howdy)([\s,!.]+.*)?$/i.test((queryText || '').trim());
   if (isGreetingQuery) {

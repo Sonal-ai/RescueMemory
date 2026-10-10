@@ -12,8 +12,9 @@ from pydantic import BaseModel, Field
 
 from .cloud import check_cloud_connection, mirror_to_qdrant_server, read_cloud_records
 from .config import Settings
+from .gemini import grounded_answer
 from .discovery import PeerDiscovery
-from .schemas import (AssessRequest, ChatRequest, CreateGroupRequest, DeviceLocationUpdate,
+from .schemas import (AssessRequest, ChatRequest, FormatChatRequest, CreateGroupRequest, DeviceLocationUpdate,
                       DiscoverySyncRequest, GuidePublishRequest, JoinGroupRequest,
                       NearbyRequest, PeerSyncRequest, RecommendAlternativeRequest, ReportRequest,
                       SurvivalRadarRequest)
@@ -125,6 +126,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/api/assess")
     def assess_casualty(request: AssessRequest, s: RescueService = Depends(service)):
         return s.assess(request)
+
+    @app.post("/api/chat/format")
+    def format_chat(request: FormatChatRequest):
+        if not settings.gemini_api_key:
+            return {"ai_answer": None, "ai_status": "not_configured"}
+        if not request.cards and not request.reports:
+            return {"ai_answer": None, "ai_status": "no_evidence"}
+        # Client observations are never promoted to command-verified evidence.
+        answer = grounded_answer(request.text, [c.model_dump() for c in request.cards],
+                                 [r.model_dump() for r in request.reports],
+                                 settings.gemini_api_key, settings.gemini_model)
+        return {"ai_answer": answer, "ai_status": "answered" if answer else "unavailable"}
 
 
     @app.post("/api/reports")

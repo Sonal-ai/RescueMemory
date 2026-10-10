@@ -64,6 +64,9 @@ const TABS = [
 ];
 
 const QUICK_PROMPTS = [
+  { label: "I'm lost · directions", text: "I am lost. How can I find directions safely?", icon: Navigation, urgent: false, category: 'directions' },
+  { label: "Nearby water supply", text: "Where is the nearest reported drinking water supply?", icon: Droplets, urgent: false, category: 'water_supply' },
+  { label: "Nearby food supply", text: "Where is the nearest reported food supply?", icon: Navigation, urgent: false, category: 'food_supply' },
   { label: "Nearest survivor & needs", text: "nearest survivor and their needs", icon: Navigation, urgent: true, category: 'nearest' },
   { label: "I can't walk & need help", text: "I can't walk and need help", icon: AlertOctagon, urgent: true, category: 'mobility' },
   { label: "Severe bleeding first aid", text: "How do I stop severe bleeding from a deep wound?", icon: HeartPulse, urgent: true, category: 'hemorrhage' },

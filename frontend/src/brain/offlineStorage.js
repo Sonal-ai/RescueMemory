@@ -98,8 +98,12 @@ export async function saveImportedReports(reports, { markForRelay = false } = {}
       const getReq = store.get(rep.id);
       getReq.onsuccess = () => {
         const existing = getReq.result;
+        const incomingTime = Date.parse(rep.observed_at || rep.created_at || '');
+        const existingTime = Date.parse(existing?.observed_at || existing?.created_at || '');
+        if (Number.isFinite(incomingTime) && Number.isFinite(existingTime) && incomingTime < existingTime) return;
         // Don't overwrite unsynced local changes with older remote copy
-        if (!existing || (!markForRelay && existing.synced)) {
+        if ((!existing || (!markForRelay && existing.synced)) &&
+            (!existing || canonical(wireReport(existing)) !== canonical(wireReport(rep)))) {
           store.put({
             ...rep,
             synced: !markForRelay,

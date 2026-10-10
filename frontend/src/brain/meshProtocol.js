@@ -70,7 +70,7 @@ export function reportBatches(reports) {
 export function mergePeers(groups, selfId, now = Date.now()) {
   const result = new Map();
   for (const peers of groups) for (const p of peers || []) {
-    if (!p.node_id || p.node_id === selfId) continue;
+    if (!p?.node_id || p.node_id === selfId) continue;
     const old = result.get(p.node_id);
     const isBle = p.source === 'native_ble';
     const transports = [...new Set([...(old?.transports || []), ...(p.transports || [p.source])])];
@@ -81,5 +81,17 @@ export function mergePeers(groups, selfId, now = Date.now()) {
       ? !!seen && now - seen < 60000 : false;
     result.set(p.node_id, merged);
   }
-  return [...result.values()];
+  const identifiedAddresses = new Set([...result.values()].filter(p => p.source === 'native_ble' && !p.node_id.startsWith('unresolved_')).map(p => p.address).filter(Boolean));
+  return [...result.values()].filter(p => !p.node_id.startsWith('unresolved_') || !identifiedAddresses.has(p.address));
+}
+
+// A scan advertisement has no battery reading. Preserve the last actual
+// measurement until a newer measured value arrives (including a real 0%).
+export function mergePeerTelemetry(previous = {}, incoming = {}) {
+  const merged = { ...previous, ...incoming };
+  if (!Number.isFinite(incoming.battery) || incoming.battery < 0 || incoming.battery > 100 ||
+      (previous.battery_measured_at && incoming.battery_measured_at < previous.battery_measured_at)) {
+    for (const key of ['battery', 'charging', 'battery_measured_at']) merged[key] = previous[key];
+  }
+  return merged;
 }

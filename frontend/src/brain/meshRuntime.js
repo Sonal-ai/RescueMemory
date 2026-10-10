@@ -16,7 +16,7 @@ async function cycle() {
     const forceReports = reportsChanged; reportsChanged = false;
     for (const peer of getActiveBlePeers()) {
       if (!running || document.hidden || hasIncomingBleSession()) break;
-      if (!peer.available || (!peer.sync_ready && !peer.node_id.startsWith('unresolved_'))) continue;
+      if (!peer?.node_id || !peer.available || (!peer.sync_ready && !peer.node_id.startsWith('unresolved_'))) continue;
       if ((retries.get(peer.address)?.next || 0) > Date.now()) continue;
       observations.delete(peer.address);
       if (!forceReports && peer.last_sync?.status === 'complete' && Date.now() - Date.parse(peer.last_sync.started_at) < 15000) continue;
@@ -27,7 +27,10 @@ async function cycle() {
         const delay = Math.min(30000, 2000 * 2 ** (failures - 1));
         retries.set(peer.address, { failures, next: Date.now() + delay });
         meshTrace('auto.retry', 'SCHEDULED', error.message, { address: peer.address, retry_in_ms: delay });
-        window.dispatchEvent(new CustomEvent('rescue:mesh-error', { detail: { error: error.message, peer: peer.node_id } }));
+        // An idle refresh failure does not undo a completed exchange. Retain
+        // its exact diagnostics; alert only when sharing is still outstanding.
+        if (forceReports || peer.last_sync?.status !== 'complete')
+          window.dispatchEvent(new CustomEvent('rescue:mesh-error', { detail: { error: error.message, peer: peer.node_id } }));
         setTimeout(wake, delay);
       }
     }

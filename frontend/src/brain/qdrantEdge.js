@@ -49,7 +49,7 @@ export function createEdgeClient(plugin, android = isAndroidEdge) {
     if (!Array.isArray(response.cards)) throw new Error('Native Qdrant Edge returned malformed search results.');
     const seen = new Set();
     const cards = response.cards.filter(card => {
-      if (!card?.id || !card.title || !Number.isFinite(card.score) || card.score <= 0 || seen.has(card.id)) return false;
+      if (!card?.id || !card.title || card.kind === 'checkpoint' || !Number.isFinite(card.score) || card.score <= 0 || seen.has(card.id)) return false;
       seen.add(card.id); return true;
     }).slice(0, limit);
     return { ...response, cards, mode: 'native_qdrant_edge' };

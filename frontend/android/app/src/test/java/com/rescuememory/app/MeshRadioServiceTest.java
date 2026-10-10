@@ -170,6 +170,45 @@ public class MeshRadioServiceTest {
         callback.getValue().onConnectionStateChange(gatt, 133, BluetoothProfile.STATE_DISCONNECTED); idle();
         assertTrue(answer.error.contains("ANDROID_GATT_133")); verify(gatt).close();
     }
+    @Test public void minimumMtuConnectExchangesFramedIdentityAndBatteryInsteadOfParsing22Bytes() throws Exception {
+        BluetoothDevice device = mock(BluetoothDevice.class); BluetoothGatt gatt = mock(BluetoothGatt.class);
+        when(device.getAddress()).thenReturn("12:34:56:78:90:AB"); when(gatt.getDevice()).thenReturn(device);
+        when(adapter.getRemoteDevice(device.getAddress())).thenReturn(device);
+        when(device.connectGatt(any(Context.class), eq(false), any(BluetoothGattCallback.class), eq(BluetoothDevice.TRANSPORT_LE))).thenReturn(gatt);
+        java.util.UUID serviceId = java.util.UUID.fromString("0000fe50-0000-1000-8000-00805f9b34fb");
+        BluetoothGattService service = new BluetoothGattService(serviceId, BluetoothGattService.SERVICE_TYPE_PRIMARY);
+        BluetoothGattCharacteristic rx = new BluetoothGattCharacteristic(java.util.UUID.fromString("0000fe52-0000-1000-8000-00805f9b34fb"), 8, 16);
+        BluetoothGattCharacteristic tx = new BluetoothGattCharacteristic(java.util.UUID.fromString("0000fe53-0000-1000-8000-00805f9b34fb"), 2, 1);
+        service.addCharacteristic(rx); service.addCharacteristic(tx); when(gatt.getService(serviceId)).thenReturn(service);
+        final BluetoothGattCallback[] callback = new BluetoothGattCallback[1];
+        final MeshFrames.Decoder decoder = new MeshFrames.Decoder();
+        final java.util.ArrayDeque<byte[]> replies = new java.util.ArrayDeque<>();
+        final List<String> requests = new ArrayList<>();
+        String remote = "{\"v\":2,\"type\":\"presence\",\"node_id\":\"remote-phone\",\"name\":\"फोन 🆘\",\"battery\":97,\"charging\":true,\"battery_measured_at\":123456789}";
+        when(gatt.writeCharacteristic(eq(rx), any(byte[].class), eq(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT))).thenAnswer(invocation -> {
+            byte[] frame = invocation.getArgument(1); assertTrue(frame.length <= 20);
+            byte[] complete = decoder.accept(frame);
+            if (complete != null) {
+                requests.add(new String(complete, java.nio.charset.StandardCharsets.UTF_8));
+                Collections.addAll(replies, MeshFrames.encode(remote.getBytes(java.nio.charset.StandardCharsets.UTF_8), MeshFrames.id(frame), 21));
+            }
+            callback[0].onCharacteristicWrite(gatt, rx, BluetoothGatt.GATT_SUCCESS);
+            return BluetoothStatusCodes.SUCCESS;
+        });
+        when(gatt.readCharacteristic(eq(tx))).thenAnswer(invocation -> {
+            callback[0].onCharacteristicRead(gatt, tx, replies.removeFirst(), BluetoothGatt.GATT_SUCCESS); return true;
+        });
+        Answer answer = new Answer(); radio.connect(answer.call(new JSObject().put("address", device.getAddress()))); idle();
+        ArgumentCaptor<BluetoothGattCallback> capture = ArgumentCaptor.forClass(BluetoothGattCallback.class);
+        verify(device).connectGatt(any(Context.class), eq(false), capture.capture(), eq(BluetoothDevice.TRANSPORT_LE)); callback[0] = capture.getValue();
+        callback[0].onServicesDiscovered(gatt, BluetoothGatt.GATT_SUCCESS); idle();
+        assertTrue(answer.completed); assertNull(answer.error);
+        assertEquals(97, answer.value.optInt("battery")); assertTrue(answer.value.optBoolean("charging"));
+        assertEquals("फोन 🆘", answer.value.optString("name")); assertEquals("remote-phone", answer.value.optString("node_id"));
+        assertEquals(1, requests.size()); assertEquals("presence", new JSObject(requests.get(0)).optString("type"));
+        verify(gatt, atLeastOnce()).readCharacteristic(tx);
+        assertEquals("remote-phone", state().optJSONArray("peers").getJSONObject(0).optString("node_id"));
+    }
     @Test public void foregroundCompatibilityScanStillCountsOnlyAppAdvertisements() {
         Answer first = new Answer(); scan(first); shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(8));
         clearInvocations(scanner);

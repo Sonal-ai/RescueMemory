@@ -5,6 +5,19 @@ import static org.junit.Assert.*;
 import java.nio.charset.StandardCharsets;
 
 public class MeshFramesTest {
+    @Test public void identityAndBatteryPresenceSurviveMinimumMtuWithoutPartialJson() {
+        String json = "{\"battery\":97,\"charging\":true,\"battery_measured_at\":123456789,\"v\":2,\"type\":\"presence\",\"node_id\":\"phone-real-key\",\"name\":\"फोन 🆘\",\"location\":{\"lat\":0,\"lon\":0}}";
+        byte[] data = json.getBytes(StandardCharsets.UTF_8);
+        for (int limit : new int[]{20, 21, 244, 512}) {
+            MeshFrames.Decoder decoder = new MeshFrames.Decoder();
+            byte[][] frames = MeshFrames.encode(data, 42, limit);
+            for (int i = 0; i < frames.length; i++) {
+                byte[] complete = decoder.accept(frames[i]);
+                if (i < frames.length - 1) assertNull(complete);
+                else assertEquals(json, new String(complete, StandardCharsets.UTF_8));
+            }
+        }
+    }
     @Test public void longUnicodePayloadAtDefaultAndNegotiatedMtu() {
         byte[] data = ("SOS सुरक्षित 🆘 ".repeat(1500)).getBytes(StandardCharsets.UTF_8);
         for (int limit : new int[]{20, 244, 514}) {

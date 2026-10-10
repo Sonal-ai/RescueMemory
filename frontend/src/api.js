@@ -1,4 +1,6 @@
 import { reportRadar } from './brain/reportRadar.js';
+import { localReportAnswer } from './brain/localReportChat.js';
+import { formatOnlineAnswer } from './brain/onlineAnswer.js';
 import { gpsPosition, hardwareLocationWatch } from './brain/locationTracking.js';
 import { coordinates, requiresAuthorityServer, storedEntityTimeline, localMemoryPage } from './brain/adminData.js';
 import {
@@ -199,7 +201,7 @@ export async function probeCandidateBackends() {
   return null;
 }
 
-export function getBackendBaseUrl() {
+export function getBackendBaseUrl({ probe = true } = {}) {
   const custom = setting('backendUrl');
   if (custom) return custom.replace(/\/$/, '');
   if (resolvedBackendUrl) return resolvedBackendUrl;
@@ -207,7 +209,7 @@ export function getBackendBaseUrl() {
   if (envUrl) return envUrl.replace(/\/$/, '');
   const cached = typeof sessionStorage !== 'undefined' && sessionStorage.getItem('rescue.resolvedBackendUrl');
   if (cached) return cached;
-  probeCandidateBackends().catch(() => {});
+  if (probe) probeCandidateBackends().catch(() => {});
 
   if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
     return 'http://localhost:8000';
@@ -215,9 +217,9 @@ export function getBackendBaseUrl() {
   return 'https://rescuememory.onrender.com';
 }
 
-export function buildBackendUrl(path) {
+export function buildBackendUrl(path, options) {
   if (!path || path.startsWith('http://') || path.startsWith('https://')) return path;
-  const base = getBackendBaseUrl();
+  const base = getBackendBaseUrl(options);
   if (!base) return path;
   return `${base}${path.startsWith('/') ? path : `/${path}`}`;
 }
@@ -251,7 +253,10 @@ export async function api(path, options = {}) {
   // Native failure propagates instead of relabeling a fallback as successful Edge.
   if (preferNativeRetrieval(path)) {
     setStandaloneMode(true);
-    return handleOfflineFallback(path, method, body);
+    const local = await handleOfflineFallback(path, method, body);
+    if (path === '/api/chat' && body?.use_ai && isOnlineMode() && navigator.onLine !== false)
+      return formatOnlineAnswer(local, body.text, { url: buildBackendUrl('/api/chat/format', { probe: false }), online: () => isOnlineMode() && navigator.onLine !== false });
+    return local;
   }
   const liveCloud = isCloudApi(path);
   const authorityWrite = requiresAuthorityServer(path, method, body);
@@ -407,198 +412,8 @@ async function handleOfflineFallback(path, method, body) {
   if (path === '/api/chat' || path.startsWith('/api/chat')) {
     const query = body?.text || body?.message || body?.query || '';
     const qLower = query.toLowerCase();
-    const nearestPatterns = [
-      'nearest survivor', 'nearest surviver', 'nearest casualty', 'survivor needs', 'surviver needs',
-      'who needs help', 'who is the nearest', 'anyone injured', 'casualty status',
-      'nearest injured', 'nearest sos', 'active casualties', 'nearby casualties',
-      'nearby survivor', 'nearby surviver', 'nearest victim', 'who is injured',
-      'find casualty', 'find survivor', 'find surviver', 'sos near me', 'nearby sos',
-      'active sos', 'any sos', 'who called sos', 'sos signals'
-    ];
-    const isNearestQuery = nearestPatterns.some((p) => qLower.includes(p)) ||
-      ((qLower.includes('nearest') || qLower.includes('nearby') || qLower.includes('active') || qLower.includes('find')) &&
-       (qLower.includes('survivor') || qLower.includes('surviver') || qLower.includes('casualty') || qLower.includes('injured') || qLower.includes('victim') || qLower.includes('sos') || qLower.includes('needs')));
-
-    const shelterPatterns = [
-      'safe shelter', 'nearest shelter', 'shelter near me', 'where is shelter',
-      'find shelter', 'evacuation checkpoint', 'safe place', 'safe zone', 'refuge',
-      'camp alpha', 'evacuate', 'nearest safe shelter', 'closest shelter', 'where to go',
-      'where can i shelter', 'shelter guidance', 'where is the nearest safe shelter'
-    ];
-    const isShelterQuery = shelterPatterns.some((p) => qLower.includes(p)) ||
-      ((qLower.includes('shelter') || qLower.includes('evacuation') || qLower.includes('refuge')) &&
-       (qLower.includes('near') || qLower.includes('where') || qLower.includes('safe') || qLower.includes('closest') || qLower.includes('find') || qLower.includes('checkpoint')));
-
-    const waterPatterns = [
-      'safe drinking water', 'clean water', 'drinking water', 'water near me',
-      'purify water', 'safe water', 'purify and make safe drinking water',
-      'how do i purify water', 'potable water', 'water point', 'water tanker',
-      'water purification', 'make water safe', 'clean drinking water'
-    ];
-    const isWaterQuery = waterPatterns.some((p) => qLower.includes(p)) ||
-      ((qLower.includes('water') || qLower.includes('drink')) &&
-       (qLower.includes('safe') || qLower.includes('purify') || qLower.includes('clean') || qLower.includes('near') || qLower.includes('where') || qLower.includes('potable') || qLower.includes('boil') || qLower.includes('tanker')));
-
-    // 1A. Nearest Survivor / Emergency SOS Handler
-    if (isNearestQuery) {
-      const localReports = await getAllLocalReports();
-      const casualties = localReports.filter((r) =>
-        r.kind === 'incident' || r.kind === 'sos' ||
-        ['cannot walk', 'cant walk', 'bleeding', 'trapped', 'broken', 'injured'].some((w) => (r.text || '').toLowerCase().includes(w))
-      );
-
-      const uLat = body?.location?.lat ?? 28.7041;
-      const uLon = body?.location?.lon ?? 77.1025;
-
-      const scoredCasualties = casualties.map((c) => {
-        const cLat = c.location?.lat ?? (uLat + 0.002);
-        const cLon = c.location?.lon ?? (uLon + 0.003);
-        const d = distM(uLat, uLon, cLat, cLon);
-        const b = bearingDeg(uLat, uLon, cLat, cLon);
-        return {
-          ...c,
-          distance_m: Math.round(d),
-          bearing_deg: b,
-          cardinal: cardinalDirection(b),
-          walk_time_min: Math.max(1, Math.round(d / 75)),
-        };
-      }).sort((a, b) => a.distance_m - b.distance_m);
-
-      if (scoredCasualties.length > 0) {
-        const topCas = scoredCasualties[0];
-        const casText = topCas.text || 'Casualty requires emergency assistance';
-        const cid = (topCas.entity_id || topCas.id || 'casualty').slice(0, 10);
-        const ans = `### 🚨 Nearest Survivor Emergency SOS\n\n📍 **Location:** ${topCas.distance_m}m ${topCas.cardinal} (Bearing ${String(topCas.bearing_deg).padStart(3, '0')}°, ~${topCas.walk_time_min} min walk)\n🚨 **Triage Priority:** IMMEDIATE (Red Triage)\n👤 **Casualty Ref:** #${cid}\n\n**Critical Condition & Needs:**\n• **Reported Condition:** ${casText}\n• **Required Needs:** Rigid splint, Sterile pressure dressing, Clean drinking water\n\n**Recommended Immediate Actions:**\n• Apply firm continuous pressure to halt bleeding.\n• Immobilize limb in position found; do not bear weight.\n• Assess structural scene safety before approaching.\n\n---\n**📊 Area Status Summary:**\n• 🔴 **Casualties:** ${casualties.length} active casualty in local memory\n• ⚠️ **Hazards:** 1 active hazard logged\n• 🟢 **Safe Shelters:** 3 operational (Nearest: Shelter Alpha)`;
-        return {
-          query,
-          answer_type: 'nearest_survivor_sos',
-          cards: [],
-          local_answer: ans,
-          text: ans,
-          suggested_action: {
-            kind: 'map',
-            label: `Navigate to Survivor (${topCas.distance_m}m ${topCas.cardinal})`,
-            button_text: `Navigate to Survivor on Radar (${topCas.distance_m}m)`,
-            target_tab: 'map',
-            nav_target: topCas,
-          },
-          warnings: [],
-          local_fallback: true,
-          mode: 'standalone_mobile_brain',
-        };
-      } else {
-        const ans = `### 🛡️ Nearest Survivor Status\n\n• **Casualties:** No active survivor SOS signals detected in on-device memory.\n\n**📊 Area Status Summary:**\n• 🟢 **Safe Shelters:** 3 operational (Nearest: Shelter Alpha ~350m)\n• ⚠️ **Hazards:** 1 active hazard logged (Checkpoint CP-17: Flooded entrance live wires)\n• 📶 **Active Mesh Peers:** Local Wi-Fi mesh scanning active\n\n**Need Emergency Assistance?** If you are injured, trapped, or immobilized, tap below to broadcast an Emergency SOS to all nearby responders immediately.`;
-        return {
-          query,
-          answer_type: 'nearest_survivor_sos',
-          cards: [],
-          local_answer: ans,
-          text: ans,
-          suggested_action: {
-            kind: 'sos',
-            label: 'Broadcast Emergency SOS',
-            button_text: '1-Tap Broadcast Emergency SOS',
-            target_tab: 'report',
-            urgency: 'critical',
-            auto_report: {
-              kind: 'sos',
-              severity: 'red',
-              visibility: 'public',
-              status: 'needs_help',
-              text: 'Urgent Emergency SOS: Survivor in need of emergency assistance.'
-            }
-          },
-          warnings: [],
-          local_fallback: true,
-          mode: 'standalone_mobile_brain',
-        };
-      }
-    }
-
-    // 1B. Safe Shelter & Evacuation Finder Handler
-    if (isShelterQuery && !isAndroidEdge()) {
-      const uLat = body?.location?.lat ?? 28.7041;
-      const uLon = body?.location?.lon ?? 77.1025;
-      const sLat = uLat + 0.0072;
-      const sLon = uLon - 0.0041;
-      const d = Math.round(distM(uLat, uLon, sLat, sLon));
-      const b = bearingDeg(uLat, uLon, sLat, sLon);
-      const card = cardinalDirection(b);
-      const walkMin = Math.max(1, Math.round(d / 75));
-      const shelterTarget = {
-        id: 'shelter_alpha',
-        name: 'Shelter Alpha (Central Evacuation Safe Haven)',
-        category: 'shelter',
-        distance_m: d,
-        cardinal: card,
-        bearing_deg: b,
-        walk_time_min: walkMin,
-        status: 'operational',
-        location: { lat: sLat, lon: sLon },
-        facilities: ['Emergency Shelter', 'Medical Triage', 'Clean Water', 'Backup Power']
-      };
-      const ans = `### 🏥 Nearest Verified Safe Shelter\n\n📍 **Location:** ${shelterTarget.name} (${d}m ${card}, ~${walkMin} min walk)\n🛡️ **Operational Status:** Active High-Ground Safe Haven (Operational)\n🏥 **Available Facilities:** Emergency Shelter, Medical Triage, Clean Water, Power\n\n**🧭 Safe Evacuation Guidance:**\n• Proceed via elevated eastern high-ground route.\n• ⚠️ **Hazard Notice:** Checkpoint CP-17 is compromised (flooded road & live fallen wires) — follow alternate high-ground detour.\n• Follow marked evacuation corridors toward ${shelterTarget.name}.`;
-      return {
-        query,
-        answer_type: 'shelter_guidance',
-        cards: [],
-        local_answer: ans,
-        text: ans,
-        suggested_action: {
-          kind: 'map',
-          label: `Navigate to ${shelterTarget.name}`,
-          button_text: `Navigate to Shelter on Radar (${d}m ${card})`,
-          target_tab: 'map',
-          nav_target: shelterTarget,
-        },
-        warnings: ['Avoid flooded roads near CP-17'],
-        local_fallback: true,
-        mode: 'standalone_mobile_brain',
-      };
-    }
-
-    // 1C. Safe Drinking Water & Emergency Purification Handler
-    if (isWaterQuery && !isAndroidEdge()) {
-      const uLat = body?.location?.lat ?? 28.7041;
-      const uLon = body?.location?.lon ?? 77.1025;
-      const wLat = uLat + 0.0021;
-      const wLon = uLon + 0.0052;
-      const d = Math.round(distM(uLat, uLon, wLat, wLon));
-      const b = bearingDeg(uLat, uLon, wLat, wLon);
-      const card = cardinalDirection(b);
-      const walkMin = Math.max(1, Math.round(d / 75));
-      const waterTarget = {
-        id: 'water_tanker_4',
-        name: 'Water Tanker 4 (Potable Water Point)',
-        category: 'resource',
-        distance_m: d,
-        cardinal: card,
-        bearing_deg: b,
-        walk_time_min: walkMin,
-        status: 'operational',
-        location: { lat: wLat, lon: wLon },
-        facilities: ['Clean Water', 'Purification Tablets']
-      };
-      const ans = `### 💧 Safe Drinking Water & Emergency Purification\n\n📍 **Nearest Water Distribution:** ${waterTarget.name} (${d}m ${card}, ~${walkMin} min walk)\n💧 **Operational Status:** Active Potable Water Point\n\n**Critical Emergency Purification Protocols:**\n\n1. **🔥 Boiling (Most Reliable):**\n   • Bring water to a vigorous rolling boil for **1 full minute** (3 minutes if altitude > 2,000m).\n   • Eliminates 99.9% of bacteria, viruses, and parasites (Giardia, Cryptosporidium).\n   • Cool in a covered, clean container.\n\n2. **🧪 Household Bleach Disinfection:**\n   • Use regular unscented liquid household bleach (5%–8% sodium hypochlorite).\n   • Add **2 drops per liter** of clear water (or 4 drops if murky).\n   • Stir and wait **30 minutes**. Water should have a slight chlorine scent.\n\n3. **☀️ Solar Disinfection (SODIS):**\n   • Pour clear water into clean, transparent PET plastic bottles.\n   • Expose horizontally to direct full sunlight for **6 continuous hours**.\n\n4. **☕ Pre-Filtration:**\n   • Pre-filter turbid water through clean folded cloth or bandana before chlorinating/boiling.\n\n⚠️ **Safety Warning:** Boiling and bleach do **NOT** remove chemical toxins, fuels, or heavy metals. Never collect water from industrial runoff or flooded streets.`;
-      const answer = await searchKnowledgeLocal('water purification disinfection');
-      return {
-        query,
-        answer_type: 'water_safety',
-        cards: answer.source_cards?.slice(0, 1) || [],
-        local_answer: ans,
-        text: ans,
-        suggested_action: {
-          kind: 'map',
-          label: 'Locate Water Station on Radar',
-          button_text: `Navigate to Water Station (${d}m ${card})`,
-          target_tab: 'map',
-          nav_target: waterTarget,
-        },
-        warnings: ['Boiling does not neutralize chemical toxins'],
-        local_fallback: true,
-        mode: 'standalone_mobile_brain',
-      };
-    }
+    const reportAnswer = localReportAnswer(query, await getAllLocalReports(), body?.location);
+    if (reportAnswer) return reportAnswer;
 
     const answer = await searchKnowledgeLocal(query);
     const topCard = answer.source_cards?.[0];
