@@ -84,7 +84,6 @@ export default function UnifiedRadarMap({
   const isLiveWalking = gpsLive;
   const [totalMetersWalked, setTotalMetersWalked] = useState(0);
   const previousFix = useRef(null);
-  const baselineAnchorRef = useRef(userLocation);
   useEffect(() => {
     if (!gpsLive || !userLocation) return;
     const previous = previousFix.current;
@@ -93,7 +92,6 @@ export default function UnifiedRadarMap({
       if (step >= 0.4) setTotalMetersWalked(walked => Math.round(walked + step));
     }
     previousFix.current = userLocation;
-    if (!baselineAnchorRef.current) baselineAnchorRef.current = userLocation;
   }, [userLocation, gpsLive]);
   // Audio Context Ref for offline synthetic radar/compass ping
   const audioCtxRef = useRef(null);
@@ -250,9 +248,6 @@ export default function UnifiedRadarMap({
     if (onRefreshGps) {
       await onRefreshGps();
     }
-    if (Number.isFinite(liveCoords?.lat) && Number.isFinite(liveCoords?.lon)) {
-      baselineAnchorRef.current = { lat: liveCoords.lat, lon: liveCoords.lon };
-    }
     fetchRadar();
   }, [onRefreshGps, liveCoords, fetchRadar]);
 
@@ -277,24 +272,20 @@ export default function UnifiedRadarMap({
   // Build unified destinations list with live relative geodesics
   const destinationOptions = useMemo(() => {
     const list = [...radarItems];
-    const uLat = liveCoords?.lat ?? userLocation?.lat ?? 28.7041;
-    const uLon = liveCoords?.lon ?? userLocation?.lon ?? 77.1025;
-
-    // Use initial physical anchor for synthetic/baseline facilities so they remain FIXED on the ground
-    const aLat = baselineAnchorRef.current?.lat ?? uLat;
-    const aLon = baselineAnchorRef.current?.lon ?? uLon;
+    const uLat = liveCoords?.lat ?? userLocation?.lat;
+    const uLon = liveCoords?.lon ?? userLocation?.lon;
 
     // If external target passed (e.g. from SafePlace reroute or casualty), inject it at the top
-    if (selectedTarget) {
+    if (selectedTarget && Number.isFinite(uLat) && Number.isFinite(uLon)) {
       const targetId = selectedTarget.id || selectedTarget.entity_id || 'selected_target';
-      if (!list.some((item) => item.id === targetId)) {
-        const tLoc = selectedTarget.location || (selectedTarget.lat != null && selectedTarget.lon != null ? { lat: selectedTarget.lat, lon: selectedTarget.lon } : null) || { lat: aLat + 0.0015, lon: aLon - 0.0012 };
+      const tLoc = selectedTarget.location || (selectedTarget.lat != null && selectedTarget.lon != null ? { lat: selectedTarget.lat, lon: selectedTarget.lon } : null);
+      if (tLoc && Number.isFinite(tLoc.lat) && Number.isFinite(tLoc.lon) && !list.some((item) => item.id === targetId)) {
         const d = Math.round(distM(uLat, uLon, tLoc.lat, tLoc.lon));
         const b = bearingDeg(uLat, uLon, tLoc.lat, tLoc.lon);
         list.unshift({
           id: targetId,
           name: selectedTarget.name || selectedTarget.title || 'Selected Facility',
-          category: selectedTarget.category || (selectedTarget.kind === 'incident' ? 'casualty' : selectedTarget.kind === 'hazard' ? 'hazard' : 'shelter'),
+          category: selectedTarget.category || (['incident', 'sos'].includes(selectedTarget.kind) ? 'casualty' : selectedTarget.kind === 'hazard' ? 'hazard' : 'shelter'),
           distance_m: d,
           bearing_deg: b,
           cardinal: cardinalDirection(b),
@@ -305,58 +296,6 @@ export default function UnifiedRadarMap({
         });
       }
     }
-
-    // Baseline facilities: realistically anchored at fixed physical world coordinates in 4 distinct quadrants around the user
-    const baseline = [
-      {
-        id: 'priority_casualty',
-        name: 'Urgent Casualty (Fracture & Trauma SOS)',
-        category: 'casualty',
-        location: { lat: aLat + 0.0022, lon: aLon - 0.0018 },
-        triage_level: 'immediate_red',
-        text: 'Survivor unable to walk unassisted, severe fracture requiring splinting & rapid evacuation.'
-      },
-      {
-        id: 'water_point_4',
-        name: 'Clean Water Depot (North Gate Tanker 4)',
-        category: 'resource',
-        location: { lat: aLat + 0.0018, lon: aLon + 0.0025 },
-        triage_level: 'safe_green',
-        text: 'Drinkable water distribution depot with verified emergency purification supply guarded by relief corps.'
-      },
-      {
-        id: 'shelter_alpha',
-        name: 'Shelter Alpha (Central High - Safe Haven)',
-        category: 'shelter',
-        location: { lat: aLat - 0.0030, lon: aLon + 0.0022 },
-        triage_level: 'safe_green',
-        text: 'Verified safe high-ground shelter with food, emergency surgery & power generator.'
-      },
-      {
-        id: 'cp_17',
-        name: 'Checkpoint CP-17 (North Bridge)',
-        category: 'hazard',
-        location: { lat: aLat - 0.0016, lon: aLon - 0.0018 },
-        triage_level: 'hazard_warning',
-        text: 'Caution: Submerged entrance & downed live wires. Exercise caution and follow northern detour.'
-      }
-    ].map((item) => {
-      const d = Math.round(distM(uLat, uLon, item.location.lat, item.location.lon));
-      const b = bearingDeg(uLat, uLon, item.location.lat, item.location.lon);
-      return {
-        ...item,
-        distance_m: d,
-        bearing_deg: b,
-        cardinal: cardinalDirection(b),
-        walk_time_min: Math.max(1, Math.round(d / 75))
-      };
-    });
-
-    baseline.forEach((b) => {
-      if (!list.some((item) => item.id === b.id)) {
-        list.push(b);
-      }
-    });
 
     return list;
   }, [radarItems, selectedTarget, liveCoords, userLocation]);
@@ -430,11 +369,11 @@ export default function UnifiedRadarMap({
       (Array.isArray(activeTarget.facilities) && activeTarget.facilities.length > 0
         ? `Available emergency facilities: ${activeTarget.facilities.join(', ')}`
         : activeTarget.category === 'resource'
-        ? 'Drinkable fresh water depot with emergency distribution and water purification relief.'
+        ? 'Reported resource. Description unavailable.'
         : activeTarget.category === 'casualty'
-        ? 'Urgent casualty SOS requiring immediate clinical assistance and stretcher extraction.'
+        ? 'Reported SOS. Description unavailable.'
         : activeTarget.category === 'shelter'
-        ? 'Verified emergency evacuation safe haven with emergency shelter and medical facilities.'
+        ? 'Reported shelter. Description unavailable.'
         : 'Emergency tactical location.')
     );
   }, [activeTarget]);
@@ -589,6 +528,7 @@ export default function UnifiedRadarMap({
             onChange={(e) => handleSelectDestination(e.target.value)}
             className="w-full appearance-none py-2 pl-8 pr-8 rounded-xl border border-[#cbd5e1] dark:border-slate-700 bg-white dark:bg-[#07111e] text-slate-900 dark:text-slate-100 text-[13px] sm:text-sm font-bold focus:outline-none focus:ring-1 focus:ring-cyan-500 cursor-pointer shadow-xs"
           >
+            {!destinationOptions.length && <option value="">No reported destinations</option>}
             {destinationOptions.map((dest) => {
               const isCas = dest.category === 'casualty';
               const isResource = dest.category === 'resource';
@@ -596,7 +536,7 @@ export default function UnifiedRadarMap({
               const icon = isCas ? '🆘' : isResource ? '💧' : isShelter ? '🏥' : '📍';
               return (
                 <option key={dest.id} value={dest.id}>
-                  {icon} {dest.name} — {dest.distance_m}m {dest.cardinal} ({dest.bearing_deg}°) {isCas ? '· IMMEDIATE HELP' : isResource ? '· FRESH WATER' : ''}
+                  {icon} {dest.name} — {dest.distance_m}m {dest.cardinal} ({dest.bearing_deg}°) {isCas ? '· IMMEDIATE HELP' : isResource ? '· REPORTED RESOURCE' : ''}
                 </option>
               );
             })}
