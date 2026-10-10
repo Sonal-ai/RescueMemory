@@ -1,4 +1,5 @@
 import { reportRadar } from './brain/reportRadar.js';
+import { mergeSurvivalRadar } from './brain/survivorReports.js';
 import { localReportAnswer } from './brain/localReportChat.js';
 import { formatOnlineAnswer } from './brain/onlineAnswer.js';
 import { prototypeAccess, prototypeReport, prototypeGuide } from './brain/prototypeAccess.js';
@@ -820,14 +821,15 @@ export async function syncDiscoveredPeer(syncData = {}) {
 
 export async function getSurvivalRadar(params = {}) {
   const {
-    lat = 28.7041,
-    lon = 77.1025,
+    lat,
+    lon,
     radius_m = 3500,
     filter_category = 'all',
     include_responders = true,
     group_id = null,
   } = params;
-  return api('/api/survival-finder/radar', {
+  if (!coordinates({ lat, lon })) throw new Error('Radar needs a confirmed GPS location.');
+  const remote = await api('/api/survival-finder/radar', {
     method: 'POST',
     body: {
       lat,
@@ -840,6 +842,8 @@ export async function getSurvivalRadar(params = {}) {
     responder: Boolean(setting('responderKey')),
     group: Boolean(group_id),
   });
+  const local = reportRadar(await getAllLocalReports(), { lat, lon, radius_m, filter_category, include_responders, group_id });
+  return mergeSurvivalRadar(remote, local);
 }
 
 export function formatTime(value) {

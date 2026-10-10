@@ -13,7 +13,7 @@ globalThis.localStorage = { getItem: k => values.get(k) ?? null, setItem: (k, v)
 globalThis.sessionStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
 Object.defineProperty(globalThis, 'navigator', { value: { onLine: false }, configurable: true });
 globalThis.fetch = async () => { throw new Error('Offline demo must not require a server'); };
-const { api, triggerAutoSync } = await import('../src/api.js');
+const { api, triggerAutoSync, getSurvivalRadar } = await import('../src/api.js');
 const { getAllLocalReports, getAllLocalGuides } = await import('../src/brain/offlineStorage.js');
 const { loadDashboardFeed, dashboardSummary } = await import('../src/brain/adminData.js');
 const { wireReport } = await import('../src/brain/meshProtocol.js');
@@ -73,4 +73,15 @@ test('queued protocol is cleared only by an actual signed publication response',
   assert.ok(published > 0); assert.ok(confirmed > 0);
   assert.equal((await getAllLocalGuides())[0].pending_publication, false);
   assert.equal((await getAllLocalGuides())[0].auth_tag, 'server-test-ack');
+});
+
+test('live server empty radar preserves the operator shelter stored on this phone', async () => {
+  navigator.onLine = true;
+  globalThis.fetch = async () => ({ ok: true, status: 200, headers: { get: () => 'application/json' },
+    json: async () => ({ radar_items: [], summary: { operational_shelters: 0 } }) });
+  const radar = await getSurvivalRadar({ lat: 0, lon: 0, radius_m: 5000 });
+  assert.ok(radar.radar_items.some(item => item.entity_id === shelter.entity_id));
+  assert.ok(radar.summary.operational_shelters > 0);
+  await assert.rejects(getSurvivalRadar(), /confirmed GPS/);
+  navigator.onLine = false;
 });

@@ -56,6 +56,8 @@ import MarkdownContent from '../components/MarkdownContent';
 import useLiveGps from '../hooks/useLiveGps.js';
 import { formatCoordinates } from '../brain/locationTracking.js';
 import { getAllLocalReports } from '../brain/offlineStorage.js';
+import { loadDashboardFeed } from '../brain/adminData.js';
+import { currentSurvivorReports } from '../brain/survivorReports.js';
 
 const TABS = [
   ['ask', 'Assistant', HeartPulse],
@@ -328,8 +330,15 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
   const centerLon = gps.fix?.lon;
 
   const refreshMap = useCallback(async () => {
-    if (centerLat == null || centerLon == null) return;
     try {
+      const local = await getAllLocalReports();
+      setItems(currentSurvivorReports(local));
+      if (centerLat == null || centerLon == null) {
+        const feed = await loadDashboardFeed(api, false, local);
+        setItems(currentSurvivorReports(feed.items, await getAllLocalReports()));
+        setMapUpdatedAt(new Date());
+        return;
+      }
       const groupId = setting('groupId');
       const result = await api('/api/map/nearby', {
         method: 'POST',
@@ -343,7 +352,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
         }
       });
       const raw = Array.isArray(result?.items) ? result.items : (Array.isArray(result?.events) ? result.events : []);
-      setItems(raw);
+      setItems(currentSurvivorReports(raw, await getAllLocalReports()));
       setMapUpdatedAt(new Date());
     } catch (err) {
       setError(err.message);
@@ -353,7 +362,8 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
   useEffect(() => {
     refreshMap();
     const timer = setInterval(refreshMap, 25000);
-    return () => clearInterval(timer);
+    window.addEventListener('rescue:reports-changed', refreshMap);
+    return () => { clearInterval(timer); window.removeEventListener('rescue:reports-changed', refreshMap); };
   }, [refreshMap]);
 
   // Handle observation selection with Qdrant negative-vector recommendation

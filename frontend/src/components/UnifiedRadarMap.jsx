@@ -14,6 +14,7 @@ import {
 import { getSurvivalRadar, distM, bearingDeg, cardinalDirection } from '../api';
 import MapPanel from '../MapPanel';
 import { radarDestinationLabel, radarDestinationOption } from '../brain/radarLabels.js';
+import { savedShelters } from '../brain/survivorReports.js';
 
 const COMPASS_SIZE = 220;
 const COMPASS_CENTER = COMPASS_SIZE / 2;
@@ -216,7 +217,7 @@ export default function UnifiedRadarMap({
   const locLon = liveCoords?.lon;
 
   const fetchRadar = useCallback(async () => {
-    if (!Number.isFinite(locLat) || !Number.isFinite(locLon)) return;
+    if (!Number.isFinite(locLat) || !Number.isFinite(locLon)) { setRadarData(null); return; }
     setLoading(true);
     setError('');
     try {
@@ -238,7 +239,8 @@ export default function UnifiedRadarMap({
   useEffect(() => {
     fetchRadar();
     const interval = setInterval(fetchRadar, 15000);
-    return () => clearInterval(interval);
+    window.addEventListener('rescue:reports-changed', fetchRadar);
+    return () => { clearInterval(interval); window.removeEventListener('rescue:reports-changed', fetchRadar); };
   }, [fetchRadar]);
 
   const handleManualRefreshGps = useCallback(async () => {
@@ -249,6 +251,7 @@ export default function UnifiedRadarMap({
   }, [onRefreshGps, fetchRadar]);
 
   const radarItems = useMemo(() => radarData?.radar_items || [], [radarData]);
+  const shelters = useMemo(() => savedShelters(items), [items]);
   const summary = useMemo(() => radarData?.summary || {
     urgent_casualties: 0,
     total_casualties: 0,
@@ -269,6 +272,10 @@ export default function UnifiedRadarMap({
   // Build unified destinations list with live relative geodesics
   const destinationOptions = useMemo(() => {
     const list = [...radarItems];
+    for (const shelter of shelters) {
+      if (!list.some(item => item.id === shelter.id || (shelter.entity_id && (item.entity_id === shelter.entity_id || item.name === shelter.entity_id))))
+        list.push(shelter);
+    }
     const uLat = liveCoords?.lat ?? userLocation?.lat;
     const uLon = liveCoords?.lon ?? userLocation?.lon;
 
@@ -295,7 +302,7 @@ export default function UnifiedRadarMap({
     }
 
     return list;
-  }, [radarItems, selectedTarget, liveCoords, userLocation]);
+  }, [radarItems, shelters, selectedTarget, liveCoords, userLocation]);
 
   // Compute Active Target for Compass Pointer
   const activeTarget = useMemo(() => {
@@ -539,6 +546,18 @@ export default function UnifiedRadarMap({
         </div>
 
       </div>
+
+      {shelters.length > 0 && <section className="rounded-2xl border border-emerald-200 bg-white p-3 dark:border-emerald-900 dark:bg-[#0b1626]" aria-label="Saved shelters">
+        <h3 className="text-sm font-bold text-emerald-800 dark:text-emerald-300">Saved shelters ({shelters.length})</h3>
+        <div className="mt-2 space-y-2">
+          {shelters.map(shelter => <button type="button" key={shelter.id} onClick={() => handleSelectDestination(shelter.id)} className="block w-full rounded-xl border border-slate-200 p-2 text-left dark:border-slate-700">
+            <p className="text-sm font-semibold">{shelter.name}</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">{shelter.location ? `${shelter.location.lat.toFixed(5)}, ${shelter.location.lon.toFixed(5)}` : 'Shelter coordinates unavailable'} · {shelter.prototype_confirmed ? 'Saved locally · publication pending' : shelter.imported ? 'Received report' : 'Saved report'}</p>
+            <p className="mt-1 break-words text-xs">{shelter.text}</p>
+          </button>)}
+        </div>
+        <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{userLocation ? 'Select a shelter for direction and distance. The map shows your current area.' : 'GPS unavailable · shelters remain saved. Enable location for map positions, distance and direction.'}</p>
+      </section>}
 
       {/* TACTICAL TWO-COLUMN GRID: MAP (LEFT) & COMPASS/TELEMETRY (RIGHT) */}
       <div className="grid lg:grid-cols-12 gap-3 sm:gap-4 items-stretch">
