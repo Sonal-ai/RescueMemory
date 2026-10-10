@@ -62,6 +62,7 @@ class ReportRequest(BaseModel):
     kind: Literal["incident", "hazard", "resource", "checkpoint", "sos"]
     text: str = Field(min_length=3, max_length=2000)
     reporter_id: str = Field(min_length=1, max_length=100)
+    origin_device: str | None = Field(default=None, min_length=1, max_length=100)
     location: Location | None = None
     group_id: str | None = Field(default=None, max_length=100)
     visibility: Literal["public", "group", "responders"] | None = None
@@ -144,5 +145,6 @@ class SurvivalRadarRequest(BaseModel):
     filter_category: Literal["all", "casualties", "shelters", "resources", "hazards", "peers"] = "all"
     group_id: str | None = None
     include_responders: bool = True
+    exclude_node_id: str | None = None
 
 

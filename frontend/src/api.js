@@ -1,4 +1,5 @@
 import { reportRadar } from './brain/reportRadar.js';
+import { prepareReport } from './brain/reportIdentity.js';
 import { mergeSurvivalRadar } from './brain/survivorReports.js';
 import { localReportAnswer } from './brain/localReportChat.js';
 import { formatOnlineAnswer } from './brain/onlineAnswer.js';
@@ -13,7 +14,7 @@ import {
   triggerAutoSync,
   onSyncStateChange,
 } from './brain/offlineBrain.js';
-import { getAllLocalReports, getUnsyncedReports, getAllLocalGuides, saveImportedGuides, saveOfflineReport, markReportsSynced, getMeshHistory } from './brain/offlineStorage.js';
+import { getAllLocalReports, getUnsyncedReports, getAllLocalGuides, saveImportedGuides, saveOfflineReport, getMeshHistory } from './brain/offlineStorage.js';
 import {
   distM,
   bearingDeg,
@@ -254,7 +255,9 @@ export function invalidateApiCache(prefix = '') {
 }
 
 export async function api(path, options = {}) {
-  const { method = 'GET', body, admin = false, responder = false, group = false } = options;
+  const { method = 'GET', admin = false, responder = false, group = false } = options;
+  const body = path === '/api/reports' && method === 'POST'
+    ? prepareReport(options.body || {}, getDeviceId()) : options.body;
   // Execute Android emergency retrieval before any cache/network decision.
   // Native failure propagates instead of relabeling a fallback as successful Edge.
   if (preferNativeRetrieval(path)) {
@@ -343,7 +346,8 @@ export async function api(path, options = {}) {
       // Online-created reports must also be available for later offline phone sync.
       try {
         await saveOfflineReport({ ...body, ...data.event });
-        await markReportsSynced([data.event.id]);
+        // An API acknowledgement is not yet a Qdrant Cloud acknowledgement.
+        triggerAutoSync().catch(error => console.warn('[Reports] Cloud delivery pending:', error.message));
       } catch (storageError) {
         data.local_store_failed = true;
         console.warn('[Reports] Saved remotely, but local copy failed:', storageError.message);
@@ -839,6 +843,7 @@ export async function getSurvivalRadar(params = {}) {
       filter_category,
       include_responders,
       group_id,
+      exclude_node_id: getDeviceId(),
     },
     responder: Boolean(setting('responderKey')),
     group: Boolean(group_id),

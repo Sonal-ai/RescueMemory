@@ -36,10 +36,15 @@ def test_actual_record_keeps_its_location_and_identity_without_extra_points():
 
 
 def test_reference_hazard_uses_stored_description():
-    checkpoint = {'id': 'actual-gate', 'kind': 'checkpoint', 'lat': 0, 'lon': 0.001,
+    checkpoint = {'id': 'actual-gate', 'kind': 'checkpoint', 'live_destination': True, 'lat': 0, 'lon': 0.001,
                   'status': 'danger_warning', 'hazard': 'Operator recorded closure'}
     result = service(references=[checkpoint]).survival_radar(SurvivalRadarRequest(lat=0, lon=0))
     assert result['radar_items'][0]['text'] == checkpoint['hazard']
+
+
+def test_reference_examples_are_not_live_destinations():
+    example = {'id': 'guide-example', 'kind': 'checkpoint', 'lat': 0, 'lon': 0.001}
+    assert service(references=[example]).survival_radar(SurvivalRadarRequest(lat=0, lon=0))['radar_items'] == []
 
 
 def test_coordinate_derived_peer_signal_is_explicitly_an_estimate():

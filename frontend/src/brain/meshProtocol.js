@@ -11,9 +11,10 @@ export function wireReport(report) {
   result.visibility = report.visibility || (['incident', 'sos'].includes(report.kind) ? 'responders' : 'public');
   if (report.kind === 'incident') result.visibility = 'responders';
   result.entity_id = report.entity_id || report.id;
+  result.source_report_id = report.source_report_id || report.id;
   result.kind = report.kind || 'sos';
-  result.status = report.status || 'needs_help';
-  result.severity = report.severity || 'red';
+  result.status = report.status ?? (['incident', 'sos'].includes(result.kind) ? 'needs_help' : null);
+  result.severity = report.severity || (['incident', 'sos'].includes(result.kind) ? 'red' : 'yellow');
   result.reporter_id = report.reporter_id || 'survivor-mobile';
   result.materials = report.materials || [];
   result.breathing = report.breathing ?? null;
@@ -37,8 +38,8 @@ export function validReport(r) {
   return r && typeof r.id === 'string' && r.id.length > 0 && r.id.length <= 200 &&
     typeof r.text === 'string' && ['public', 'responders', 'group'].includes(r.visibility) &&
     !(r.kind === 'incident' && r.visibility !== 'responders') &&
-    typeof r.kind === 'string' && r.location && Number.isFinite(r.location.lat) &&
-    Number.isFinite(r.location.lon) && Math.abs(r.location.lat) <= 90 && Math.abs(r.location.lon) <= 180;
+    typeof r.kind === 'string' && (r.location == null || (Number.isFinite(r.location.lat) &&
+    Number.isFinite(r.location.lon) && Math.abs(r.location.lat) <= 90 && Math.abs(r.location.lon) <= 180));
 }
 
 export function canonical(value) {

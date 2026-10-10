@@ -9,6 +9,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 import hashlib
+import threading
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from fastapi import HTTPException
@@ -17,6 +18,7 @@ from qdrant_client.http.exceptions import UnexpectedResponse
 from qdrant_client.local.qdrant_local import QdrantLocal
 
 from .service import RescueService
+from .schemas import ReportRequest
 
 
 EVENT_COLLECTIONS = {
@@ -89,9 +91,7 @@ def _point_id(record_id: str) -> str:
 
 
 def _event_point_id(record: dict) -> str:
-    source_id = record.get("source_report_id")
-    if not source_id:
-        return _point_id(record["id"])
+    source_id = record.get("source_report_id") or record["id"]
     # Matches the phone's strToUuid: first 16 SHA-256 bytes with UUID v4 bits.
     raw = bytearray(hashlib.sha256(source_id.encode()).digest()[:16])
     raw[6] = (raw[6] & 0x0f) | 0x40
@@ -136,7 +136,7 @@ def _upsert_new(client: QdrantClient, name: str, records: list[dict],
         batch = records[start:start + 16]
         vectors = list(service.memory.embedder.embed([text_of(record) for record in batch], batch_size=16))
         client.upsert(name, points=[
-            models.PointStruct(id=_event_point_id(record),
+            models.PointStruct(id=_point_id(record["id"]) if name == GUIDES_COLLECTION else _event_point_id(record),
                                vector={"dense": vector.tolist()}, payload=record)
             for record, vector in zip(batch, vectors)
         ], wait=True)
@@ -200,12 +200,20 @@ def purge_cloud_data(service: RescueService) -> dict:
 
 
 def mirror_to_qdrant_server(service: RescueService) -> dict:
+    # Manual mirror and automatic uplinks must not race while normalizing IDs.
+    if not hasattr(service, "_cloud_mirror_lock"):
+        service._cloud_mirror_lock = threading.Lock()
+    with service._cloud_mirror_lock:
+        return _mirror_to_qdrant_server(service)
+
+
+def _mirror_to_qdrant_server(service: RescueService) -> dict:
     """Exchange scoped events and centrally authenticated guides with Cloud."""
     if not service.settings.qdrant_url:
         raise ValueError("QDRANT_URL required")
     client = QdrantClient(url=service.settings.qdrant_url,
                           api_key=service.settings.qdrant_api_key, timeout=30)
-    result = {"events_uploaded": {}, "events_downloaded": {},
+    result = {"events_uploaded": {}, "events_downloaded": {}, "events_migrated": {},
               "guides_uploaded": 0, "guides_downloaded": 0}
     try:
         service.purge_expired()
@@ -213,8 +221,11 @@ def mirror_to_qdrant_server(service: RescueService) -> dict:
         for scope, collection in EVENT_COLLECTIONS.items():
             _ensure_collection(client, collection, events=True, available=available)
             existing: dict[str, str] = {}
+            local_ids = {event["id"] for event in service.memory.all("events")}
+            downloaded = 0
             cloud_events: list[dict] = []
             expired_points: list[str] = []
+            legacy_points: dict[str, list] = {}
             for point in _cloud_payloads(client, collection):
                 if not isinstance(point.payload, dict):
                     continue
@@ -234,24 +245,47 @@ def mirror_to_qdrant_server(service: RescueService) -> dict:
                         pass
                 if not event.get("id"):
                     continue
+                if event.get("kind") in {"sos", "incident", "checkpoint", "resource", "hazard"} and str(point.id) != _event_point_id(event):
+                    legacy_points.setdefault(event.get("source_report_id") or event["id"], []).append(point.id)
                 existing[event["id"]] = event.get("content_hash") or ""
                 if not event.get("content_hash"):
-                    # A phone may have uploaded the same report directly. Replace
-                    # that point with the normalized server event at the same ID.
+                    # Phone uploads are real reports too. Ingest them into the
+                    # server feed before replacing the same point with its
+                    # normalized, hash-checked server representation.
+                    if event.get("kind") in {"sos", "incident", "checkpoint", "resource", "hazard"} and event["id"] not in local_ids:
+                        try:
+                            request = ReportRequest.model_validate({**event,
+                                "idempotency_key": event.get("source_report_id") or event["id"],
+                                "origin_device": event.get("origin_device") or event.get("reporter_id"),
+                                "observed_at": event.get("observed_at") or event.get("created_at"),
+                                "verified": bool(service.settings.prototype_access and event.get("prototype_confirmed"))})
+                            service.report(request, mirror=False)
+                            local_ids.add(request.idempotency_key)
+                            downloaded += 1
+                        except (ValueError, HTTPException) as exc:
+                            import logging
+                            logging.getLogger("rescue.cloud").warning("Phone report %s rejected: %s", event["id"], exc)
                     continue
                 if scope != "group" or service.memory.get("groups", event.get("group_id") or ""):
                     cloud_events.append(event)
             if expired_points:
                 client.delete(collection, points_selector=models.PointIdsList(
                     points=expired_points), wait=True)
-            downloaded = 0
             for start in range(0, len(cloud_events), 64):
                 downloaded += service.import_events(cloud_events[start:start + 64])["imported"]
             local_events = [event for event in service.memory.all("events")
                             if event["visibility"] == scope]
-            to_upload = [event for event in local_events if not existing.get(event["id"])]
+            to_upload = [event for event in local_events if not existing.get(event["id"])
+                         or (event.get("source_report_id") or event["id"]) in legacy_points]
             if to_upload:
                 _upsert_new(client, collection, to_upload, service, lambda item: item["text"])
+            # Delete only alternate point IDs for reports just committed at their
+            # canonical hash ID. Separate initiations/entities are never merged.
+            migrated = [point_id for event in to_upload
+                        for point_id in legacy_points.get(event.get("source_report_id") or event["id"], [])]
+            if migrated:
+                client.delete(collection, points_selector=models.PointIdsList(points=migrated), wait=True)
+            result["events_migrated"][scope] = len(migrated)
             result["events_uploaded"][scope] = len(to_upload)
             result["events_downloaded"][scope] = downloaded
             for event in to_upload:

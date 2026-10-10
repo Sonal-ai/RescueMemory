@@ -165,7 +165,7 @@ class RescueService:
         return group["token"]
 
     def _event(self, body: dict, idempotency_key: str | None = None) -> dict:
-        body["origin_device"] = self.settings.node_id
+        body["origin_device"] = body.get("origin_device") or self.settings.node_id
         body["source_role"] = "central" if body.get("verified") and self.settings.prototype_access else self.settings.role
         if body.get("verified"):
             if (self.settings.role != "central" and not self.settings.prototype_access) or not self.settings.guide_trust_key:
@@ -203,13 +203,18 @@ class RescueService:
         event = Event(id=event_id, content_hash=event_hash, **body).model_dump(mode="json", exclude_unset=True)
         existing = self.memory.get("events", event_id)
         if existing:
-            if idempotency_key and existing["content_hash"] != event_hash:
+            # Server signatures and source roles may differ after a relay. They
+            # cannot turn the same originating report into a new event.
+            identity_fields = ("kind", "text", "reporter_id", "location", "visibility", "group_id",
+                               "entity_id", "status", "severity", "observed_at", "supersedes_id")
+            same_report = all(existing.get(key) == body.get(key) for key in identity_fields)
+            if idempotency_key and existing["content_hash"] != event_hash and not same_report:
                 raise HTTPException(409, "idempotency key reused with different report")
             return {"event": existing, "duplicate": True}
         self.memory.upsert("events", event_id, event, body["text"])
         return {"event": event, "duplicate": False}
 
-    def report(self, request: ReportRequest) -> dict:
+    def report(self, request: ReportRequest, *, mirror: bool = True) -> dict:
         visibility = request.visibility or ("group" if request.group_id else
                                             "responders" if request.kind == "incident" else "public")
         if request.kind == "incident" and visibility == "public":
@@ -226,7 +231,8 @@ class RescueService:
         body["visibility"] = visibility
         body["expires_at"] = None
         result = self._event(body, request.idempotency_key)
-        self._trigger_cloud_mirror()
+        if mirror:
+            self._trigger_cloud_mirror()
         return result
 
     def _trigger_cloud_mirror(self) -> None:
@@ -234,9 +240,9 @@ class RescueService:
             return
         if getattr(self, "_mirror_in_progress", False):
             return
+        self._mirror_in_progress = True
 
         def _do_mirror():
-            self._mirror_in_progress = True
             try:
                 from .cloud import mirror_to_qdrant_server
                 mirror_to_qdrant_server(self)
@@ -246,7 +252,8 @@ class RescueService:
             finally:
                 self._mirror_in_progress = False
 
-        threading.Thread(target=_do_mirror, daemon=True).start()
+        self._mirror_thread = threading.Thread(target=_do_mirror, daemon=True)
+        self._mirror_thread.start()
 
     def _evaluate_ai(self, text: str, cards: list[dict], use_ai: bool, public_hits: list[dict] | None = None) -> tuple[str | None, str]:
         if not use_ai:
@@ -634,7 +641,9 @@ class RescueService:
         for raw in events:
             raw_copy = dict(raw)
             raw_id = str(raw_copy.get("id", ""))
-            if not raw_id:
+            if raw_copy.get("source_report_id"):
+                raw_copy["id"] = raw_copy["source_report_id"]
+            elif not raw_id:
                 raw_copy["id"] = hashlib.sha256(canonical(raw_copy)).hexdigest()
             elif len(raw_id) < 64 and raw_copy.get("source_report_id") != raw_id:
                 raw_copy["id"] = hashlib.sha256(raw_id.encode()).hexdigest()
@@ -762,8 +771,19 @@ class RescueService:
         seen_keys = set()
 
         # 1. Dynamic Events from Local Qdrant Memory
-        nearby_events = self.memory.nearby(user_loc, request.radius_m)
+        nearby_events = sorted(self.memory.nearby(user_loc, request.radius_m),
+                               key=lambda event: event.get("observed_at", ""), reverse=True)
         for event in nearby_events:
+            if event.get("kind") in {"presence", "peer_beacon"}:
+                continue
+            # Resolve latest entity state before filtering, including closures.
+            entity_key = event.get("entity_id") or event.get("source_report_id") or event.get("id")
+            key = ("event", entity_key)
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            if event.get("status") in {"closed", "resolved", "rescued", "rescued_transported", "cancelled", "inactive", "depleted", "unavailable", "destroyed"}:
+                continue
             if event.get("expires_at") and datetime.fromisoformat(event["expires_at"]) < now:
                 continue
             if event.get("visibility") == "group" and event.get("group_id") != request.group_id:
@@ -777,16 +797,16 @@ class RescueService:
 
             bearing = calculate_bearing(request.lat, request.lon, event["location"]["lat"], event["location"]["lon"])
             cardinal = calculate_cardinal(bearing)
-            walk_min = max(1, round(dist / 75.0))
+            walk_min = None
 
             kind = event.get("kind", "incident")
             text = event.get("text", "")
             severity = event.get("severity", "yellow")
             status = event.get("status", "active")
 
-            is_casualty = kind in {"incident", "presence", "sos"} or any(w in text.lower() for w in ["injured", "cannot walk", "cant walk", "bleeding", "trapped", "broken", "unconscious"])
+            is_casualty = kind in {"incident", "sos"}
             is_hazard = kind == "hazard" or status in {"danger", "flooded", "blocked"}
-            is_resource = kind == "resource" or "water" in text.lower()
+            is_resource = kind == "resource"
             is_shelter = kind == "checkpoint" and not is_hazard
 
             if is_casualty:
@@ -822,7 +842,9 @@ class RescueService:
 
             radar_items.append({
                 "id": event.get("id"),
-                "name": event.get("title") or event.get("entity_id") or f"{cat.title()} Signal",
+                "entity_id": event.get("entity_id"),
+                "source_report_id": event.get("source_report_id"),
+                "name": event.get("title") or (text.split("(", 1)[0].strip() if cat == "shelter" else None) or event.get("entity_id") or f"{cat.title()} Signal",
                 "category": cat,
                 "triage_level": triage,
                 "text": text,
@@ -842,7 +864,7 @@ class RescueService:
         # 2. Dynamic Checkpoints from Reference Memory
         ref_checkpoints = [
             card for card in self.memory.all("reference")
-            if card.get("kind") == "checkpoint"
+            if card.get("kind") == "checkpoint" and card.get("live_destination") is True
         ]
 
         # Check recent event status overrides for checkpoints
@@ -863,7 +885,7 @@ class RescueService:
             if dist <= request.radius_m:
                 bearing = calculate_bearing(request.lat, request.lon, cp_loc["lat"], cp_loc["lon"])
                 cardinal = calculate_cardinal(bearing)
-                walk_min = max(1, round(dist / 75.0))
+                walk_min = None
 
                 override_ev = recent_statuses.get(cp.get("id"))
                 status = override_ev.get("status") if override_ev else cp.get("status", "operational")
@@ -905,13 +927,15 @@ class RescueService:
         # 3. Discovered Wi-Fi & Simulated Bluetooth Proximity Peers
         if peers:
             for p in peers:
+                if p.get("node_id") == request.exclude_node_id:
+                    continue
                 if p.get("lat") is not None and p.get("lon") is not None:
                     p_loc = {"lat": p["lat"], "lon": p["lon"]}
                     dist = distance_m(user_loc, p_loc)
                     if dist <= request.radius_m:
                         bearing = calculate_bearing(request.lat, request.lon, p["lat"], p["lon"])
                         cardinal = calculate_cardinal(bearing)
-                        walk_min = max(1, round(dist / 75.0))
+                        walk_min = None
 
                         # Simulated BLE / Wi-Fi Direct path loss in dBm
                         dbm = -min(95, max(40, int(42 + 20 * math.log10(max(1.0, dist)))))

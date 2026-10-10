@@ -28,6 +28,8 @@ import {
 import staticCards from '../../public/data/knowledge_cards.json';
 import { isAndroidEdge, searchEdgeGuidance, getQdrantEdgeStatus } from './qdrantEdge.js';
 import { formatGuidanceCards } from './guidanceFormat.js';
+import { prototypeAccess } from './prototypeAccess.js';
+import { originalReportId } from './reportIdentity.js';
 
 let cachedCards = Array.isArray(staticCards) ? staticCards : [];
 let cachedVectors = null;
@@ -458,7 +460,13 @@ function resolveServerUrl(path) {
   return `${fallback}${path ? (path.startsWith('/') ? path : `/${path}`) : ''}`;
 }
 
-export async function triggerAutoSync() {
+let syncInFlight = null;
+export function triggerAutoSync() {
+  if (!syncInFlight) syncInFlight = runAutoSync().finally(() => { syncInFlight = null; });
+  return syncInFlight;
+}
+
+async function runAutoSync() {
   const unsyncedInitial = await getUnsyncedReports();
   const isOnline = (typeof localStorage !== 'undefined' ? localStorage.getItem('rescue.online_mode') !== 'false' : true) &&
                    (typeof navigator === 'undefined' || navigator.onLine !== false);
@@ -493,16 +501,17 @@ export async function triggerAutoSync() {
     for (const report of unsynced) {
       try {
         const payload = {
-          idempotency_key: report.id,
+          idempotency_key: originalReportId(report),
           entity_id: report.entity_id || report.id,
           kind: report.kind || 'sos',
           text: report.text,
           location: report.location,
-          visibility: report.visibility || 'public',
-          status: report.status || 'needs_help',
-          severity: report.severity || 'red',
+          visibility: report.visibility || (['incident', 'sos'].includes(report.kind) ? 'responders' : 'public'),
+          status: report.status ?? (['incident', 'sos'].includes(report.kind) ? 'needs_help' : null),
+          severity: report.severity || (['incident', 'sos'].includes(report.kind) ? 'red' : 'yellow'),
           reporter_id: report.reporter_id || 'survivor-mobile',
-          observed_at: report.created_at || report.observed_at || new Date().toISOString(),
+          origin_device: report.origin_device || report.reporter_id,
+          observed_at: report.observed_at || report.created_at,
           verified: report.verified === true || report.prototype_confirmed === true,
           group_id: report.group_id,
         };
@@ -516,14 +525,17 @@ export async function triggerAutoSync() {
         });
         if (res.ok) {
           syncedIds.push(report.id);
+        } else {
+          const failure = await res.json().catch(() => ({}));
+          console.warn(`[AutoSync] Edge report ${report.id} rejected (${res.status}):`, failure.detail);
         }
       } catch (err) {
         console.warn(`[AutoSync] Edge uplink fail for ${report.id}:`, err.message);
       }
     }
     if (syncedIds.length > 0) {
-      await markReportsSynced(syncedIds);
-      totalSyncedCount += syncedIds.length;
+      await markReportsSynced(syncedIds, { channel: 'edge' });
+      totalSyncedCount += unsynced.filter(r => syncedIds.includes(r.id) && r.visibility === 'group').length;
     }
 
     // Offline protocol drafts become signed publications only after a real
@@ -544,26 +556,30 @@ export async function triggerAutoSync() {
       } catch (error) { console.warn('[AutoSync] Protocol publication pending:', error.message); }
     }
 
-    // Downlink from Edge
+    // Download every page of permitted reports, including SOS in the prototype.
     try {
-      const meshKey = (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('rescue.meshKey')) || 'rescue-mesh-shared-key-2026';
-      const exportRes = await fetch(`${edgeBase}/api/sync/export?scope=public&limit=64`, {
-        method: 'GET',
-        headers: {
-          Accept: 'application/json',
-          'X-Mesh-Key': meshKey,
-        },
-        signal: AbortSignal.timeout(3000),
-      });
-      if (exportRes.ok) {
-        const data = await exportRes.json();
-        if (Array.isArray(data?.events) && data.events.length > 0) {
-          const imp = await saveImportedReports(data.events);
-          remoteImportedCount += imp;
+      for (const scope of prototypeAccess ? ['public', 'responders'] : ['public']) {
+        let page = 0;
+        const seen = new Set();
+        while (true) {
+          const response = await fetch(`${edgeBase}/api/memory?scope=${scope}&limit=100&page=${page}`, {
+            headers: { Accept: 'application/json',
+              'X-Responder-Key': sessionStorage.getItem('rescue.responderKey') || 'rescue-responder-shared-key-2026' },
+            signal: AbortSignal.timeout(3000),
+          });
+          if (!response.ok) throw new Error(`${scope} feed rejected (HTTP ${response.status})`);
+          const data = await response.json();
+          if (!Array.isArray(data.items)) throw new Error(`${scope} feed returned invalid records`);
+          remoteImportedCount += await saveImportedReports(data.items, { markForRelay: true });
+          if (!data.has_more) break;
+          const before = seen.size;
+          data.items.forEach(item => seen.add(item.id));
+          if (before === seen.size) throw new Error(`${scope} feed pagination did not advance`);
+          page++;
         }
       }
-    } catch {
-      // silent
+    } catch (error) {
+      console.warn('[AutoSync] Edge download pending:', error.message);
     }
   }
 
@@ -580,7 +596,7 @@ export async function triggerAutoSync() {
     }
 
     // Downlink latest remote public reports from other devices in Qdrant Cloud
-    const cloudReports = await pullReportsFromCloud(64);
+    const cloudReports = await pullReportsFromCloud(64, { includeResponders: prototypeAccess });
     if (cloudReports.length > 0) {
       const imp = await saveImportedReports(cloudReports);
       remoteImportedCount += imp;

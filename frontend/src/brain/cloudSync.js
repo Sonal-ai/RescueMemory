@@ -1,9 +1,10 @@
+import { sha256Bytes } from './sha256.js';
 import { wireReport, validReport } from './meshProtocol.js';
 import { createPresencePublisher, PRESENCE_TTL_MS } from './cloudPresence.js';
 
 /**
  * RescueMemory Direct Cloud Mesh & Qdrant Sync Engine
- * 
+ *
  * Enables autonomous peer-to-peer discovery and bidirectional sync
  * between Android devices and Central Server using Qdrant Cloud.
  */
@@ -67,39 +68,11 @@ export async function universalRequest(url, options = {}) {
  * Generates an RFC 4122 v4-compliant UUID deterministically from any string.
  */
 export async function strToUuid(str) {
-  if (typeof crypto !== 'undefined' && crypto.subtle) {
-    try {
-      const enc = new TextEncoder().encode(String(str));
-      const buf = await crypto.subtle.digest('SHA-256', enc);
-      const arr = Array.from(new Uint8Array(buf.slice(0, 16)));
-      arr[6] = (arr[6] & 0x0f) | 0x40; // Version 4
-      arr[8] = (arr[8] & 0x3f) | 0x80; // Variant RFC 4122
-      const hex = arr.map((b) => b.toString(16).padStart(2, '0')).join('');
-      return [
-        hex.slice(0, 8),
-        hex.slice(8, 12),
-        hex.slice(12, 16),
-        hex.slice(16, 20),
-        hex.slice(20, 32),
-      ].join('-');
-    } catch {
-      // Fallback to synchronous hash
-    }
-  }
-
-  // Fallback deterministic UUID
-  let hash1 = 5381;
-  let hash2 = 52711;
-  for (let i = 0; i < str.length; i++) {
-    const ch = str.charCodeAt(i);
-    hash1 = ((hash1 << 5) + hash1) ^ ch;
-    hash2 = ((hash2 << 5) + hash2) ^ ch;
-  }
-  const h1 = Math.abs(hash1).toString(16).padStart(8, '0');
-  const h2 = Math.abs(hash2).toString(16).padStart(8, '0');
-  const h3 = Math.abs(hash1 ^ hash2).toString(16).padStart(8, '0');
-  const h4 = Math.abs(hash1 + hash2).toString(16).padStart(8, '0');
-  return `${h1}-${h2.slice(0, 4)}-4${h2.slice(5, 8)}-a${h3.slice(1, 4)}-${h4}${h3.slice(4, 8)}`.slice(0, 36);
+  const arr = Array.from((await sha256Bytes(String(str))).slice(0, 16));
+  arr[6] = (arr[6] & 0x0f) | 0x40;
+  arr[8] = (arr[8] & 0x3f) | 0x80;
+  const hex = arr.map(b => b.toString(16).padStart(2, '0')).join('');
+  return [hex.slice(0, 8), hex.slice(8, 12), hex.slice(12, 16), hex.slice(16, 20), hex.slice(20)].join('-');
 }
 
 /**
@@ -264,9 +237,13 @@ export async function pushReportsToCloud(reports = []) {
       if (rep.visibility === 'group') continue;
       const normalized = wireReport(rep);
       if (!validReport(normalized)) continue;
-      const pointId = await strToUuid(rep.id);
+      const pointId = await strToUuid(rep.source_report_id || rep.id);
       const vector = generateVector384(rep.text || rep.kind || 'sos emergency');
-      const payload = normalized;
+      // Preserve the server's signed canonical body when one is available.
+      const payload = rep.content_hash ? Object.fromEntries(Object.entries(rep).filter(([key]) =>
+        ['id', 'content_hash', 'origin_device', 'source_report_id', 'kind', 'text', 'reporter_id', 'location',
+          'visibility', 'group_id', 'entity_id', 'status', 'severity', 'observed_at', 'expires_at',
+          'source_role', 'verified', 'supersedes_id', 'authority_tag'].includes(key))) : normalized;
       const pt = {
         id: pointId,
         vector: { dense: vector },
@@ -283,7 +260,7 @@ export async function pushReportsToCloud(reports = []) {
 
     const pushBatch = async (col, pts) => {
       if (pts.length === 0) return true;
-      const res = await universalRequest(`${QDRANT_CLOUD_URL}/collections/${col}/points`, {
+      const res = await universalRequest(`${QDRANT_CLOUD_URL}/collections/${col}/points?wait=true`, {
         method: 'PUT',
         headers: {
           'api-key': QDRANT_CLOUD_KEY,
@@ -292,11 +269,17 @@ export async function pushReportsToCloud(reports = []) {
         body: { points: pts },
         timeout: 5000,
       });
-      return res.ok;
+      if (!res.ok) throw new Error(`[cloud.upload/${col}] HTTP ${res.status}; reports remain queued.`);
+      const ack = await res.json();
+      if (ack?.status !== 'ok' || ack?.result?.status !== 'completed')
+        throw new Error(`[cloud.upload/${col}] Qdrant did not confirm completion; reports remain queued.`);
+      return true;
     };
 
-    const res1 = await pushBatch(PUBLIC_EVENTS_COLLECTION, publicPoints);
-    const res2 = await pushBatch(RESPONDER_EVENTS_COLLECTION, responderPoints);
+    const results = await Promise.allSettled([pushBatch(PUBLIC_EVENTS_COLLECTION, publicPoints),
+      pushBatch(RESPONDER_EVENTS_COLLECTION, responderPoints)]);
+    results.forEach(result => { if (result.status === 'rejected') console.warn(result.reason.message); });
+    const [res1, res2] = results.map(result => result.status === 'fulfilled' && result.value);
 
     // A success for an empty/public batch cannot acknowledge a failed private batch.
     return [...(res1 ? publicPoints.map(p => p.payload.id) : []),
@@ -310,44 +293,56 @@ export async function pushReportsToCloud(reports = []) {
 /**
  * Downloads public reports from Qdrant Cloud (excludes peer beacons).
  */
-export async function pullReportsFromCloud(limit = 64) {
-  try {
-    const res = await universalRequest(`${QDRANT_CLOUD_URL}/collections/${PUBLIC_EVENTS_COLLECTION}/points/scroll`, {
-      method: 'POST',
-      headers: {
-        'api-key': QDRANT_CLOUD_KEY,
-        'Content-Type': 'application/json',
-      },
-      body: {
-        filter: {
-          must: [
-            { key: 'visibility', match: { value: 'public' } },
-          ],
-        },
-        limit,
-        with_payload: true,
-        with_vector: false,
-      },
-      timeout: 5000,
-    });
+export async function pullReportsFromCloud(limit = 64, { includeResponders = false } = {}) {
+  const reports = new Map();
+  for (const [scope, collection] of [['public', PUBLIC_EVENTS_COLLECTION],
+    ...(includeResponders ? [['responders', RESPONDER_EVENTS_COLLECTION]] : [])]) {
+    try {
+      let offset;
+      const offsets = new Set();
+      do {
+        const res = await universalRequest(`${QDRANT_CLOUD_URL}/collections/${collection}/points/scroll`, {
+          method: 'POST',
+          headers: {
+            'api-key': QDRANT_CLOUD_KEY,
+            'Content-Type': 'application/json',
+          },
+          body: {
+            filter: {
+              must: [
+                { key: 'visibility', match: { value: scope } },
+              ],
+            },
+            limit,
+            ...(offset != null ? { offset } : {}),
+            with_payload: true,
+            with_vector: false,
+          },
+          timeout: 5000,
+        });
 
-    if (!res.ok) return [];
-    const data = await res.json();
-    const points = data?.result?.points || [];
+        if (!res.ok) throw new Error(`[cloud.download/${collection}] HTTP ${res.status}`);
+        const data = await res.json();
+        const points = data?.result?.points || [];
 
-    const reports = points
-      .filter((pt) => pt.payload && pt.payload.kind !== 'peer_beacon')
-      .map((pt) => ({
-        ...pt.payload,
-        id: pt.payload.id || pt.id,
-        synced: true,
-      }));
-
-    return reports;
-  } catch (err) {
-    console.warn('[CloudMesh] pullReportsFromCloud error:', err.message);
-    return [];
+        for (const pt of points) {
+          const payload = pt.payload;
+          if (!payload || ['peer_beacon', 'presence'].includes(payload.kind) || payload.visibility !== scope || !payload.id) continue;
+          if (payload.expires_at && Date.parse(payload.expires_at) <= Date.now()) continue;
+          const id = payload.source_report_id || payload.id;
+          const previous = reports.get(id);
+          if (!previous || Date.parse(payload.observed_at || payload.created_at || '') >= Date.parse(previous.observed_at || previous.created_at || ''))
+            reports.set(id, { ...payload, id, synced: true, cloud_synced: true });
+        }
+        offset = data?.result?.next_page_offset;
+        if (offset != null && offsets.has(String(offset))) throw new Error(`[cloud.download/${collection}] Pagination did not advance`);
+        offsets.add(String(offset));
+      } while (offset != null);
+    } catch (err) {
+      console.warn('[CloudMesh] pullReportsFromCloud error:', err.message);
+    }
   }
+  return [...reports.values()];
 }
 
 /**

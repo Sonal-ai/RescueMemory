@@ -40,6 +40,9 @@ test('latest closure removes old shelter from list and radar; expired shelters s
   assert.deepEqual(reportRadar([closed, shelter], { lat: 0, lon: 0 }).radar_items, []);
   assert.deepEqual(savedShelters([{ ...shelter, expires_at: '2000-01-01T00:00:00Z' }]), []);
   assert.equal(currentSurvivorReports([closed], [shelter])[0].id, 'closed');
+  const stale = reportRadar([shelter], { lat: 0, lon: 0 });
+  const latest = reportRadar([closed], { lat: 0, lon: 0 });
+  assert.equal(mergeSurvivalRadar(stale, latest).total_found, 0);
 });
 
 test('faraway shelters stay listed while range-limited radar uses actual survivor GPS', () => {

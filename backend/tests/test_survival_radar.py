@@ -85,6 +85,10 @@ def test_survival_radar_service(tmp_path):
         }
     ]
 
+    svc.report(ReportRequest(kind="checkpoint", text="Operator entered hall (Shelter)",
+        reporter_id="operator", entity_id="entered-hall", status="operational", severity="green",
+        location={"lat": 28.7042, "lon": 77.1026}, visibility="public"))
+
     # Run Radar centered near user (CP-17 at 28.7041, 77.1025)
     req = SurvivalRadarRequest(
         lat=28.7041,
@@ -110,12 +114,12 @@ def test_survival_radar_service(tmp_path):
     assert c["distance_m"] > 0
     assert 0 <= c["bearing_deg"] <= 360
     assert c["cardinal"] in ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"]
-    assert c["walk_time_min"] >= 1
+    assert c["walk_time_min"] is None
 
-    # Verify baseline checkpoints are loaded
+    # Only operator-entered destinations appear; reference examples stay hidden.
     shelters = [i for i in items if i["category"] == "shelter"]
     assert len(shelters) >= 1
-    assert any("Shelter Alpha" in s["name"] or "Clinic Beta" in s["name"] for s in shelters)
+    assert shelters[0]["name"] == "Operator entered hall"
 
     # Verify Wi-Fi / Bluetooth peer is mapped with RSSI
     peer_items = [i for i in items if i["category"] == "peer"]
@@ -272,7 +276,7 @@ def test_central_to_local_sync_and_nearest_survivor_compass(tmp_path):
     # Expected bearing from (28.7041, 77.1025) to (28.7060, 77.1040) is ~30° to 45° (North-Northeast)
     assert 20 <= nearest["bearing_deg"] <= 50
     assert nearest["cardinal"] in ["NNE", "NE"]
-    assert nearest["walk_time_min"] >= 1
+    assert nearest["walk_time_min"] is None
 
     # Verify origin and local memory signal source
     assert nearest["signal_source"] == "qdrant_memory"

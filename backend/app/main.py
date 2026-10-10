@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hmac
+import asyncio
+from contextlib import suppress
 from dataclasses import replace
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -67,7 +69,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.discovery = disc
         if settings.enable_discovery:
             disc.start()
+        async def refresh_cloud():
+            while True:
+                app.state.rescue._trigger_cloud_mirror()
+                await asyncio.sleep(15)
+        cloud_task = asyncio.create_task(refresh_cloud())
         yield
+        cloud_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await cloud_task
+        mirror_thread = getattr(app.state.rescue, "_mirror_thread", None)
+        if mirror_thread:
+            await asyncio.to_thread(mirror_thread.join)
         if settings.enable_discovery:
             disc.stop()
         app.state.rescue.close()

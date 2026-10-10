@@ -1,1 +1,0 @@
-import{t as e}from"./index-BBXpjSFh.js";import t from"./AdminPortal-D5RBoWrP.js";var n=e();function r(){return(0,n.jsx)(t,{initialTab:`volunteer`})}export{r as default};

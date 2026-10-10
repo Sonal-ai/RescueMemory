@@ -10,7 +10,9 @@ export function reportRadar(reports, request) {
   if (!Number.isFinite(radius) || radius <= 0) throw new Error('Radar needs a positive search radius.');
   const category = request.filter_category ?? 'all';
   const items = [];
-  for (const report of currentSurvivorReports(reports)) {
+  const current = currentSurvivorReports(reports);
+  for (const report of current) {
+    if (['presence', 'peer_beacon'].includes(report.kind)) continue;
     if (report.expires_at && Date.parse(report.expires_at) <= Date.now()) continue;
     if (/^(closed|resolved|rescued|rescued_transported|cancelled|inactive|depleted|unavailable|destroyed)$/i.test(report.status || '')) continue;
     if (report.visibility === 'group' && report.group_id !== request.group_id) continue;
@@ -36,7 +38,7 @@ export function reportRadar(reports, request) {
   }
   items.sort((a, b) => a.distance_m - b.distance_m);
   const casualties = items.filter(i => i.category === 'casualty'), shelters = items.filter(i => i.category === 'shelter');
-  return { center, radius_m: radius, total_found: items.length, radar_items: items,
+  return { center, radius_m: radius, total_found: items.length, radar_items: items, current_reports: current,
     summary: { urgent_casualties: casualties.filter(c => c.triage_level === 'immediate_red').length, total_casualties: casualties.length,
       operational_shelters: shelters.filter(item => item.status === 'operational').length, active_peers: items.filter(item => item.category === 'peer').length, nearest_casualty: casualties[0] || null, nearest_shelter: shelters[0] || null }, local_fallback: true };
 }

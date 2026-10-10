@@ -60,9 +60,11 @@ export function reportedFacilities(reports, origin, needs = {}, radius = Infinit
 export function mergeSurvivalRadar(remote, local) {
   const savedIds = new Set(local.radar_items.map(item => item.id));
   const savedEntities = new Set(local.radar_items.map(item => item.entity_id).filter(Boolean));
-  const items = [...(remote?.radar_items || []).filter(item => !savedIds.has(item.id)
-    && !savedEntities.has(item.entity_id || item.name)), ...local.radar_items]
-    .sort((a, b) => a.distance_m - b.distance_m);
+  const current = new Map((local.current_reports || []).map(report => [report.entity_id || report.source_report_id || report.id, report]));
+  const items = [...(remote?.radar_items || []).filter(item => item.kind !== 'presence' && item.kind !== 'peer_beacon' && !savedIds.has(item.id)
+    && !savedEntities.has(item.entity_id || item.name)
+    && (!current.has(item.entity_id || item.source_report_id || item.id) || observed(item) > observed(current.get(item.entity_id || item.source_report_id || item.id)))), ...local.radar_items]
+    .sort((a, b) => (a.distance_m ?? Infinity) - (b.distance_m ?? Infinity));
   const casualties = items.filter(item => item.category === 'casualty');
   const shelters = items.filter(item => item.category === 'shelter' && item.status === 'operational');
   return { ...local, ...remote, radar_items: items, total_found: items.length,

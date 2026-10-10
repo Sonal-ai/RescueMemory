@@ -1,4 +1,5 @@
 import { canonical, wireReport, validReport } from './meshProtocol.js';
+import { prepareReport, originalReportId } from './reportIdentity.js';
 
 /**
  * IndexedDB storage for offline survivor observations, SOS reports, and local sync state.
@@ -40,13 +41,14 @@ function openDB() {
 }
 
 export async function saveOfflineReport(report) {
+  report = prepareReport(report, localStorage.getItem('rescue.device_id') || report.reporter_id);
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction('reports', 'readwrite');
     const store = tx.objectStore('reports');
     const record = {
       ...report,
-      id: report.id || `offline_evt_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+      id: originalReportId(report),
       synced: false,
       created_at: report.created_at || new Date().toISOString(),
       offline_created: true,
@@ -88,9 +90,9 @@ export async function getAllLocalReports() {
 
 function sameSourceReport(a, b) {
   if (a.id !== b.id || (a.source_report_id !== a.id && b.source_report_id !== b.id)) return false;
-  return a.kind === b.kind && a.text === b.text && a.reporter_id === b.reporter_id &&
-    a.visibility === b.visibility && a.location?.lat === b.location?.lat &&
-    a.location?.lon === b.location?.lon;
+  const left = wireReport(a), right = wireReport(b);
+  return ['kind', 'text', 'reporter_id', 'status', 'severity', 'entity_id', 'visibility', 'group_id', 'observed_at']
+    .every(key => left[key] === right[key]) && left.location?.lat === right.location?.lat && left.location?.lon === right.location?.lon;
 }
 
 export async function saveImportedReports(reports, { markForRelay = false } = {}) {
@@ -100,24 +102,35 @@ export async function saveImportedReports(reports, { markForRelay = false } = {}
     const tx = db.transaction('reports', 'readwrite');
     const store = tx.objectStore('reports');
     let importedCount = 0;
-    reports.forEach((rep) => {
-      if (!rep || !rep.id) return;
+    let metadataChanged = false;
+    reports.forEach((incoming) => {
+      if (!incoming || !incoming.id) return;
+      const rep = { ...incoming, id: originalReportId(incoming) };
       const getReq = store.get(rep.id);
       getReq.onsuccess = () => {
         const existing = getReq.result;
-        if (existing && rep.source_report_id === rep.id) {
-          if (!existing.synced) store.put({ ...existing, synced: true });
-          return;
-        }
         const incomingTime = Date.parse(rep.observed_at || rep.created_at || '');
         const existingTime = Date.parse(existing?.observed_at || existing?.created_at || '');
         if (Number.isFinite(incomingTime) && Number.isFinite(existingTime) && incomingTime < existingTime) return;
         // Don't overwrite unsynced local changes with older remote copy
-        if ((!existing || (!markForRelay && existing.synced)) &&
-            (!existing || canonical(wireReport(existing)) !== canonical(wireReport(rep)))) {
+        const same = existing && sameSourceReport(existing, rep);
+        if (same) {
+          const metadata = Object.fromEntries(['verified', 'authority_tag', 'source_role', 'content_hash', 'expires_at']
+            .filter(key => rep[key] !== undefined).map(key => [key, rep[key]]));
+          const updated = { ...existing, ...metadata,
+            ...(!markForRelay ? { synced: true, cloud_synced: true } : {}) };
+          if (canonical(updated) !== canonical(existing)) {
+            store.put(updated); metadataChanged = true;
+          }
+          return;
+        }
+        const changed = !existing || canonical(wireReport(existing)) !== canonical(wireReport(rep));
+        if ((!existing || existing.synced || same || incomingTime > existingTime) && changed) {
           store.put({
+            ...existing,
             ...rep,
             synced: !markForRelay,
+            cloud_synced: !markForRelay,
             imported: true,
             imported_at: new Date().toISOString(),
           });
@@ -126,14 +139,14 @@ export async function saveImportedReports(reports, { markForRelay = false } = {}
       };
     });
     tx.oncomplete = () => {
-      if (importedCount) window.dispatchEvent(new Event('rescue:reports-changed'));
+      if (importedCount || metadataChanged) window.dispatchEvent(new Event('rescue:reports-changed'));
       resolve(importedCount);
     };
     tx.onerror = () => reject(tx.error);
   });
 }
 
-export async function markReportsSynced(ids) {
+export async function markReportsSynced(ids, { channel = 'cloud' } = {}) {
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction('reports', 'readwrite');
@@ -144,7 +157,8 @@ export async function markReportsSynced(ids) {
       getReq.onsuccess = () => {
         const item = getReq.result;
         if (item) {
-          item.synced = true;
+          item[`${channel}_synced`] = true;
+          item.synced = channel === 'cloud' || item.visibility === 'group' || item.cloud_synced === true;
           item.synced_at = new Date().toISOString();
           store.put(item);
         }
@@ -211,8 +225,9 @@ export async function commitMeshReports(reports, { sessionId, peerId, transport 
         const existing = read.result;
         if (existing && canonical(wireReport(existing)) !== canonical(wireReport(report)) && !sameSourceReport(existing, report)) { result.conflicts++; return; }
         if (existing) {
-          if (sameSourceReport(existing, report) && existing.source_report_id === existing.id && report.source_report_id !== report.id) {
-            store.put({ ...wireReport(report), synced: existing.synced, imported: true,
+          if (sameSourceReport(existing, report)) {
+            // A duplicate relay must not strip a server signature or cloud ACK.
+            store.put({ ...existing, imported: true,
               imported_at: existing.imported_at || new Date().toISOString(), received_from: peerId });
           }
           result.duplicates++;
