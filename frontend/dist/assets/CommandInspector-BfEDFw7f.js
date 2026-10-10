@@ -1,1 +1,0 @@
-import{t as e}from"./index-ggMx1dcl.js";import t from"./AdminPortal-C_dxGF6j.js";var n=e();function r(){return(0,n.jsx)(t,{initialTab:`inspector`})}export{r as default};

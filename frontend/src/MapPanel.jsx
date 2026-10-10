@@ -12,6 +12,7 @@ import {
   Navigation,
   Plus,
   ShieldCheck,
+  X,
 } from 'lucide-react';
 import { coordinates } from './brain/adminData.js';
 import { PAYTM_SKYMARK } from './brain/paytmSkymark.js';
@@ -629,6 +630,29 @@ export default function MapPanel({
               <Crosshair size={11} />
               <span>Fit Route</span>
             </button>
+
+            {/* 1-Tap "Clear Target" Button to View Own Location Only */}
+            <button
+              type="button"
+              onClick={() => {
+                if (onSelect) onSelect(null);
+                handleRecenterUser();
+              }}
+              className="px-2 py-1 rounded-xl bg-slate-800 hover:bg-rose-600 text-slate-300 hover:text-white font-bold text-[10px] flex items-center gap-1 shrink-0 shadow-md transition-all active:scale-95 cursor-pointer border border-slate-700 hover:border-rose-500"
+              title="Deselect target and view own location only"
+            >
+              <X size={11} />
+              <span>Clear</span>
+            </button>
+          </div>
+        )}
+
+        {/* Free Roam Pill when no target is selected */}
+        {!routeTelemetry && (
+          <div className="absolute top-12 left-3 sm:top-3 sm:left-1/2 sm:-translate-x-1/2 sm:w-auto z-10 bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-2xl px-3 py-1 shadow-lg flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+            <span className="text-[11px] font-bold text-slate-200">Viewing Own Location</span>
+            <span className="text-[10px] text-cyan-400 font-mono">(Free Roam)</span>
           </div>
         )}
 
@@ -700,14 +724,27 @@ export default function MapPanel({
           </button>
 
           {routeTelemetry && (
-            <button
-              type="button"
-              onClick={handleFitRoute}
-              className="w-8 h-8 rounded-xl bg-cyan-600/90 backdrop-blur-md border border-cyan-400 text-white flex items-center justify-center hover:bg-cyan-500 active:scale-95 transition-all shadow-lg cursor-pointer"
-              title="Fit Entire Coordinate Route"
-            >
-              <Navigation size={14} className="rotate-45" />
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={handleFitRoute}
+                className="w-8 h-8 rounded-xl bg-cyan-600/90 backdrop-blur-md border border-cyan-400 text-white flex items-center justify-center hover:bg-cyan-500 active:scale-95 transition-all shadow-lg cursor-pointer"
+                title="Fit Entire Coordinate Route"
+              >
+                <Navigation size={14} className="rotate-45" />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (onSelect) onSelect(null);
+                  handleRecenterUser();
+                }}
+                className="w-8 h-8 rounded-xl bg-slate-900/90 backdrop-blur-md border border-rose-500/60 text-rose-400 flex items-center justify-center hover:bg-rose-600 hover:text-white active:scale-95 transition-all shadow-lg cursor-pointer"
+                title="Deselect Target (View Own Location)"
+              >
+                <X size={14} />
+              </button>
+            </>
           )}
 
           <button

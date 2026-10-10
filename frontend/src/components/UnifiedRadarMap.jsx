@@ -11,6 +11,7 @@ import {
   Navigation,
   RefreshCw,
   Search,
+  X,
 } from 'lucide-react';
 import { getSurvivalRadar, distM, bearingDeg, cardinalDirection, isOnlineMode } from '../api';
 import MapPanel from '../MapPanel';
@@ -63,7 +64,7 @@ export default function UnifiedRadarMap({
 }) {
   const [radarData, setRadarData] = useState(null);
   const [selectedTargetId, setSelectedTargetId] = useState(() => {
-    return selectedTarget?.id || selectedTarget?.entity_id || '';
+    return selectedTarget?.id || selectedTarget?.entity_id || 'none';
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -374,32 +375,21 @@ export default function UnifiedRadarMap({
     return list;
   }, [radarItems, shelters, selectedTarget, liveCoords, userLocation]);
 
-  // Compute Active Target for Compass Pointer
+  // Compute Active Target for Compass Pointer (returns null if user chooses 'none' or no target)
   const activeTarget = useMemo(() => {
-    if (selectedTargetId) {
-      const found = destinationOptions.find((d) => d.id === selectedTargetId);
-      if (found) return found;
+    if (!selectedTargetId || selectedTargetId === 'none') {
+      return null;
     }
-    // Default 1: Nearest Casualty in distress
-    if (summary.nearest_casualty) return summary.nearest_casualty;
-    const firstCasualty = destinationOptions.find((i) => i.category === 'casualty');
-    if (firstCasualty) return firstCasualty;
-    // Default 2: Clean Water Resource
-    const firstResource = destinationOptions.find((i) => i.category === 'resource');
-    if (firstResource) return firstResource;
-    // Default 3: Nearest Safe Shelter
-    if (summary.nearest_shelter) return summary.nearest_shelter;
-    const firstShelter = destinationOptions.find((i) => i.category === 'shelter');
-    if (firstShelter) return firstShelter;
-    return destinationOptions[0] || null;
-  }, [selectedTargetId, summary, destinationOptions]);
+    const found = destinationOptions.find((d) => d.id === selectedTargetId);
+    if (found) return found;
 
-  // Auto-sync selected target id
-  useEffect(() => {
-    if (!selectedTargetId && activeTarget) {
-      setSelectedTargetId(activeTarget.id);
+    if (selectedTarget && selectedTargetId !== 'none') {
+      const targetId = selectedTarget.id || selectedTarget.entity_id;
+      const match = destinationOptions.find((d) => d.id === targetId);
+      if (match) return match;
     }
-  }, [activeTarget, selectedTargetId]);
+    return null;
+  }, [selectedTargetId, selectedTarget, destinationOptions]);
 
   // Current heading from smoothed device magnetometer (or 0 if calibrating)
   const currentHeading = isCompassActive ? deviceHeading : (deviceHeading ?? null);
@@ -490,6 +480,13 @@ export default function UnifiedRadarMap({
   }, [isAligned, activeTarget, lastHapticTime]);
 
   const handleSelectDestination = (targetId) => {
+    if (!targetId || targetId === 'none') {
+      setSelectedTargetId('none');
+      if (onNavigateTarget) {
+        onNavigateTarget(null);
+      }
+      return;
+    }
     setSelectedTargetId(targetId);
     const chosen = destinationOptions.find((d) => d.id === targetId);
     if (chosen) {
@@ -597,7 +594,7 @@ export default function UnifiedRadarMap({
               <MapPin size={13} />
             </div>
             <span className="text-[13px] sm:text-sm font-bold truncate">
-              {activeTarget ? radarDestinationOption(activeTarget) : 'Select target destination / safe shelter…'}
+              {activeTarget ? radarDestinationOption(activeTarget) : '📍 Viewing Own Location (No Target Selected)'}
             </span>
           </div>
 
@@ -609,6 +606,20 @@ export default function UnifiedRadarMap({
 
         {/* Quick Facility Target Chips */}
         <div className="radar-facility-chips flex items-center gap-1.5 overflow-x-auto pb-0.5 mt-2.5 no-scrollbar">
+          {/* Quick Chip for 'Just My Location' */}
+          <button
+            type="button"
+            onClick={() => handleSelectDestination('none')}
+            className={`text-xs px-2.5 py-1 rounded-lg border font-bold shrink-0 flex items-center gap-1 transition-all cursor-pointer ${
+              !activeTarget || selectedTargetId === 'none'
+                ? 'bg-emerald-600 text-white border-emerald-500 shadow-xs ring-1 ring-emerald-400'
+                : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-[#cbdbe9] dark:border-slate-800 hover:border-emerald-500'
+            }`}
+          >
+            <span>📍</span>
+            <span className="truncate max-w-[140px]">Just My Location</span>
+          </button>
+
           {destinationOptions.slice(0, 6).map((dest) => {
             const isSelected = selectedTargetId === dest.id;
             const isCas = dest.category === 'casualty';
@@ -670,15 +681,26 @@ export default function UnifiedRadarMap({
                 </span>
               </div>
 
-              {/* Button to open custom selection popup */}
-              <button
-                type="button"
-                onClick={() => setIsSelectorModalOpen(true)}
-                className="text-xs font-bold text-cyan-600 dark:text-cyan-400 hover:underline flex items-center gap-1 cursor-pointer"
-              >
-                <span>Change Shelter</span>
-                <ChevronDown size={14} />
-              </button>
+              {/* Target Actions: Clear Target + Change Shelter */}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleSelectDestination('none')}
+                  className="text-xs font-bold text-rose-600 dark:text-rose-400 hover:text-rose-500 hover:underline flex items-center gap-1 cursor-pointer"
+                  title="Deselect target and view own location only"
+                >
+                  <X size={13} />
+                  <span>Clear Target</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsSelectorModalOpen(true)}
+                  className="text-xs font-bold text-cyan-600 dark:text-cyan-400 hover:underline flex items-center gap-1 cursor-pointer"
+                >
+                  <span>Change Shelter</span>
+                  <ChevronDown size={14} />
+                </button>
+              </div>
             </div>
 
             <div className="flex items-start justify-between gap-2">
@@ -712,11 +734,14 @@ export default function UnifiedRadarMap({
         ) : (
           <div className="flex items-center justify-between gap-3 p-1">
             <div className="space-y-0.5">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                No Shelter Selected
-              </h3>
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                  Viewing Own Location (Free Roam)
+                </h3>
+              </div>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Choose a designated safe shelter for compass heading and route distance.
+                No destination target selected. Compass indicates true North.
               </p>
             </div>
             <button
@@ -770,8 +795,14 @@ export default function UnifiedRadarMap({
               center={liveCoords || userLocation || PAYTM_SKYMARK.location}
               items={filteredMapItems}
               peers={peers}
-              selected={activeTarget || (liveCoords || userLocation)}
-              onSelect={onSelectLocation}
+              selected={activeTarget}
+              onSelect={(loc) => {
+                if (!loc) {
+                  handleSelectDestination('none');
+                  return;
+                }
+                if (onSelectLocation) onSelectLocation(loc);
+              }}
               onMarker={(item) => {
                 if (!item) return;
                 const matched = destinationOptions.find(
@@ -1165,6 +1196,47 @@ export default function UnifiedRadarMap({
 
             {/* Scrollable Destination List */}
             <div className="flex-1 overflow-y-auto space-y-2 py-1 pr-0.5">
+              {/* Option to Not Select Anything / Just View Own Location */}
+              <div
+                onClick={() => {
+                  handleSelectDestination('none');
+                  setIsSelectorModalOpen(false);
+                }}
+                className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-start justify-between gap-2.5 ${
+                  !activeTarget || selectedTargetId === 'none'
+                    ? 'border-emerald-500 bg-emerald-50/80 dark:bg-emerald-950/30 ring-1 ring-emerald-400'
+                    : 'border-slate-200 dark:border-slate-800 hover:border-emerald-500/60 bg-white dark:bg-[#07111e]'
+                }`}
+              >
+                <div className="space-y-1 min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm">📍</span>
+                    <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
+                      Just My Location (No Target / Free Roam)
+                    </span>
+                    {(!activeTarget || selectedTargetId === 'none') && (
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-600 dark:text-emerald-400">
+                        Active
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-600 dark:text-slate-400">
+                    Clear destination route line and simply view your live GPS position on the map.
+                  </p>
+                </div>
+                <div className="shrink-0 pt-0.5">
+                  <div
+                    className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
+                      !activeTarget || selectedTargetId === 'none'
+                        ? 'border-emerald-500 bg-emerald-600 text-white'
+                        : 'border-slate-400 dark:border-slate-600'
+                    }`}
+                  >
+                    {(!activeTarget || selectedTargetId === 'none') && <span className="text-xs font-bold">✓</span>}
+                  </div>
+                </div>
+              </div>
+
               {filteredModalDestinations.length === 0 ? (
                 <div className="p-6 text-center text-xs text-slate-500 dark:text-slate-400">
                   No destinations match your search.
