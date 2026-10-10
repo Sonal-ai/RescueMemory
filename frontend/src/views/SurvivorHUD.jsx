@@ -206,11 +206,12 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
       isAi: false
     }
   ]);
-  const messagesEndRef = useRef(null);
+  const messagesScrollRef = useRef(null);
 
   useEffect(() => {
     if (tab === 'ask') {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      const history = messagesScrollRef.current;
+      history?.scrollTo({ top: history.scrollHeight, behavior: 'smooth' });
     }
   }, [messages, tab]);
 
@@ -722,10 +723,55 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
     }
   };
 
+  const bottomBar = (
+      <nav aria-label="Survivor tools" className="survivor-bottom-nav sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#f4f8fb]/95 dark:bg-[#0a1324]/95 border-t border-[#dbe6f0] dark:border-slate-700/80 backdrop-blur-xl pb-safe shadow-xl">
+        <div className="survivor-tabs grid grid-cols-4 h-14">
+          {TABS.map(([id, label, Icon]) => {
+            const isActive = tab === id;
+            const activeColors = {
+              ask: 'text-cyan-600 dark:text-cyan-400',
+              map: 'text-emerald-600 dark:text-emerald-400',
+              report: 'text-rose-600 dark:text-rose-500',
+              beacon: 'text-sky-600 dark:text-sky-400'
+            };
+            return (
+              <button
+                key={id}
+                type="button"
+                aria-current={isActive ? 'page' : undefined}
+                onClick={() => {
+                  setTab(id);
+                  setError('');
+                  setMessage('');
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                className={`flex flex-col items-center justify-center gap-0.5 transition-all active:scale-95 ${
+                  isActive ? `${activeColors[id]} font-black` : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                }`}
+              >
+                <div className="relative">
+                  <Icon size={19} className={isActive ? 'stroke-[2.5]' : 'stroke-[1.8]'} />
+                  {id === 'map' && (nearestCasualty || peers.length > 0) && (
+                    <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
+                  )}
+                  {id === 'beacon' && peers.length > 0 && (
+                    <span className="absolute -top-0.5 -right-1 w-1.5 h-1.5 rounded-full bg-sky-500 animate-ping" />
+                  )}
+                </div>
+                <span className="text-[11.5px] tracking-tight font-bold mt-0.5">{label.split(' ')[0]}</span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+  );
+
   return (
     <Shell
       title={tab === 'ask' ? '' : tab === 'map' ? 'Tactical Radar & Map' : tab === 'report' ? 'Emergency SOS' : 'Mesh Sync'}
       subtitle=""
+      className={`survivor-shell ${tab === 'ask' ? 'survivor-chat-active' : ''}`}
+      bottomBar={bottomBar}
     >
       {/* Global Status & Alerts */}
       {error && (
@@ -752,7 +798,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
       )}
 
       {/* Desktop HUD Segmented Navigation Pills */}
-      <div className="hidden sm:grid sm:grid-cols-4 gap-2 mb-3">
+      <div className="survivor-desktop-tabs hidden sm:grid sm:grid-cols-4 gap-2 mb-3">
         {TABS.map(([id, label, Icon]) => {
           const isActive = tab === id;
           const activeStyles = {
@@ -786,7 +832,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
       {/* TAB 1: CONVERSATIONAL ASSISTANT & EMERGENCY CLINICAL CHAT */}
       {/* ========================================================================= */}
       {tab === 'ask' && (
-        <div className="space-y-2 sm:space-y-3">
+        <div className="survivor-chat-region space-y-2 sm:space-y-3">
           {/* Streamlined Live Nearest Survivor Alert with Side Arrow */}
           {nearestCasualty && (
             <div className="rounded-xl border border-red-300 dark:border-red-800 bg-red-50/90 dark:bg-red-950/40 p-1.5 px-2.5 shadow-xs transition-all">
@@ -843,7 +889,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
           )}
 
           {/* Full ChatGPT / Antigravity Style Conversational Assistant Container */}
-          <div className="flex flex-col h-[calc(100dvh-6.75rem)] sm:h-[calc(100vh-190px)] min-h-[380px] rounded-2xl border border-[#cfe1f0] dark:border-slate-800 bg-[#f0f5fa] dark:bg-[#08121e] shadow-md overflow-hidden transition-all">
+          <div className="survivor-chat-panel flex flex-col h-[calc(100dvh-6.75rem)] sm:h-[calc(100vh-190px)] min-h-[380px] rounded-2xl border border-[#cfe1f0] dark:border-slate-800 bg-[#f0f5fa] dark:bg-[#08121e] shadow-md overflow-hidden transition-all">
             {/* Chat Header */}
             <div className="px-2.5 py-1.5 sm:px-3 sm:py-2 border-b border-[#cfe1f0] dark:border-slate-800 bg-[#e3eef7] dark:bg-[#0b1626] flex items-center justify-between gap-1.5 shrink-0">
               <div className="flex items-center gap-1.5 min-w-0">
@@ -876,7 +922,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
             </div>
 
             {/* Scrollable Message History Area */}
-            <div className="flex-1 overflow-y-auto p-2 sm:p-3 space-y-2 sm:space-y-2.5 bg-[#edf4fa] dark:bg-[#07111e]/70">
+            <div ref={messagesScrollRef} className="survivor-message-history min-h-0 min-w-0 flex-1 overflow-y-auto p-2 sm:p-3 space-y-2 sm:space-y-2.5 bg-[#edf4fa] dark:bg-[#07111e]/70">
               {messages.map((msg) => {
                 const isUser = msg.role === 'user';
                 return (
@@ -893,14 +939,14 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
 
                     {/* Message Bubble Container */}
                     <div
-                      className={`transition-all ${
+                      className={`survivor-message-bubble min-w-0 transition-all ${
                         isUser
                           ? 'user-chat-bubble max-w-[88%] sm:max-w-[72%] rounded-xl px-2.5 py-1.5 shadow-xs bg-gradient-to-r from-sky-600 via-cyan-600 to-blue-600 text-white rounded-tr-xs ml-auto ring-1 ring-white/20'
                           : 'chat-assistant-bubble max-w-[94%] sm:max-w-[82%] rounded-xl px-2.5 py-2 shadow-xs bg-white dark:bg-gradient-to-b dark:from-[#0d172b] dark:to-[#081120] border border-[#d3e3f0] dark:border-cyan-500/15 text-slate-900 dark:text-slate-100 rounded-tl-xs'
                       }`}
                     >
                       {/* Header meta */}
-                      <div className="flex items-center justify-between gap-2 mb-1 text-[11px] opacity-90">
+                      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 mb-1 text-[11px] opacity-90">
                         <span className={`font-semibold flex items-center gap-1 ${isUser ? 'text-white' : 'text-slate-600 dark:text-slate-400'}`}>
                           {isUser ? (
                             'You'
@@ -1154,11 +1200,11 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
               )}
 
               {/* Scroll anchor */}
-              <div ref={messagesEndRef} />
+
             </div>
 
             {/* Quick Emergency Prompt Chips with Side Arrow Toggle in Same Row */}
-            <div className="px-2 py-1 border-t border-[#cfe1f0] dark:border-slate-800 bg-[#e3eef7]/80 dark:bg-[#0b1626]/80 flex items-center gap-1.5 shrink-0">
+            <div className="survivor-quick-prompts px-2 py-1 border-t border-[#cfe1f0] dark:border-slate-800 bg-[#e3eef7]/80 dark:bg-[#0b1626]/80 flex items-center gap-1.5 shrink-0">
               <button
                 type="button"
                 onClick={() => setShowQuickPrompts(!showQuickPrompts)}
@@ -1175,7 +1221,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
               </button>
 
               {showQuickPrompts ? (
-                <div className="flex items-center gap-1 overflow-x-auto no-scrollbar py-0.5 touch-pan-x flex-1 animate-in fade-in slide-in-from-left-2 duration-150">
+                <div className="quick-prompt-list min-w-0 flex items-center gap-1 overflow-x-auto no-scrollbar py-0.5 touch-pan-x flex-1 animate-in fade-in slide-in-from-left-2 duration-150">
                   {QUICK_PROMPTS.map((q) => {
                     const Icon = q.icon;
                     return (
@@ -1225,8 +1271,9 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                 {/* Shaded Input text bar */}
                 <input
                   type="text"
-                  className="flex-1 bg-[#f8fafc] dark:bg-slate-900 border border-[#cbd5e1] dark:border-slate-700 rounded-lg px-2.5 sm:px-3 py-1.5 sm:py-2 text-[13.5px] sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-red-500 focus:bg-white transition-all font-medium"
-                  placeholder="Ask emergency question or triage..."
+                  aria-label="Emergency question"
+                  className="min-w-0 w-0 flex-1 bg-[#f8fafc] dark:bg-slate-900 border border-[#cbd5e1] dark:border-slate-700 rounded-lg px-2.5 sm:px-3 py-1.5 sm:py-2 text-[13.5px] sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-red-500 focus:bg-white transition-all font-medium"
+                  placeholder="Ask an emergency question…"
                   value={text}
                   onChange={(e) => setText(e.target.value)}
                   disabled={chatBusy}
@@ -1235,6 +1282,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                 {/* Send button */}
                 <button
                   type="submit"
+                  aria-label="Send question"
                   disabled={chatBusy || !text.trim()}
                   className="p-1.5 sm:p-2 rounded-lg bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white font-bold transition-all active:scale-95 shrink-0 shadow-xs touch-manipulation cursor-pointer"
                 >
@@ -1285,7 +1333,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
               <label className="block text-sm sm:text-base text-slate-800 dark:text-slate-200 font-extrabold uppercase tracking-wider mb-1.5">
                 Emergency Type:
               </label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="survivor-emergency-types grid grid-cols-2 gap-2">
                 {EMERGENCY_TYPES.map((type) => {
                   const isSelected = selectedEmergencyType === type.id;
                   const TypeIcon = type.icon;
@@ -1309,13 +1357,13 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                           : 'border-[#dbe6f0] dark:border-slate-800 bg-[#f8fafc] dark:bg-[#0b1322]/80 hover:bg-[#edf5fb] dark:hover:bg-[#0f1b2d] hover:border-[#cbdbe9] dark:hover:border-slate-700 text-slate-800 dark:text-slate-300 shadow-xs'
                       }`}
                     >
-                      <div className="flex items-center gap-1.5 mb-0.5">
+                      <div className="flex items-center gap-1.5 mb-0.5 min-w-0">
                         <div className={`p-1.5 rounded-lg border ${type.badgeBg}`}>
                           <TypeIcon size={15} />
                         </div>
-                        <span className="font-bold text-sm sm:text-base text-slate-900 dark:text-white tracking-tight truncate">{type.title}</span>
+                        <span className="font-bold text-sm sm:text-base text-slate-900 dark:text-white tracking-tight min-w-0 leading-snug">{type.title}</span>
                       </div>
-                      <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 line-clamp-1 leading-tight ml-0.5 font-medium">
+                      <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 line-clamp-2 leading-snug ml-0.5 font-medium">
                         {type.subtitle}
                       </p>
                     </button>
@@ -1470,6 +1518,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                         <button
                           key={id}
                           type="button"
+                aria-current={isActive ? 'page' : undefined}
                           onClick={() => {
                             setSelectedMaterials((prev) =>
                               isSelected ? prev.filter((m) => m !== id) : [...prev, id]
@@ -1634,7 +1683,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                 className="btn-sos-broadcast w-full py-2.5 sm:py-3 px-3 rounded-xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-rose-600 text-white font-black text-xs sm:text-sm tracking-wide shadow-md shadow-red-700/30 flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-50 cursor-pointer"
               >
                 <AlertOctagon size={16} className="shrink-0 animate-pulse text-white" />
-                <span className="text-white uppercase truncate">
+                <span className="text-white uppercase text-center leading-snug">
                   {savingSos ? 'Broadcasting to Mesh…' : 'Broadcast Emergency SOS Now'}
                 </span>
                 <ArrowRight size={15} className="shrink-0 text-white" />
@@ -1682,45 +1731,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
       {/* ANDROID / MOBILE FIXED BOTTOM NAVIGATION BAR */}
       {/* Thumb-friendly, accessible, compact ergonomic navigation */}
       {/* ========================================================================= */}
-      <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#f4f8fb]/95 dark:bg-[#0a1324]/95 border-t border-[#dbe6f0] dark:border-slate-700/80 backdrop-blur-xl pb-safe shadow-xl">
-        <div className="grid grid-cols-4 h-14">
-          {TABS.map(([id, label, Icon]) => {
-            const isActive = tab === id;
-            const activeColors = {
-              ask: 'text-cyan-600 dark:text-cyan-400',
-              map: 'text-emerald-600 dark:text-emerald-400',
-              report: 'text-rose-600 dark:text-rose-500',
-              beacon: 'text-sky-600 dark:text-sky-400'
-            };
-            return (
-              <button
-                key={id}
-                type="button"
-                onClick={() => {
-                  setTab(id);
-                  setError('');
-                  setMessage('');
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                }}
-                className={`flex flex-col items-center justify-center gap-0.5 transition-all active:scale-95 ${
-                  isActive ? `${activeColors[id]} font-black` : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                }`}
-              >
-                <div className="relative">
-                  <Icon size={19} className={isActive ? 'stroke-[2.5]' : 'stroke-[1.8]'} />
-                  {id === 'map' && (nearestCasualty || peers.length > 0) && (
-                    <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
-                  )}
-                  {id === 'beacon' && peers.length > 0 && (
-                    <span className="absolute -top-0.5 -right-1 w-1.5 h-1.5 rounded-full bg-sky-500 animate-ping" />
-                  )}
-                </div>
-                <span className="text-[11.5px] tracking-tight font-bold mt-0.5">{label.split(' ')[0]}</span>
-              </button>
-            );
-          })}
-        </div>
-      </nav>
+
 
       {/* Panic-Proof Emergency SOS Broadcast Modal Confirmation */}
       {sosBroadcastModal && (

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, NavLink, useLocation } from 'react-router-dom';
 import { Capacitor } from '@capacitor/core';
 import {
@@ -23,6 +24,7 @@ import {
 } from 'lucide-react';
 import { api, saveSetting, setting, isOnlineMode, setOnlineMode, onOnlineModeChange } from './api';
 import { useNodeStatus } from './hooks/useNodeStatus';
+import { useNativeViewport } from './hooks/useNativeViewport';
 export { useNodeStatus };
 
 const NAV_LINKS = [
@@ -51,7 +53,7 @@ export function SettingsPanel({ onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+    <div className={`${Capacitor.isNativePlatform() ? 'native-overlay' : ''} fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4`}>
       <div className="settings-dialog w-full max-w-xl bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-700/80 rounded-3xl p-6 sm:p-8 shadow-2xl max-h-[90vh] overflow-auto">
         <div className="flex justify-between items-center mb-2">
           <div className="flex items-center gap-2.5">
@@ -150,11 +152,19 @@ export function SettingsPanel({ onClose }) {
 
 export function QuietTelemetryPill({ health, sync, error }) {
   const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const closeOnEscape = event => { if (event.key === 'Escape') setOpen(false); };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [open]);
 
   return (
     <div className="relative">
       <button
         type="button"
+        aria-label="Offline system status"
+        aria-expanded={open}
         onClick={() => setOpen(!open)}
         className="flex items-center gap-1.5 px-2 py-1 rounded-lg border border-emerald-300 dark:border-emerald-500/30 bg-emerald-100/90 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-300 hover:bg-emerald-200/80 dark:hover:bg-emerald-950/60 text-[11px] font-bold transition-all active:scale-95 shadow-xs"
         title="Offline system status & peer telemetry"
@@ -167,41 +177,44 @@ export function QuietTelemetryPill({ health, sync, error }) {
         <ChevronDown size={11} className={`opacity-70 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
-      {open && (
-        <div className="absolute right-0 mt-2 w-72 bg-white dark:bg-[#0b1626] border border-[#d8e3ec] dark:border-slate-700/80 rounded-2xl p-4 shadow-xl z-50 animate-in fade-in slide-in-from-top-2 text-xs">
+      {open && createPortal(
+        <div className={`telemetry-overlay ${Capacitor.isNativePlatform() ? 'native-overlay' : ''}`} onClick={event => { if (event.target === event.currentTarget) setOpen(false); }}>
+        <div role="dialog" aria-modal="true" aria-labelledby="telemetry-title" className="telemetry-dialog bg-white dark:bg-[#0b1626] border border-[#d8e3ec] dark:border-slate-700/80 rounded-2xl p-4 shadow-xl text-xs">
           <div className="flex items-center justify-between pb-2 border-b border-[#e2e8f0] dark:border-slate-800 mb-3">
             <span className="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
               <ShieldCheck size={15} className="text-emerald-600 dark:text-emerald-400" />
-              <span>Offline System Status</span>
+              <span id="telemetry-title">Offline System Status</span>
             </span>
             <button
               onClick={() => setOpen(false)}
+              aria-label="Close system status"
+              autoFocus
               className="text-slate-400 hover:text-slate-900 dark:hover:text-white text-xs font-bold p-1"
             >
               ✕
             </button>
           </div>
 
-          <div className="space-y-2 text-slate-700 dark:text-slate-300 font-mono text-[11px]">
-            <div className="flex justify-between">
+          <div className="telemetry-values space-y-2 text-slate-700 dark:text-slate-300 font-mono text-[11px]">
+            <div>
               <span className="text-slate-500 dark:text-slate-400">Vector Engine:</span>
               <strong className="text-emerald-700 dark:text-emerald-400">{health?.engine || 'Local In-Memory Vector Engine'}</strong>
             </div>
-            <div className="flex justify-between">
+            <div>
               <span className="text-slate-500 dark:text-slate-400">Node ID:</span>
               <span className="text-slate-800 dark:text-slate-200">{health?.node_id || 'survivor-1'}</span>
             </div>
-            <div className="flex justify-between">
+            <div>
               <span className="text-slate-500 dark:text-slate-400">Indexed Protocols:</span>
               <span className="text-cyan-700 dark:text-cyan-300">{health?.guides ?? (health ? 0 : 419)} survival records</span>
             </div>
-            <div className="flex justify-between">
+            <div>
               <span className="text-slate-500 dark:text-slate-400">Mesh Auto-Discovery:</span>
               <span className="text-emerald-700 dark:text-emerald-300">Active (Wi-Fi Direct / BLE)</span>
             </div>
           </div>
 
-          <div className="mt-3 pt-2.5 border-t border-slate-800 flex items-center justify-between text-[11px]">
+          <div className="mt-3 pt-2.5 border-t border-slate-800 flex flex-wrap gap-2 items-center justify-between text-[11px]">
             <Link
               to={Capacitor.isNativePlatform() ? '/chat' : '/'}
               onClick={() => setOpen(false)}
@@ -220,12 +233,14 @@ export function QuietTelemetryPill({ health, sync, error }) {
             )}
           </div>
         </div>
+        </div>, document.body
       )}
     </div>
   );
 }
 
-export function Shell({ title, subtitle, children }) {
+export function Shell({ title, subtitle, children, className = '', bottomBar }) {
+  useNativeViewport();
   const location = useLocation();
   const { health, sync, error } = useNodeStatus();
   const last = sync?.last_sync || sync?.last_uplink;
@@ -258,11 +273,11 @@ export function Shell({ title, subtitle, children }) {
   const isSurvivorActive = location.pathname === '/' || ['/chat', '/compass', '/find', '/map', '/radar', '/report', '/beacon'].includes(location.pathname);
 
   return (
-    <div className="app-shell min-h-screen bg-[#f0f5fa] dark:bg-[#080d19] text-slate-900 dark:text-slate-100 flex flex-col pb-16 sm:pb-0">
+    <div className={`app-shell ${Capacitor.isNativePlatform() ? 'app-native' : ''} ${className} min-h-screen bg-[#f0f5fa] dark:bg-[#080d19] text-slate-900 dark:text-slate-100 flex flex-col pb-16 sm:pb-0`}>
       {/* Top Tactical Navigation Header */}
       <header className="app-header border-b border-[#dbe6f0] dark:border-cyan-500/15 bg-white/95 dark:bg-[#0b1528]/95 sticky top-0 z-40 backdrop-blur-xl shadow-xs">
         <div className="brand-rule h-0.5 w-full" />
-        <div className="max-w-7xl mx-auto px-2 sm:px-6 py-1.5 sm:py-2 flex items-center justify-between gap-1.5 sm:gap-3">
+        <div className="app-header-content max-w-7xl mx-auto px-2 sm:px-6 py-1.5 sm:py-2 flex items-center justify-between gap-1.5 sm:gap-3">
           
           {/* Logo & Tactical Identity */}
           <Link to={Capacitor.isNativePlatform() ? '/chat' : '/'} className="flex items-center gap-1.5 sm:gap-2 font-black tracking-tight text-sm sm:text-base group shrink-0">
@@ -294,7 +309,7 @@ export function Shell({ title, subtitle, children }) {
           </nav>
 
           {/* Right Action Bar */}
-          <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+          <div className="app-header-actions flex items-center gap-1 sm:gap-1.5 shrink-0">
             {/* Mobile / Tablet Views Menu Trigger */}
             <button
               type="button"
@@ -304,7 +319,7 @@ export function Shell({ title, subtitle, children }) {
               onClick={() => setNavDrawerOpen(true)}
             >
               <Menu size={13} />
-              <span className="text-[11px]">Views</span>
+              <span className="header-views-label text-[11px]">Views</span>
             </button>
 
             {/* Quiet Status Pill */}
@@ -378,8 +393,8 @@ export function Shell({ title, subtitle, children }) {
 
       {/* Mobile Tactical Views Slide-out Drawer */}
       {navDrawerOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex justify-start animate-in fade-in duration-150">
-          <div className="w-[85vw] max-w-sm h-full bg-white dark:bg-[#0b1626] border-r border-[#dbe6f0] dark:border-slate-800 p-4 flex flex-col shadow-2xl">
+        <div className={`${Capacitor.isNativePlatform() ? 'native-overlay' : ''} fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex justify-start animate-in fade-in duration-150`}>
+          <div className="w-[85%] max-w-sm h-full min-w-0 bg-white dark:bg-[#0b1626] border-r border-[#dbe6f0] dark:border-slate-800 p-4 flex flex-col shadow-2xl">
             <div className="flex items-center justify-between pb-3 border-b border-[#e2e8f0] dark:border-slate-800">
               <div className="flex items-center gap-2 font-black text-sm">
                 <span className="h-7 w-7 rounded-lg bg-gradient-to-br from-red-500 to-rose-600 flex items-center justify-center text-white shadow-xs">
@@ -450,7 +465,7 @@ export function Shell({ title, subtitle, children }) {
       )}
 
       {/* Mobile Bottom Quick-Access Dock */}
-      <div className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-[#0b1626]/95 border-t border-[#dbe6f0] dark:border-slate-800 backdrop-blur-xl px-2 py-1 flex items-center justify-around shadow-lg">
+      {!bottomBar && <div className="app-mobile-dock sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-[#0b1626]/95 border-t border-[#dbe6f0] dark:border-slate-800 backdrop-blur-xl px-2 py-1 flex items-center justify-around shadow-lg">
         {[
           { path: '/chat', label: 'Survivor', icon: HeartPulse, isMatch: isSurvivorActive },
           { path: '/volunteer', label: 'Responders', icon: Users, isMatch: location.pathname === '/volunteer' },
@@ -476,13 +491,13 @@ export function Shell({ title, subtitle, children }) {
           <Menu size={16} />
           <span>More</span>
         </button>
-      </div>
+      </div>}
 
       {/* Main Screen Canvas */}
-      <main className="w-full max-w-7xl mx-auto px-1.5 sm:px-4 py-1.5 sm:py-4 flex-1 overflow-x-hidden">
+      <main className="app-main w-full max-w-7xl mx-auto px-1.5 sm:px-4 py-1.5 sm:py-4 flex-1 overflow-x-hidden">
         {/* Minimal Reassuring Header */}
         {(title || subtitle || last) && (
-          <div className="flex flex-wrap items-center justify-between gap-1.5 mb-2 sm:mb-3">
+          <div className="shell-heading flex flex-wrap items-center justify-between gap-1.5 mb-2 sm:mb-3">
             {(title || subtitle) && (
               <div>
                 {title && (
@@ -522,6 +537,7 @@ export function Shell({ title, subtitle, children }) {
 
         {children}
       </main>
+      {bottomBar}
 
       {/* Settings Modal */}
       {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}

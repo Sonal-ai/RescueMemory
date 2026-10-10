@@ -372,7 +372,7 @@ export async function searchKnowledgeLocal(queryText, limit = 5) {
 
   let formattedText = '';
   if (matchesFound && primaryCard) {
-    formattedText = `### 🚨 Verified Protocol: ${primaryCard.title}\n\n`;
+    formattedText = `### Reference Protocol: ${primaryCard.title}\n\n`;
 
     const hasExplicitInstructions = primaryCard.instructions && primaryCard.instructions.length > 0;
     const steps = dedupeStrings(primaryCard.steps);

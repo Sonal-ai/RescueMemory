@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import {
   AlertOctagon,
   ArrowLeft,
@@ -22,10 +23,10 @@ import MapPanel from '../MapPanel';
 const COMPASS_SIZE = 220;
 const COMPASS_CENTER = COMPASS_SIZE / 2;
 const COMPASS_RADIUS = 88;
+const nativeCompass = registerPlugin('CompassHeading');
 
 /**
- * Extracts true compass azimuth (0-360 degrees clockwise from North)
- * directly from hardware orientation sensors across Android WebView, Chrome, and iOS Safari.
+ * Only absolute browser orientation may be used as a north reference.
  */
 function extractCompassHeading(e) {
   // 1. iOS Safari CoreMotion: direct hardware-fused true heading (0-360 clockwise from North)
@@ -36,7 +37,7 @@ function extractCompassHeading(e) {
   // 2. Android Chrome / W3C DeviceOrientationEvent:
   // e.alpha is the counter-clockwise rotation in degrees around the Z-axis (0 to 360).
   // Clockwise compass heading from North is (360 - e.alpha) % 360.
-  if (e.alpha !== null && e.alpha !== undefined && !Number.isNaN(e.alpha)) {
+  if (e.absolute === true && e.alpha !== null && e.alpha !== undefined && !Number.isNaN(e.alpha)) {
     let heading = (360 - e.alpha) % 360;
 
     // Compensate for physical screen orientation (portrait vs landscape)
@@ -74,8 +75,9 @@ export default function UnifiedRadarMap({
   const [mapFilter, setMapFilter] = useState('all');
 
   // Device orientation / heading state (0 = North, 90 = East, 180 = South, 270 = West)
-  const [deviceHeading, setDeviceHeading] = useState(0);
+  const [deviceHeading, setDeviceHeading] = useState(null);
   const [isCompassActive, setIsCompassActive] = useState(false);
+  const [compassReference, setCompassReference] = useState('');
   const [lastHapticTime, setLastHapticTime] = useState(0);
 
   // The survivor screen owns GPS on every tab; this view uses the same fix.
@@ -129,9 +131,7 @@ export default function UnifiedRadarMap({
     ) {
       try {
         const state = await window.DeviceOrientationEvent.requestPermission();
-        if (state === 'granted') {
-          setIsCompassActive(true);
-        }
+        if (state !== 'granted') setIsCompassActive(false);
       } catch (err) {
         console.warn('[Compass] Permission request error:', err);
       }
@@ -146,6 +146,10 @@ export default function UnifiedRadarMap({
     let targetRawHeading = null;
     let hasAbsolute = false;
     let sensorEventCount = 0;
+    let lastSensorAt = 0;
+    let nativeListener = null;
+    let disposed = false;
+    const androidNative = Capacitor.getPlatform() === 'android';
 
     const updateFilter = () => {
       if (targetRawHeading !== null) {
@@ -168,17 +172,15 @@ export default function UnifiedRadarMap({
 
         // Deadband filter: ignore noisy micro-variations (< 2 degrees) to stop rapid vibration
         setDeviceHeading((prev) => {
-          const diff = Math.abs(((rounded - prev + 540) % 360) - 180);
+          const diff = prev === null ? 360 : Math.abs(((rounded - prev + 540) % 360) - 180);
           if (diff >= 2) {
             return rounded;
           }
           return prev;
         });
 
-        sensorEventCount++;
-        if (sensorEventCount >= 2) {
-          setIsCompassActive(true);
-        }
+        if (sensorEventCount >= 2 && Date.now() - lastSensorAt < 3000) setIsCompassActive(true);
+        else if (lastSensorAt && Date.now() - lastSensorAt >= 3000) setIsCompassActive(false);
       }
       animFrameId = requestAnimationFrame(updateFilter);
     };
@@ -188,6 +190,9 @@ export default function UnifiedRadarMap({
       if (h !== null) {
         hasAbsolute = true;
         targetRawHeading = h;
+        sensorEventCount++;
+        lastSensorAt = Date.now();
+        setCompassReference(e.webkitCompassHeading != null ? 'true' : 'magnetic');
       }
     };
 
@@ -196,12 +201,30 @@ export default function UnifiedRadarMap({
       const h = extractCompassHeading(e);
       if (h !== null) {
         targetRawHeading = h;
+        sensorEventCount++;
+        lastSensorAt = Date.now();
+        setCompassReference(e.webkitCompassHeading != null ? 'true' : 'magnetic');
       }
     };
 
     if (typeof window !== 'undefined') {
-      window.addEventListener('deviceorientationabsolute', handleAbsoluteOrientation, true);
-      window.addEventListener('deviceorientation', handleStandardOrientation, true);
+      if (androidNative) {
+        nativeCompass.addListener('heading', ({ degrees, reference }) => {
+          if (disposed || !Number.isFinite(degrees)) return;
+          targetRawHeading = ((degrees % 360) + 360) % 360;
+          sensorEventCount++;
+          lastSensorAt = Date.now();
+          setCompassReference(reference === 'true' ? 'true' : 'magnetic');
+        }).then(listener => {
+          if (disposed) listener.remove();
+          else nativeListener = listener;
+        }).then(() => disposed ? null : nativeCompass.start()).catch(() => {
+          if (!disposed) setIsCompassActive(false);
+        });
+      } else {
+        window.addEventListener('deviceorientationabsolute', handleAbsoluteOrientation, true);
+        window.addEventListener('deviceorientation', handleStandardOrientation, true);
+      }
       animFrameId = requestAnimationFrame(updateFilter);
     }
 
@@ -210,9 +233,18 @@ export default function UnifiedRadarMap({
         window.removeEventListener('deviceorientationabsolute', handleAbsoluteOrientation, true);
         window.removeEventListener('deviceorientation', handleStandardOrientation, true);
       }
+      disposed = true;
+      nativeListener?.remove();
+      if (androidNative) nativeCompass.stop().catch(() => {});
       if (animFrameId) cancelAnimationFrame(animFrameId);
     };
   }, []);
+
+  useEffect(() => {
+    if (Capacitor.getPlatform() !== 'android' || !Number.isFinite(userLocation?.lat)
+        || !Number.isFinite(userLocation?.lon)) return;
+    nativeCompass.updateLocation({ lat: userLocation.lat, lon: userLocation.lon }).catch(() => {});
+  }, [userLocation?.lat, userLocation?.lon]);
 
   // Fetch Radar Signals from Qdrant Edge Memory
   const locLat = liveCoords?.lat;
@@ -328,7 +360,7 @@ export default function UnifiedRadarMap({
   }, [activeTarget, selectedTargetId]);
 
   // Current heading from smoothed device magnetometer
-  const currentHeading = deviceHeading;
+  const currentHeading = isCompassActive ? deviceHeading : null;
 
   // Real-time geodesic metrics between live walking GPS and activeTarget.location
   const liveTargetMetrics = useMemo(() => {
@@ -379,7 +411,7 @@ export default function UnifiedRadarMap({
   }, [activeTarget]);
 
   // Relative Bearing: Difference between device heading and target bearing
-  const relativeAngle = ((targetBearing - currentHeading + 360) % 360);
+  const relativeAngle = currentHeading === null ? 0 : ((targetBearing - currentHeading + 360) % 360);
 
   // Maintain continuous smooth needle rotation (prevents 360° flip spins)
   const [needleAngle, setNeedleAngle] = useState(0);
@@ -395,12 +427,14 @@ export default function UnifiedRadarMap({
   const angularError = Math.abs(((relativeAngle + 180) % 360) - 180);
 
   useEffect(() => {
-    if (!isAligned && angularError <= 12) {
+    if (currentHeading === null || !activeTarget) {
+      setIsAligned(false);
+    } else if (!isAligned && angularError <= 12) {
       setIsAligned(true);
     } else if (isAligned && angularError >= 18) {
       setIsAligned(false);
     }
-  }, [angularError, isAligned]);
+  }, [angularError, isAligned, currentHeading, activeTarget]);
 
   const turnRightAngle = relativeAngle > 180 ? 0 : relativeAngle;
   const turnLeftAngle = relativeAngle > 180 ? 360 - relativeAngle : 0;
@@ -679,7 +713,7 @@ export default function UnifiedRadarMap({
             {/* Compass Rose Mini Watermark overlay on map */}
             <div className="absolute top-2.5 right-2.5 bg-slate-900/85 backdrop-blur-md border border-slate-700/60 rounded-lg px-2 py-0.5 text-[11px] font-mono text-cyan-300 font-bold flex items-center gap-1 shadow-sm">
               <Compass size={12} className="text-cyan-400" />
-              <span>N {String(Math.round(currentHeading)).padStart(3, '0')}°</span>
+              <span>{currentHeading === null ? 'N —' : `N ${String(Math.round(currentHeading)).padStart(3, '0')}°`}</span>
             </div>
           </div>
         </div>
@@ -688,7 +722,15 @@ export default function UnifiedRadarMap({
         <div className="lg:col-span-5 bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 rounded-2xl p-3 sm:p-4 shadow-xs flex flex-col justify-between gap-3">
           {/* Live Alignment Action Banner */}
           <div className="w-full font-mono h-[34px] min-h-[34px] flex items-center justify-center">
-            {isAligned ? (
+            {!activeTarget ? (
+              <div className="w-full h-full rounded-xl bg-amber-500/10 border border-amber-500/40 text-amber-900 dark:text-amber-300 font-bold text-xs flex items-center justify-center px-3">
+                Select a destination to start guidance
+              </div>
+            ) : currentHeading === null ? (
+              <div className="w-full h-full rounded-xl bg-amber-500/10 border border-amber-500/40 text-amber-900 dark:text-amber-300 font-bold text-xs flex items-center justify-center px-3">
+                Compass unavailable · move phone in a figure eight
+              </div>
+            ) : isAligned ? (
               <div className="w-full h-full rounded-xl bg-emerald-500/10 border border-emerald-500/40 text-emerald-800 dark:text-emerald-300 font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs animate-pulse px-3">
                 <CheckCircle2 size={15} className="text-emerald-500 shrink-0" />
                 <span className="truncate">ON TARGET · PROCEED STRAIGHT</span>
@@ -707,9 +749,9 @@ export default function UnifiedRadarMap({
           </div>
 
           {/* Compass Dial & Telemetry Row */}
-          <div className="flex items-center justify-between gap-3 py-0.5">
+          <div className="survivor-compass-row flex items-center justify-between gap-3 py-0.5">
             {/* Compass SVG Dial */}
-            <div className="flex flex-col items-center justify-center shrink-0">
+            <div className="survivor-compass-dial flex flex-col items-center justify-center shrink-0">
               <div
                 onClick={requestCompassPermission}
                 className="relative w-[150px] h-[150px] flex items-center justify-center select-none cursor-pointer"
@@ -739,6 +781,7 @@ export default function UnifiedRadarMap({
                   <circle cx={COMPASS_CENTER} cy={COMPASS_CENTER} r={COMPASS_RADIUS + 11} fill="#030712" stroke="#0e7490" strokeWidth="1" strokeDasharray="3 3" />
                   <circle cx={COMPASS_CENTER} cy={COMPASS_CENTER} r={COMPASS_RADIUS} fill="#060e1a" stroke="#1e293b" strokeWidth="1.5" />
 
+                  <g transform={`rotate(${-Number(currentHeading || 0)} ${COMPASS_CENTER} ${COMPASS_CENTER})`} className="transition-transform duration-200 ease-out">
                   {Array.from({ length: 36 }).map((_, i) => {
                     const deg = i * 10;
                     const isMajor = deg % 30 === 0;
@@ -766,11 +809,12 @@ export default function UnifiedRadarMap({
                   <text x={COMPASS_CENTER + COMPASS_RADIUS - 13} y={COMPASS_CENTER + 4} textAnchor="middle" fill="#38bdf8" fontSize="11" fontWeight="bold" fontFamily="monospace">E</text>
                   <text x={COMPASS_CENTER} y={COMPASS_CENTER + COMPASS_RADIUS - 6} textAnchor="middle" fill="#38bdf8" fontSize="11" fontWeight="bold" fontFamily="monospace">S</text>
                   <text x={COMPASS_CENTER - COMPASS_RADIUS + 13} y={COMPASS_CENTER + 4} textAnchor="middle" fill="#38bdf8" fontSize="11" fontWeight="bold" fontFamily="monospace">W</text>
+                  </g>
 
                   <line x1={COMPASS_CENTER - 20} y1={COMPASS_CENTER} x2={COMPASS_CENTER + 20} y2={COMPASS_CENTER} stroke="#0e7490" strokeWidth="0.8" opacity="0.3" />
                   <line x1={COMPASS_CENTER} y1={COMPASS_CENTER - 20} x2={COMPASS_CENTER} y2={COMPASS_CENTER + 20} stroke="#0e7490" strokeWidth="0.8" opacity="0.3" />
 
-                  {activeTarget && (
+                  {activeTarget && currentHeading !== null && (
                     <g
                       transform={`rotate(${needleAngle} ${COMPASS_CENTER} ${COMPASS_CENTER})`}
                       filter="url(#needleGlow)"
@@ -837,8 +881,9 @@ export default function UnifiedRadarMap({
 
               <div className="mt-0.5 text-center font-mono text-[10px] text-slate-500 dark:text-slate-400">
                 <span>Heading: </span>
-                <strong className="text-cyan-600 dark:text-cyan-400">{Math.round(currentHeading)}° {cardinalDirection(currentHeading)}</strong>
+                <strong className="text-cyan-600 dark:text-cyan-400">{currentHeading === null ? 'Unavailable' : `${Math.round(currentHeading)}° ${cardinalDirection(currentHeading)} · ${compassReference === 'true' ? 'true north' : 'magnetic north'}`}</strong>
               </div>
+              <p className="mt-1 max-w-[160px] text-center text-[10px] leading-tight text-slate-500 dark:text-slate-400">Point the top of your phone toward the direction you face.</p>
             </div>
 
             {/* Metrics Matrix */}

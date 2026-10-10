@@ -483,3 +483,184 @@ html:not(.dark) .chat-assistant-bubble h4 {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+/* Status details are a viewport-contained dialog; long native IDs must wrap. */
+.telemetry-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  background: rgb(2 12 18 / 35%);
+}
+.native-overlay {
+  inset: auto;
+  top: var(--app-viewport-top, 0px);
+  left: var(--app-viewport-left, 0px);
+  width: var(--app-viewport-width, 100%);
+  height: var(--app-viewport-height, 100dvh);
+}
+.telemetry-dialog {
+  container: telemetry / inline-size;
+  width: 100%;
+  max-width: 360px;
+  min-width: 0;
+  max-height: 100%;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+.telemetry-values > div {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  gap: 12px;
+}
+.telemetry-values > div > * { min-width: 0; overflow-wrap: anywhere; }
+@container telemetry (max-width: 260px) {
+  .telemetry-values > div { grid-template-columns: minmax(0, 1fr); gap: 3px; }
+}
+.telemetry-dialog button { flex-shrink: 0; min-width: 36px; min-height: 36px; }
+.native-overlay .settings-dialog { max-height: 100%; min-width: 0; }
+.survivor-message-bubble { overflow-wrap: anywhere; }
+
+/* APK: fit the visible screen instead of subtracting guessed header heights. */
+.app-native.survivor-shell {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  container-type: inline-size;
+  position: fixed;
+  top: var(--app-viewport-top, 0px);
+  left: var(--app-viewport-left, 0px);
+  width: var(--app-viewport-width, 100%);
+  height: var(--app-viewport-height, 100dvh);
+  min-height: 0;
+  max-width: 100%;
+  padding: 0;
+  overflow: hidden;
+}
+.app-native.survivor-shell .app-header { position: relative; flex-shrink: 0; }
+.app-native.survivor-shell .app-header-content { flex-wrap: wrap; padding: 6px 8px; }
+.app-native.survivor-shell .app-header nav { display: none; }
+.app-native.survivor-shell .app-header-content > a { min-width: 0; flex-shrink: 1; }
+.app-native.survivor-shell .brand-wordmark { overflow-wrap: anywhere; }
+.app-native.survivor-shell .app-header-actions { flex-wrap: wrap; max-width: 100%; gap: 4px; }
+.app-native.survivor-shell .app-header-actions button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 6px;
+}
+.app-native.survivor-shell .app-header-actions button span:not(.relative):not(.absolute) { display: none; }
+.app-native.survivor-shell .app-header-actions > :not(.theme-toggle-btn) { display: none !important; }
+.app-native.survivor-shell .app-header-content { flex-wrap: nowrap; }
+.app-native.survivor-shell .theme-toggle-btn { background: var(--bg-card-elevated); border-color: var(--border-default); color: var(--accent); min-width: 44px !important; min-height: 44px !important; }
+.app-native.survivor-shell .app-main { min-height: 0; min-width: 0; overflow-y: auto; padding: 6px; }
+.app-native.survivor-chat-active .app-main { display: flex; flex-direction: column; overflow: hidden; }
+.app-native.survivor-chat-active .shell-heading { display: none; }
+.app-native.survivor-chat-active .app-main > :not(.survivor-chat-region) {
+  flex-shrink: 0;
+  max-height: 20%;
+  overflow-y: auto;
+  padding: 8px;
+  margin-bottom: 6px;
+  overflow-wrap: anywhere;
+}
+.app-native.survivor-shell .app-main [role="status"] > button,
+.app-native.survivor-shell .app-main [role="alert"] > button { flex-shrink: 0; white-space: nowrap; }
+.app-native .survivor-chat-region { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
+.app-native .survivor-chat-region > :not(.survivor-chat-panel) { flex-shrink: 0; }
+.app-native .survivor-chat-panel { flex: 1; height: auto; min-height: 0; margin-top: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto; }
+.app-native .survivor-message-history { min-height: 0; overflow-y: auto; }
+.app-native .survivor-message-history { overscroll-behavior-y: contain; }
+.app-native .survivor-message-bubble { max-width: calc(100% - 2.25rem); }
+.app-native .survivor-chat-panel form button { min-width: 40px; min-height: 40px; }
+.app-native .survivor-chat-panel form input { min-height: 40px; font-size: 16px; }
+.app-native .survivor-quick-prompts { flex-wrap: wrap; min-width: 0; }
+.app-native .survivor-quick-prompts > button { min-height: 36px; }
+.app-native .quick-prompt-list {
+  flex-basis: 100%;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+  max-height: min(6rem, 20dvh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+.app-native .quick-prompt-list button {
+  min-width: 0;
+  min-height: 40px;
+  white-space: normal;
+  text-align: left;
+  border-radius: 10px;
+  padding: 6px 8px;
+}
+.app-native .quick-prompt-list svg { flex-shrink: 0; }
+.app-native .survivor-desktop-tabs { display: none; }
+.app-native .survivor-bottom-nav {
+  display: block;
+  position: static;
+  flex-shrink: 0;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.app-native .survivor-tabs { height: auto; min-height: 56px; }
+.app-native .survivor-tabs button { min-width: 0; padding: 6px 2px; min-height: 48px; }
+.app-native .survivor-tabs button > span { white-space: normal; overflow-wrap: anywhere; }
+html[data-native-keyboard="true"] .app-native .survivor-bottom-nav { display: none; }
+.app-native.survivor-shell .survivor-tabs button[aria-current="page"] { color: var(--accent) !important; background: var(--bg-card-elevated); }
+.app-native:not(.survivor-shell) { min-width: 0; overflow-x: hidden; padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px)); }
+.app-native:not(.survivor-shell) .app-main { min-width: 0; padding-inline: 8px; }
+.app-mobile-dock { background: var(--bg-header) !important; border-color: var(--border-subtle) !important; padding-bottom: max(5px, env(safe-area-inset-bottom, 0px)); }
+.app-mobile-dock > a, .app-mobile-dock > button { flex: 1; min-width: 0; min-height: 46px; padding-inline: 2px; overflow-wrap: anywhere; }
+.app-mobile-dock > a[class*="text-cyan"], .app-mobile-dock > button[class*="text-cyan"] { color: var(--accent) !important; }
+.app-native.survivor-shell .survivor-message-history { background: var(--bg-field) !important; }
+.app-native.survivor-shell .chat-assistant-bubble { background: var(--bg-card-elevated) !important; border-color: var(--border-subtle) !important; }
+.app-native.survivor-shell .user-chat-bubble { background: var(--accent-strong) !important; border-color: var(--border-active) !important; }
+.app-native.survivor-shell .survivor-chat-panel h2 { font-family: 'Space Grotesk', Manrope, sans-serif; font-size: 15px; }
+.app-native.survivor-shell .app-main .text-xs { font-size: 13px; }
+.app-native.survivor-shell .app-main .text-sm { font-size: 15px; }
+.app-native.survivor-shell .app-main label { font-size: 14px; line-height: 1.35; }
+.app-native.survivor-shell .survivor-message-history .survivor-message-bubble { font-size: 14px; line-height: 1.5; }
+.app-native.survivor-shell .survivor-message-history .survivor-message-bubble p,
+.app-native.survivor-shell .survivor-message-history .survivor-message-bubble li { font-size: 14px; line-height: 1.5; }
+.app-native.survivor-shell .app-main button { line-height: 1.3; }
+.app-native.survivor-shell .survivor-emergency-types button { height: auto; max-height: 112px; }
+.app-native.survivor-shell .btn-sos-broadcast { flex-shrink: 0; }
+@container (max-width: 330px) {
+  .survivor-emergency-types { grid-template-columns: minmax(0, 1fr) !important; }
+  .survivor-emergency-types button { min-height: 62px !important; max-height: none !important; }
+  .app-header .brand-wordmark { font-size: 13px !important; }
+}
+
+/* The four core Survivor views stay readable on small and large-text phones. */
+@media (max-width: 639px) {
+  .survivor-shell .app-header-actions > :not(.theme-toggle-btn) { display: none !important; }
+  .survivor-shell .app-header-content { flex-wrap: nowrap; }
+  .survivor-shell .brand-wordmark { font-size: 15px; }
+  .survivor-shell .app-main { font-size: 14px; line-height: 1.45; }
+  .survivor-shell .app-main .app-card h2 { font-size: 16px; }
+  .survivor-shell .app-main .app-card p,
+  .survivor-shell .survivor-message-bubble { font-size: max(13px, 1rem); line-height: 1.45; }
+  .survivor-shell .survivor-chat-panel,
+  .survivor-shell .survivor-chat-panel > div:first-child,
+  .survivor-shell .survivor-quick-prompts,
+  .survivor-shell .survivor-chat-panel > div:last-child { background: var(--bg-card) !important; border-color: var(--border-subtle) !important; }
+  .survivor-shell .survivor-chat-panel input { background: var(--bg-field) !important; border-color: var(--border-default) !important; color: var(--text-primary) !important; font-size: 16px !important; }
+  .survivor-shell .survivor-bottom-nav { background: var(--bg-header) !important; border-color: var(--border-subtle) !important; }
+  .survivor-shell .survivor-tabs button { font-size: 13px; }
+  .survivor-shell .survivor-tabs button > span { font-size: 12px; }
+  .survivor-shell .survivor-quick-prompts button { font-size: 12px; }
+  .survivor-shell .survivor-emergency-types { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .survivor-shell .survivor-emergency-types button { min-width: 0; min-height: 76px; padding: 10px; }
+  .survivor-shell .survivor-emergency-types button span { font-size: 14px; }
+  .survivor-shell .survivor-emergency-types button p { font-size: 12px; }
+  .survivor-shell .btn-sos-broadcast { min-height: 52px; max-height: 76px; font-size: 14px; }
+  .survivor-compass-row { flex-wrap: wrap; justify-content: center; }
+  .survivor-compass-row > :last-child { flex-basis: 100%; }
+}
+@media (max-width: 330px) {
+  .survivor-shell .brand-wordmark { font-size: 13px; }
+  .survivor-shell .survivor-emergency-types { grid-template-columns: minmax(0, 1fr); }
+}

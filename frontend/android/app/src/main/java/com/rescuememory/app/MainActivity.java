@@ -8,6 +8,7 @@ public class MainActivity extends BridgeActivity {
     protected void onCreate(Bundle savedInstanceState) {
         registerPlugin(RescueBlePlugin.class);
         registerPlugin(QdrantEdgePlugin.class);
+        registerPlugin(CompassHeadingPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }
