@@ -957,10 +957,29 @@ export default function AdminPortal({ initialTab = 'hq' }) {
               </div>
               {cloudError && <p role="alert" className="mb-2 break-words text-xs text-amber-400">{cloudError}</p>}
               {cloudLoading && <p role="status" className="mb-2 text-xs text-slate-400">Reading cloud records…</p>}
-              {cloudPage && <p className="mb-2 text-xs text-slate-400">Showing {cloudPage.items.length} loaded · Collection count: {displayCloudCount(currentShards[cloudCollection])} · Read {formatTime(cloudPage.checked_at)}</p>}
+              {cloudPage && (
+                <div className="mb-2 flex items-center justify-between text-xs text-slate-400">
+                  <span>Showing {cloudPage.items.length} loaded · Collection count: {displayCloudCount(currentShards[cloudCollection])}</span>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-violet-950/40 border border-violet-800/50 text-violet-300 font-bold">
+                    Sorted: Most Recent First ⏱️
+                  </span>
+                </div>
+              )}
               {cloudPage && !cloudPage.items.length && <Empty icon={Database}>No records in this cloud collection.</Empty>}
               <div className="max-h-[460px] overflow-y-auto space-y-1.5 pr-1">
-                {(cloudPage?.items || []).map((point) => {
+                {([...(cloudPage?.items || [])].sort((a, b) => {
+                  const parseTime = (p) => {
+                    const payload = p.payload || {};
+                    const t = payload.observed_at || payload.created_at || payload.published_at || payload.timestamp || payload.time || payload.updated_at;
+                    if (!t) return 0;
+                    const ms = Date.parse(t);
+                    return Number.isNaN(ms) ? 0 : ms;
+                  };
+                  const tA = parseTime(a);
+                  const tB = parseTime(b);
+                  if (tA !== tB) return tB - tA;
+                  return 0;
+                })).map((point) => {
                   const ev = point.payload;
                   const isSelected = selectedRecord?.point_id === point.point_id;
                   return (

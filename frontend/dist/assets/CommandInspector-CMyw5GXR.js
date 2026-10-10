@@ -1,1 +1,0 @@
-import{t as e}from"./index-C_E-aLDc.js";import t from"./AdminPortal-BCJsTbi2.js";var n=e();function r(){return(0,n.jsx)(t,{initialTab:`inspector`})}export{r as default};

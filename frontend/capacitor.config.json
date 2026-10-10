@@ -18,6 +18,9 @@
     "StatusBar": {
       "style": "DARK",
       "backgroundColor": "#08111d"
+    },
+    "GoogleMaps": {
+      "key": "RESCUE_MAP_RUNTIME_TOKEN"
     }
   }
 }

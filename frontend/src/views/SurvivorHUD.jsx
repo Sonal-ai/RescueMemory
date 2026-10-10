@@ -1311,12 +1311,36 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
           }}
         />
         <section className="mt-3 rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-[#0b1626]" aria-label="Nearby data">
-          <h2 className="text-sm font-bold">Nearby data</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-bold">Nearby data</h2>
+            <span className="text-[10px] font-mono text-slate-400">Mesh & Cloud Relay</span>
+          </div>
           <p className="text-xs text-slate-500">{peers.length} nearby phone{peers.length === 1 ? '' : 's'} · {receivedReports.length} received report{receivedReports.length === 1 ? '' : 's'}</p>
           <div className="mt-2 space-y-2">
-            {peers.map(peer => <article key={peer.node_id || peer.id} className="min-w-0 rounded-lg border border-slate-200 p-2 dark:border-slate-700"><p className="truncate text-sm font-semibold">{peer.name || `Phone ${String(peer.node_id || peer.id || '').slice(-8)}`}</p><p className="text-xs text-slate-500">{peer.battery != null ? `Battery ${peer.battery}%` : 'Battery unknown'} · {peer.available === false ? 'Last seen' : 'Nearby'} · {peer.transports?.join(', ') || peer.source || 'Bluetooth'}</p></article>)}
-            {receivedReports.slice(0, 10).map(report => <article key={report.id} className="min-w-0 rounded-lg border border-slate-200 p-2 dark:border-slate-700"><p className="text-xs font-bold uppercase text-cyan-700 dark:text-cyan-300">{report.kind || 'Report'} · Received from {String(report.received_from || report.reporter_id || 'nearby phone').slice(-16)}</p><p className="mt-1 break-words text-sm">{report.text || 'No description'}</p>{report.location && <p className="mt-1 text-xs text-slate-500">{formatCoordinates(report.location, 4)}</p>}</article>)}
-            {!peers.length && !receivedReports.length && <p className="text-sm text-slate-500">Nearby phones and shared reports will appear here after discovery.</p>}
+            {peers.map(peer => (
+              <article key={peer.node_id || peer.id} className="min-w-0 rounded-lg border border-slate-200 p-2 dark:border-slate-700">
+                <div className="flex items-center justify-between gap-1">
+                  <p className="truncate text-sm font-semibold">{peer.name || `Phone ${String(peer.node_id || peer.id || '').slice(-8)}`}</p>
+                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-cyan-50 dark:bg-cyan-950/40 text-cyan-700 dark:text-cyan-300 font-bold">
+                    {peer.available === false ? 'Last seen' : 'Connected'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {peer.transports?.join(', ') || peer.source || 'Bluetooth Mesh'} · 
+                  <span className="text-slate-400"> Battery & telemetry in Mesh tab</span>
+                </p>
+              </article>
+            ))}
+            {receivedReports.slice(0, 10).map(report => (
+              <article key={report.id} className="min-w-0 rounded-lg border border-slate-200 p-2 dark:border-slate-700">
+                <p className="text-xs font-bold uppercase text-cyan-700 dark:text-cyan-300">{report.kind || 'Report'} · Received from {String(report.received_from || report.reporter_id || 'nearby phone').slice(-16)}</p>
+                <p className="mt-1 break-words text-sm">{report.text || 'No description'}</p>
+                {report.location && <p className="mt-1 text-xs text-slate-500">{formatCoordinates(report.location, 4)}</p>}
+              </article>
+            ))}
+            {!peers.length && !receivedReports.length && (
+              <p className="text-sm text-slate-500">Nearby phones and shared reports will appear here after discovery.</p>
+            )}
           </div>
         </section>
       </>)}

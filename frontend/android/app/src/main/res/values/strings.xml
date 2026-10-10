@@ -4,4 +4,5 @@
     <string name="title_activity_main">RescueMemory</string>
     <string name="package_name">com.rescuememory.app</string>
     <string name="custom_url_scheme">com.rescuememory.app</string>
+    <string name="google_maps_key">RESCUE_MAP_RUNTIME_TOKEN</string>
 </resources>
