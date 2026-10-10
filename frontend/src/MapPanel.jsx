@@ -75,7 +75,7 @@ export default function MapPanel({
           viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
           role="img"
           aria-label="Offline coordinate grid with report markers and nearby peer devices"
-          className={`w-full h-auto max-h-[340px] touch-manipulation ${onSelect ? 'cursor-crosshair' : ''}`}
+          className={`block w-full max-w-full h-auto max-h-[340px] touch-manipulation ${onSelect ? 'cursor-crosshair' : ''}`}
           onClick={handleMapClick}
           onPointerUp={handleMapClick}
           style={{ touchAction: 'pan-x pan-y' }}
@@ -111,7 +111,7 @@ export default function MapPanel({
 
           {/* Tactical Coordinates Watermark */}
           <text x="22" y="32" fill="var(--map-label)" fontSize="11" fontWeight="700" letterSpacing="2" opacity="0.8">
-            OFFLINE TACTICAL GRID · QDRANT HNSW
+            OFFLINE LOCATION GRID
           </text>
 
           {/* Compass Rose Mini-Indicator */}
@@ -282,7 +282,7 @@ export default function MapPanel({
 
         {/* Floating Active Badges */}
         <div className="absolute right-3.5 bottom-3.5 text-[10px] font-mono bg-slate-950/85 px-2.5 py-1 rounded-xl text-slate-300 border border-slate-800 shadow-md">
-          5 km HNSW Radius · Local Mesh
+            5 km view · Local reports
         </div>
 
         {validPeers.length > 0 && (
@@ -297,7 +297,7 @@ export default function MapPanel({
       <div className="flex flex-wrap items-center justify-between text-xs text-slate-600 dark:text-slate-400 mt-2.5 px-1 gap-2">
         <div className="flex items-center gap-1.5 font-medium">
           <MapPin size={13} className="text-cyan-600 dark:text-cyan-400 shrink-0" />
-          <span>{onSelect ? 'Tap grid to reposition pin. ' : ''}Center: {safeCenterLat.toFixed(4)}, {safeCenterLon.toFixed(4)}</span>
+          <span>Center: {safeCenterLat.toFixed(4)}, {safeCenterLon.toFixed(4)}</span>
         </div>
 
         <div className="flex items-center gap-3 text-[11px] font-mono">

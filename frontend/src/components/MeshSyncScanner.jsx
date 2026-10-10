@@ -11,7 +11,7 @@ import { transferSummary, meshTrace } from '../brain/meshDiagnostics.js';
 import { getAllLocalReports, getMeshHistory } from '../brain/offlineStorage.js';
 import { wireReport, mergePeers } from '../brain/meshProtocol.js';
 
-const panel = 'rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0b1626] p-4 shadow-sm';
+const panel = 'rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0b1626] p-3 shadow-sm';
 const button = 'rounded-xl border border-cyan-500/40 bg-cyan-500/10 px-3 py-2 text-xs font-bold text-cyan-700 dark:text-cyan-300 disabled:opacity-40';
 const time = value => value ? new Date(value).toLocaleString() : 'Not yet';
 const ago = value => !value ? 'Not measured' : `${Math.max(0, Math.round((Date.now() - value) / 1000))}s ago`;
@@ -196,17 +196,14 @@ export default function MeshSyncScanner({ initialPeers = [], onSyncComplete = nu
   return <div className="mx-auto flex w-full max-w-2xl flex-col gap-3 pb-4 text-slate-900 dark:text-slate-100">
     <section className={panel}>
       <div className="flex items-start justify-between gap-3">
-        <div><h2 className="flex items-center gap-2 text-lg font-bold"><Bluetooth size={20} className="text-cyan-500" />Mesh Sync</h2>
-          <p className="mt-1 text-xs text-slate-500">Shares SOS and reports automatically.</p></div>
+        <div className="min-w-0"><h2 className="flex items-center gap-2 text-base font-bold"><Bluetooth size={19} className="text-cyan-500" />Mesh Sync</h2>
+          <p className="mt-1 text-xs text-slate-500">{ready ? 'Bluetooth ready' : 'Waiting for Bluetooth'} · Auto-shares SOS and reports</p></div>
+        <button type="button" aria-label="Mesh Sync details and debugging" title="Sync details" onClick={() => setDebugOpen(true)} className="shrink-0 rounded-full border border-slate-300 p-2 text-cyan-700 dark:border-slate-700 dark:text-cyan-300"><Info size={18} /></button>
       </div>
-      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs">
-        <span className={ready ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500'}>{ready ? '● Bluetooth ready' : isNativeBle() ? 'Bluetooth not ready' : 'Bluetooth requires Android app'}</span>
-        <span>Internet {online ? 'online' : 'offline'}</span>
-        <BatteryLabel value={battery.battery} charging={battery.charging} measured={battery.battery_measured_at} />
-      </div>
-      <div className="mt-3 flex items-center justify-between gap-3 rounded-xl bg-slate-50 p-3 dark:bg-slate-900">
-        <div><p className="text-sm font-semibold">Auto-sync nearby phones</p></div>
+      <div className="mt-2 flex items-center justify-between gap-3 text-xs">
+        <label htmlFor="mesh-auto-toggle" className="font-semibold">Auto-sync nearby phones</label>
         <input aria-label="Auto-sync nearby phones" type="checkbox" checked={auto} disabled={!isNativeBle()} className="h-5 w-5 accent-cyan-600"
+          id="mesh-auto-toggle"
           onChange={e => { setAuto(e.target.checked); autoRef.current = e.target.checked; localStorage.setItem('rescue.mesh_auto', String(e.target.checked)); window.dispatchEvent(new CustomEvent('rescue:mesh-auto-changed')); }} />
       </div>
     </section>
@@ -241,12 +238,11 @@ export default function MeshSyncScanner({ initialPeers = [], onSyncComplete = nu
       {!nearby.length && <p className="py-2 text-center text-xs text-slate-500">No nearby phones found yet. Turn on Bluetooth and allow Nearby devices and precise Location on both phones.</p>}
     </section>
 
-    <section className={panel}>
-      <button aria-expanded={debugOpen} onClick={() => setDebugOpen(!debugOpen)} className="flex w-full items-center justify-between text-left text-sm font-bold">
-        <span className="flex items-center gap-2"><Bug size={17} className="text-slate-400" />Sync debugging</span>{debugOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-      </button>
-      <p className="mt-1 text-[11px] text-slate-500">Check stored SOS, transfer receipts, and recent activity.</p>
-      {debugOpen && <div className="mt-4 space-y-4">
+    {debugOpen && <div className="native-overlay fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-3" role="dialog" aria-modal="true" aria-label="Mesh Sync details">
+      <section className="max-h-[85dvh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-4 text-slate-900 shadow-2xl dark:bg-[#0b1626] dark:text-slate-100">
+      <div className="flex items-center justify-between gap-2"><h2 className="flex items-center gap-2 text-sm font-bold"><Bug size={17} />Sync details</h2><button type="button" aria-label="Close Sync details" onClick={() => setDebugOpen(false)} className="rounded-lg border border-slate-300 p-2 dark:border-slate-700"><X size={18} /></button></div>
+      <p className="mt-1 text-xs text-slate-500">{online ? 'Internet online' : 'Internet offline'} · <BatteryLabel value={battery.battery} charging={battery.charging} measured={battery.battery_measured_at} /></p>
+      <div className="mt-4 space-y-4">
     {error && <p className="break-words text-xs text-amber-600">{error}</p>}
     {nearby.filter(p => p.error).map(p => <p key={p.node_id} className="break-words text-xs text-amber-600">{p.name}: {p.error}</p>)}
     <details open className="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
@@ -290,8 +286,9 @@ export default function MeshSyncScanner({ initialPeers = [], onSyncComplete = nu
       {onlinePeers.map(peer => <p key={peer.node_id} className="mt-2 text-xs">{peer.name || peer.node_id} <span className="text-slate-500">· Online only</span></p>)}
     </details>
     <details className="rounded-xl border border-slate-200 p-3 dark:border-slate-800"><summary className="cursor-pointer text-sm font-bold">Recent activity</summary><div className="mt-2 space-y-2">{history.transfers.slice(0, 10).map(item => <div key={item.id} className="rounded-xl bg-slate-50 p-3 text-xs dark:bg-slate-900"><p className="font-semibold">{item.transport} · {item.status} · {item.peer_id}</p><p className="mt-1 text-slate-500">{transferSummary(item)}</p>{item.error && <p className="mt-1 text-amber-600">{item.error}</p>}<p className="mt-1 text-[10px] text-slate-400">{time(item.updated_at)}</p></div>)}</div>{!history.transfers.length && <p className="mt-2 text-xs text-slate-500">Completed and partial exchanges will appear here.</p>}</details>
-      </div>}
-    </section>
+      </div>
+      </section>
+    </div>}
 
   </div>;
 }

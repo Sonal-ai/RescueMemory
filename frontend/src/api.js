@@ -93,7 +93,9 @@ let isOnline = localStorage.getItem(ONLINE_MODE_KEY) !== 'false'; // default tru
 const onlineModeListeners = new Set();
 
 export function isOnlineMode() {
-  return isOnline;
+  // The APK has no online-mode switch. A saved web preference must not
+  // silently prevent its optional Gemini request when connectivity returns.
+  return isAndroidEdge() ? navigator.onLine !== false : isOnline;
 }
 
 export function setOnlineMode(enabled) {
@@ -156,7 +158,7 @@ export async function probeCandidateBackends() {
   if (isProbing || resolvedBackendUrl) return resolvedBackendUrl;
   isProbing = true;
   try {
-    const isLocalDev = typeof window !== 'undefined' && (
+    const isLocalDev = !isAndroidEdge() && typeof window !== 'undefined' && (
       window.location.hostname === 'localhost' ||
       window.location.hostname === '127.0.0.1' ||
       window.location.hostname === ''
@@ -203,13 +205,15 @@ export async function probeCandidateBackends() {
 
 export function getBackendBaseUrl({ probe = true } = {}) {
   const custom = setting('backendUrl');
-  if (custom) return custom.replace(/\/$/, '');
-  if (resolvedBackendUrl) return resolvedBackendUrl;
+  if (custom && (!isAndroidEdge() || !/^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(custom))) return custom.replace(/\/$/, '');
+  if (resolvedBackendUrl && (!isAndroidEdge() || !/^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(resolvedBackendUrl))) return resolvedBackendUrl;
   const envUrl = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_BACKEND_URL) || '';
   if (envUrl) return envUrl.replace(/\/$/, '');
   const cached = typeof sessionStorage !== 'undefined' && sessionStorage.getItem('rescue.resolvedBackendUrl');
-  if (cached) return cached;
+  if (cached && (!isAndroidEdge() || !/^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(cached))) return cached;
   if (probe) probeCandidateBackends().catch(() => {});
+
+  if (isAndroidEdge()) return 'https://rescuememory.onrender.com';
 
   if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
     return 'http://localhost:8000';

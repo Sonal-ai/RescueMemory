@@ -32,3 +32,12 @@ test('offline, server error and timeout retain the local answer without fabricat
     request: (_, { signal }) => new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('timeout')))) });
   assert.equal(timed.local_answer, local.local_answer); assert.equal(timed.ai_status, 'unavailable');
 });
+test('online general question reaches Gemini even without a matching local guide', async () => {
+  let payload;
+  const result = await formatOnlineAnswer({ local_answer: 'No local match', cards: [], memory_hits: [] }, 'hello', {
+    url: '/api/chat/format', events: new EventTarget(), online: () => true,
+    request: async (_, options) => { payload = JSON.parse(options.body); return { ok: true, json: async () => ({ ai_answer: 'How can I help?' }) }; }
+  });
+  assert.deepEqual(payload.cards, []);
+  assert.equal(result.ai_answer, 'How can I help?');
+});

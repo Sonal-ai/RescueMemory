@@ -131,8 +131,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def format_chat(request: FormatChatRequest):
         if not settings.gemini_api_key:
             return {"ai_answer": None, "ai_status": "not_configured"}
-        if not request.cards and not request.reports:
-            return {"ai_answer": None, "ai_status": "no_evidence"}
         # Client observations are never promoted to command-verified evidence.
         answer = grounded_answer(request.text, [c.model_dump() for c in request.cards],
                                  [r.model_dump() for r in request.reports],

@@ -47,3 +47,11 @@ def test_private_reports_and_unbounded_evidence_are_rejected(tmp_path):
         {"id": str(i), "title": "Guide"} for i in range(6)]}).status_code == 422
     assert c.post("/api/chat/format", json={"text": "help", "reports": [
         {"text": "x" * 2001, "visibility": "public"}]}).status_code == 422
+
+
+def test_general_question_without_local_evidence_still_uses_gemini(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr("backend.app.main.grounded_answer", lambda *args: calls.append(args) or "How can I help?")
+    response = client(tmp_path).post("/api/chat/format", json={"text": "hello", "cards": [], "reports": []})
+    assert response.json() == {"ai_answer": "How can I help?", "ai_status": "answered"}
+    assert calls[0][1:3] == ([], [])

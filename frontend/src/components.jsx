@@ -239,7 +239,7 @@ export function QuietTelemetryPill({ health, sync, error }) {
   );
 }
 
-export function Shell({ title, subtitle, children, className = '', bottomBar }) {
+export function Shell({ title, subtitle, children, className = '', bottomBar, headerStatus }) {
   useNativeViewport();
   const location = useLocation();
   const { health, sync, error } = useNodeStatus();
@@ -389,6 +389,7 @@ export function Shell({ title, subtitle, children, className = '', bottomBar }) 
             </button>
           </div>
         </div>
+        {headerStatus && <div className="shell-header-status max-w-7xl mx-auto px-3 pb-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300">{headerStatus}</div>}
       </header>
 
       {/* Mobile Tactical Views Slide-out Drawer */}

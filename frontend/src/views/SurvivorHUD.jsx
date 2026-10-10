@@ -54,7 +54,8 @@ import UnifiedRadarMap from '../components/UnifiedRadarMap';
 import MeshSyncScanner from '../components/MeshSyncScanner';
 import MarkdownContent from '../components/MarkdownContent';
 import useLiveGps from '../hooks/useLiveGps.js';
-import { formatCoordinates, gpsStatusText } from '../brain/locationTracking.js';
+import { formatCoordinates } from '../brain/locationTracking.js';
+import { getAllLocalReports } from '../brain/offlineStorage.js';
 
 const TABS = [
   ['ask', 'Assistant', HeartPulse],
@@ -161,7 +162,6 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
 
   const targetLoc = navTarget?.location || (navTarget?.lat != null && navTarget?.lon != null ? { lat: navTarget.lat, lon: navTarget.lon } : null);
   const gps = useLiveGps();
-  const [gpsNoticeDismissed, setGpsNoticeDismissed] = useState(false);
   const [shareLocation, setShareLocation] = useState(true);
   const [centerOverride, setCenter] = useState(() => targetLoc || null);
   const [manualPin, setManualPin] = useState(null);
@@ -172,6 +172,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
   }, []);
   const [items, setItems] = useState([]);
   const [peers, setPeers] = useState([]);
+  const [receivedReports, setReceivedReports] = useState([]);
   const [selectedPeer, setSelectedPeer] = useState(null);
   const [syncingPeer, setSyncingPeer] = useState(false);
   const [mapUpdatedAt, setMapUpdatedAt] = useState(null);
@@ -314,6 +315,17 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
     };
   }, [refreshPeers]);
 
+  useEffect(() => {
+    let mounted = true;
+    const refreshReceived = () => getAllLocalReports().then(reports => {
+      if (mounted) setReceivedReports(reports.filter(report => report.imported).sort((a, b) => Date.parse(b.imported_at || b.created_at || 0) - Date.parse(a.imported_at || a.created_at || 0)));
+    }).catch(() => {});
+    refreshReceived();
+    window.addEventListener('rescue:reports-changed', refreshReceived);
+    window.addEventListener('rescue:transfers-changed', refreshReceived);
+    return () => { mounted = false; window.removeEventListener('rescue:reports-changed', refreshReceived); window.removeEventListener('rescue:transfers-changed', refreshReceived); };
+  }, []);
+
   // Refresh nearby map observations
   const centerLat = gps.fix?.lat;
   const centerLon = gps.fix?.lon;
@@ -391,7 +403,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
   };
 
   const locateWithGps = useCallback(async () => {
-    setManualPin(null); setCenter(null); setGpsNoticeDismissed(false);
+    setManualPin(null); setCenter(null);
     await gps.refresh();
   }, [gps.refresh]);
   // Peer Wi-Fi sync
@@ -496,6 +508,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
         memory_hits: result.memory_hits,
         timestamp: new Date(),
         isAi: Boolean(result.ai_answer),
+        aiStatus: result.ai_status,
          retrievalEngine: result.engine || result.answer?.engine,
         score: (result.cards || result.answer?.source_cards)?.[0]?.score
       };
@@ -772,6 +785,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
       subtitle=""
       className={`survivor-shell ${tab === 'ask' ? 'survivor-chat-active' : ''}`}
       bottomBar={bottomBar}
+      headerStatus={<span className="flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap"><span className="truncate">{gps.fix ? Number.isFinite(gps.fix.accuracy) ? `GPS ±${Math.round(gps.fix.accuracy)}m` : 'GPS ready' : 'Finding GPS…'}</span><span aria-hidden="true">·</span><span className="truncate">Mesh {peers.filter(peer => peer.source === 'native_ble' || peer.source === 'web_ble' || peer.transports?.includes('native_ble')).length || 'scanning'}</span>{syncInfo.pendingCount > 0 && <span className="truncate">· {syncInfo.pendingCount} pending</span>}</span>}
     >
       {/* Global Status & Alerts */}
       {error && (
@@ -783,10 +797,6 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
           <button onClick={() => setError('')} className="text-xs text-red-600 dark:text-red-300 hover:underline font-semibold ml-2">Dismiss</button>
         </div>
       )}
-      {!gpsNoticeDismissed && <div role="status" className={`mb-4 p-4 rounded-2xl border text-sm flex items-center justify-between gap-3 ${gps.status === 'live' ? 'border-emerald-200 dark:border-emerald-800/80 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200' : 'border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200'}`}>
-        <span className="flex items-center gap-2.5"><MapPin size={18} className="shrink-0" />{gpsStatusText(gps)}</span>
-        <button onClick={() => setGpsNoticeDismissed(true)} className="text-xs font-semibold hover:underline">Dismiss</button>
-      </div>}
       {message && (
         <div role="status" className="mb-4 p-4 rounded-2xl border border-emerald-200 dark:border-emerald-800/80 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 text-sm flex items-center justify-between shadow-sm">
           <div className="flex items-center gap-2.5">
@@ -966,6 +976,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                           {msg.timestamp ? formatTime(msg.timestamp) : ''}
                         </span>
                       </div>
+                      {!isUser && !msg.isAi && msg.aiStatus && msg.aiStatus !== 'offline_mode' && <p className="mb-1 text-xs text-amber-700 dark:text-amber-300">{msg.aiStatus === 'not_configured' ? 'Gemini is not configured on the server; showing the offline answer.' : 'Gemini is unavailable; showing the offline answer.'}</p>}
 
                       {/* Message Body with rich Markdown parsing */}
                       <div className={isUser ? 'text-[13.5px] sm:text-sm text-white font-medium whitespace-pre-wrap leading-relaxed' : 'text-[13.5px] sm:text-sm leading-relaxed text-slate-900 dark:text-slate-100'}>
@@ -1297,7 +1308,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
       {/* ========================================================================= */}
       {/* TAB 2: UNIFIED RADAR MAP & 360° SURVIVAL COMPASS */}
       {/* ========================================================================= */}
-      {tab === 'map' && (gps.fix ? (
+      {tab === 'map' && (<>
         <UnifiedRadarMap
           userLocation={gps.fix}
           gpsLive={gps.status === 'live'}
@@ -1315,9 +1326,17 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
               setSelected(target);
             }
           }}
-          role="survivor"
         />
-      ) : <Card title="Radar & Compass"><p className="text-sm text-slate-600 dark:text-slate-300">{gpsStatusText(gps)}</p><button onClick={locateWithGps} className="mt-3 text-sm font-bold text-cyan-600">Retry GPS</button></Card>)}
+        <section className="mt-3 rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-[#0b1626]" aria-label="Nearby data">
+          <h2 className="text-sm font-bold">Nearby data</h2>
+          <p className="text-xs text-slate-500">{peers.length} nearby phone{peers.length === 1 ? '' : 's'} · {receivedReports.length} received report{receivedReports.length === 1 ? '' : 's'}</p>
+          <div className="mt-2 space-y-2">
+            {peers.map(peer => <article key={peer.node_id || peer.id} className="min-w-0 rounded-lg border border-slate-200 p-2 dark:border-slate-700"><p className="truncate text-sm font-semibold">{peer.name || `Phone ${String(peer.node_id || peer.id || '').slice(-8)}`}</p><p className="text-xs text-slate-500">{peer.battery != null ? `Battery ${peer.battery}%` : 'Battery unknown'} · {peer.available === false ? 'Last seen' : 'Nearby'} · {peer.transports?.join(', ') || peer.source || 'Bluetooth'}</p></article>)}
+            {receivedReports.slice(0, 10).map(report => <article key={report.id} className="min-w-0 rounded-lg border border-slate-200 p-2 dark:border-slate-700"><p className="text-xs font-bold uppercase text-cyan-700 dark:text-cyan-300">{report.kind || 'Report'} · Received from {String(report.received_from || report.reporter_id || 'nearby phone').slice(-16)}</p><p className="mt-1 break-words text-sm">{report.text || 'No description'}</p>{report.location && <p className="mt-1 text-xs text-slate-500">{formatCoordinates(report.location, 4)}</p>}</article>)}
+            {!peers.length && !receivedReports.length && <p className="text-sm text-slate-500">Nearby phones and shared reports will appear here after discovery.</p>}
+          </div>
+        </section>
+      </>)}
 
       {/* ========================================================================= */}
       {/* ========================================================================= */}
@@ -1518,7 +1537,6 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                         <button
                           key={id}
                           type="button"
-                aria-current={isActive ? 'page' : undefined}
                           onClick={() => {
                             setSelectedMaterials((prev) =>
                               isSelected ? prev.filter((m) => m !== id) : [...prev, id]

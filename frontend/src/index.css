@@ -560,6 +560,10 @@ html:not(.dark) .chat-assistant-bubble h4 {
 .app-native.survivor-shell .app-main { min-height: 0; min-width: 0; overflow-y: auto; padding: 6px; }
 .app-native.survivor-chat-active .app-main { display: flex; flex-direction: column; overflow: hidden; }
 .app-native.survivor-chat-active .shell-heading { display: none; }
+.app-native.survivor-shell .shell-heading { display: none; }
+.app-native.survivor-shell .shell-header-status { padding: 0 10px 6px; overflow: hidden; text-overflow: ellipsis; color: var(--text-muted); }
+.radar-view, .radar-view > div, .radar-map-card, .radar-map-canvas, .radar-map-canvas > div { min-width: 0; max-width: 100%; }
+.radar-map-canvas svg { display: block; width: 100%; max-width: 100%; height: auto; }
 .app-native.survivor-chat-active .app-main > :not(.survivor-chat-region) {
   flex-shrink: 0;
   max-height: 20%;
@@ -659,6 +663,13 @@ html[data-native-keyboard="true"] .app-native .survivor-bottom-nav { display: no
   .survivor-shell .btn-sos-broadcast { min-height: 52px; max-height: 76px; font-size: 14px; }
   .survivor-compass-row { flex-wrap: wrap; justify-content: center; }
   .survivor-compass-row > :last-child { flex-basis: 100%; }
+  .survivor-shell .radar-facility-chips { display: none; }
+  .survivor-shell .radar-map-card > div:first-child { flex-wrap: nowrap; min-width: 0; overflow-x: auto; }
+  .survivor-shell .radar-map-card > div:first-child > div:first-child { flex-wrap: nowrap; width: max-content; }
+  .survivor-shell .radar-map-card > div:first-child > div:last-child { display: none; }
+  .survivor-shell .survivor-compass-dial { width: 100%; min-width: 0; }
+  .survivor-shell .survivor-compass-dial p { max-width: 95%; }
+  .survivor-shell .radar-view select { min-width: 0; font-size: 14px; }
 }
 @media (max-width: 330px) {
   .survivor-shell .brand-wordmark { font-size: 13px; }

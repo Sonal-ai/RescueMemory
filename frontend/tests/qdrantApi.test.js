@@ -29,7 +29,7 @@ globalThis.sessionStorage = { getItem: () => null, setItem: () => {}, removeItem
 Object.defineProperty(globalThis, 'navigator', { value: { onLine: true }, configurable: true });
 let networkCalls = 0;
 globalThis.fetch = async () => { networkCalls++; throw new Error('Network must not serve Android guidance'); };
-const { api } = await import('../src/api.js');
+const { api, getBackendBaseUrl } = await import('../src/api.js');
 const { saveImportedGuides } = await import('../src/brain/offlineStorage.js');
 globalThis.window = new EventTarget();
 window.location = { hostname: 'localhost', protocol: 'https:', origin: 'https://localhost' };
@@ -56,7 +56,7 @@ test('online production Android API sends its actual native retrieval to Gemini 
   let context;
   const original = globalThis.fetch;
   globalThis.fetch = async (url, options) => {
-    assert.match(url, /\/api\/chat\/format$/);
+    assert.equal(url, 'https://rescuememory.onrender.com/api/chat/format');
     context = JSON.parse(options.body);
     return { ok: true, json: async () => ({ ai_answer: 'Formatted native guidance [G1]', ai_status: 'answered' }) };
   };
@@ -66,6 +66,9 @@ test('online production Android API sends its actual native retrieval to Gemini 
     assert.equal(result.ai_answer, 'Formatted native guidance [G1]'); assert.equal(result.cards[0].id, 'water');
     assert.ok(result.local_answer);
   } finally { globalThis.fetch = original; }
+});
+test('Android WebView localhost origin resolves Gemini to the deployed backend', () => {
+  assert.equal(getBackendBaseUrl({ probe: false }), 'https://rescuememory.onrender.com');
 });
 test('empty native results stay empty; a native failure is surfaced without keyword or network fallback', async () => {
   hits = [];

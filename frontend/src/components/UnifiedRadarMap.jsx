@@ -7,15 +7,9 @@ import {
   CheckCircle2,
   ChevronDown,
   Compass,
-  Droplets,
-  HeartPulse,
   MapPin,
   Navigation,
   RefreshCw,
-  Settings2,
-  ShieldCheck,
-  Volume2,
-  VolumeX,
 } from 'lucide-react';
 import { getSurvivalRadar, distM, bearingDeg, cardinalDirection } from '../api';
 import MapPanel from '../MapPanel';
@@ -61,17 +55,14 @@ export default function UnifiedRadarMap({
   onSelectLocation = null,
   onNavigateTarget = null,
   onRefreshGps = null,
-  selectedTarget = null,
-  role = 'survivor'
+  selectedTarget = null
 }) {
   const [radarData, setRadarData] = useState(null);
   const [selectedTargetId, setSelectedTargetId] = useState(() => {
     return selectedTarget?.id || selectedTarget?.entity_id || '';
   });
-  const [showSettings, setShowSettings] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [audioEnabled, setAudioEnabled] = useState(false);
   const [mapFilter, setMapFilter] = useState('all');
 
   // Device orientation / heading state (0 = North, 90 = East, 180 = South, 270 = West)
@@ -82,7 +73,6 @@ export default function UnifiedRadarMap({
 
   // The survivor screen owns GPS on every tab; this view uses the same fix.
   const liveCoords = userLocation;
-  const gpsAccuracy = Number.isFinite(userLocation?.accuracy) ? Math.round(userLocation.accuracy) : null;
   const isLiveWalking = gpsLive;
   const [totalMetersWalked, setTotalMetersWalked] = useState(0);
   const previousFix = useRef(null);
@@ -95,32 +85,6 @@ export default function UnifiedRadarMap({
     }
     previousFix.current = userLocation;
   }, [userLocation, gpsLive]);
-  // Audio Context Ref for offline synthetic radar/compass ping
-  const audioCtxRef = useRef(null);
-
-  const playChirp = useCallback((freq = 880) => {
-    if (!audioEnabled) return;
-    try {
-      if (!audioCtxRef.current) {
-        audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
-      }
-      const ctx = audioCtxRef.current;
-      if (ctx.state === 'suspended') ctx.resume();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(freq, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(freq * 1.3, ctx.currentTime + 0.05);
-      gain.gain.setValueAtTime(0.08, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.05);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.05);
-    } catch {
-      // Audio context restricted
-    }
-  }, [audioEnabled]);
 
   // Request iOS 13+ sensor permissions on first user gesture
   const requestCompassPermission = useCallback(async () => {
@@ -281,7 +245,7 @@ export default function UnifiedRadarMap({
       await onRefreshGps();
     }
     fetchRadar();
-  }, [onRefreshGps, liveCoords, fetchRadar]);
+  }, [onRefreshGps, fetchRadar]);
 
   const radarItems = useMemo(() => radarData?.radar_items || [], [radarData]);
   const summary = useMemo(() => radarData?.summary || {
@@ -388,6 +352,7 @@ export default function UnifiedRadarMap({
   const targetBearing = liveTargetMetrics.bearing;
   const targetDistance = liveTargetMetrics.distance;
   const targetCardinal = liveTargetMetrics.cardinal;
+  const hasTargetFix = Boolean(userLocation && (activeTarget?.location || (Number.isFinite(activeTarget?.lat) && Number.isFinite(activeTarget?.lon))));
 
   // Dedicated emergency situation description resolver
   const targetDescription = useMemo(() => {
@@ -427,14 +392,14 @@ export default function UnifiedRadarMap({
   const angularError = Math.abs(((relativeAngle + 180) % 360) - 180);
 
   useEffect(() => {
-    if (currentHeading === null || !activeTarget) {
+    if (currentHeading === null || !hasTargetFix) {
       setIsAligned(false);
     } else if (!isAligned && angularError <= 12) {
       setIsAligned(true);
     } else if (isAligned && angularError >= 18) {
       setIsAligned(false);
     }
-  }, [angularError, isAligned, currentHeading, activeTarget]);
+  }, [angularError, isAligned, currentHeading, hasTargetFix]);
 
   const turnRightAngle = relativeAngle > 180 ? 0 : relativeAngle;
   const turnLeftAngle = relativeAngle > 180 ? 360 - relativeAngle : 0;
@@ -454,7 +419,6 @@ export default function UnifiedRadarMap({
     setSelectedTargetId(targetId);
     const chosen = destinationOptions.find((d) => d.id === targetId);
     if (chosen) {
-      playChirp(chosen.category === 'casualty' ? 1200 : chosen.category === 'resource' ? 950 : 800);
       if (onNavigateTarget && chosen.location) {
         onNavigateTarget(chosen);
       }
@@ -485,7 +449,7 @@ export default function UnifiedRadarMap({
   }, [items, destinationOptions, mapFilter]);
 
   return (
-    <div className="flex flex-col gap-3 text-slate-900 dark:text-slate-100">
+    <div className="radar-view flex min-w-0 flex-col gap-3 text-slate-900 dark:text-slate-100">
       {/* Sleek Tactical Radar & Destination Header */}
       <div className="bg-[#f0f5fa] dark:bg-[#0b1626] border border-[#cfe1f0] dark:border-slate-800 rounded-2xl p-3 sm:p-4 shadow-xs transition-all">
         <div className="flex items-center justify-between gap-2 mb-2.5">
@@ -496,53 +460,14 @@ export default function UnifiedRadarMap({
             </div>
             <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
               <span>Radar & Compass</span>
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" title="Sensor Active" />
             </h2>
           </div>
 
-          {/* Right Action Menu: Live GPS Pill, Options and Refresh */}
+          {/* Compact refresh control; shared header carries GPS and mesh status. */}
           <div className="flex items-center gap-1.5">
-            {(liveCoords?.lat != null || userLocation?.lat != null) && (
-              <button
-                type="button"
-                onClick={handleManualRefreshGps}
-                title={gpsLive ? 'Live GPS coordinates. Tap to refresh.' : 'Last GPS fix. Tap to request a fresh location.'}
-                className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs px-2.5 py-1 rounded-lg border border-cyan-500/40 bg-cyan-50/80 dark:bg-cyan-950/40 text-cyan-900 dark:text-cyan-200 font-mono font-bold shadow-xs hover:border-cyan-400 transition-colors cursor-pointer"
-              >
-                <span className="relative flex h-2 w-2">
-                  {gpsLive && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>}
-                  <span className={`relative inline-flex rounded-full h-2 w-2 ${gpsLive ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
-                </span>
-                <span className="tabular-nums">
-                  {gpsLive ? 'Live GPS · ' : 'Last GPS fix · '}
-                  {(liveCoords?.lat ?? userLocation.lat).toFixed(5)}, {(liveCoords?.lon ?? userLocation.lon).toFixed(5)}
-                </span>
-                {gpsAccuracy != null && (
-                  <span className="text-[10px] text-cyan-600 dark:text-cyan-400 font-normal">
-                    (±{gpsAccuracy}m)
-                  </span>
-                )}
-              </button>
-            )}
-
             <button
               type="button"
-              onClick={() => setShowSettings(!showSettings)}
-              className={`px-2 py-0.5 rounded-lg border text-xs font-bold flex items-center gap-1 transition-all ${
-                showSettings
-                  ? 'bg-slate-900 text-white dark:bg-cyan-500 dark:text-slate-950 border-transparent shadow-xs'
-                  : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-[#cbdbe9] dark:border-slate-800 hover:bg-[#edf5fb] dark:hover:bg-slate-800'
-              }`}
-              title="Toggle audio ping settings"
-            >
-              <Settings2 size={12} />
-              <span>Options</span>
-              <ChevronDown size={11} className={`transition-transform duration-200 ${showSettings ? 'rotate-180' : ''}`} />
-            </button>
-
-            <button
-              type="button"
-              onClick={fetchRadar}
+              onClick={handleManualRefreshGps}
               disabled={loading}
               className="p-1 rounded-lg border border-[#cbdbe9] dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-[#edf5fb] dark:hover:bg-slate-800 transition-colors"
               title="Refresh local radar"
@@ -551,6 +476,7 @@ export default function UnifiedRadarMap({
             </button>
           </div>
         </div>
+        {error && <p role="alert" className="mb-2 break-words text-xs text-amber-700 dark:text-amber-300">Radar update unavailable: {error}</p>}
 
         {/* Streamlined Destination Selector Bar */}
         <div className="relative">
@@ -581,7 +507,7 @@ export default function UnifiedRadarMap({
         </div>
 
         {/* Quick Facility Target Chips */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 mt-2.5 no-scrollbar">
+        <div className="radar-facility-chips flex items-center gap-1.5 overflow-x-auto pb-0.5 mt-2.5 no-scrollbar">
           {destinationOptions.slice(0, 5).map((dest) => {
             const isSelected = selectedTargetId === dest.id;
             const isCas = dest.category === 'casualty';
@@ -611,46 +537,12 @@ export default function UnifiedRadarMap({
           })}
         </div>
 
-        {/* Collapsible Secondary Options Drawer */}
-        {showSettings && (
-          <div className="mt-2.5 pt-2 border-t border-[#dbe6f0] dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-2 animate-in fade-in">
-            <div className="flex items-center gap-2">
-              <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${
-                isCompassActive
-                  ? 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-400 border-emerald-400/40 dark:border-emerald-500/20'
-                  : 'bg-amber-500/15 text-amber-800 dark:text-amber-400 border-amber-400/40 dark:border-amber-500/20'
-              }`}>
-                {isCompassActive ? 'SENSOR ACTIVE' : 'CALIBRATING SENSOR...'}
-              </span>
-
-              <button
-                type="button"
-                onClick={() => setAudioEnabled(!audioEnabled)}
-                className={`px-2.5 py-1 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition-all ${
-                  audioEnabled
-                    ? 'bg-cyan-500/15 text-cyan-800 dark:text-cyan-400 border-cyan-400/40'
-                    : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-400 border-[#cbdbe9] dark:border-slate-800'
-                }`}
-                title={audioEnabled ? 'Audio ping active' : 'Turn on audio ping beacon'}
-              >
-                {audioEnabled ? <Volume2 size={13} /> : <VolumeX size={13} />}
-                <span>Audio Ping</span>
-              </button>
-            </div>
-
-            {activeTarget && (
-              <span className="text-xs font-mono text-cyan-800 dark:text-cyan-400 font-bold ml-auto">
-                Locked: {activeTarget.name.split('(')[0].trim()} ({targetDistance}m · {targetCardinal})
-              </span>
-            )}
-          </div>
-        )}
       </div>
 
       {/* TACTICAL TWO-COLUMN GRID: MAP (LEFT) & COMPASS/TELEMETRY (RIGHT) */}
       <div className="grid lg:grid-cols-12 gap-3 sm:gap-4 items-stretch">
         {/* LEFT COLUMN: Interactive Tactical Map */}
-        <div className="lg:col-span-7 bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 rounded-2xl p-3 sm:p-4 shadow-xs text-slate-900 dark:text-slate-100 flex flex-col justify-between">
+        <div className="radar-map-card min-w-0 lg:col-span-7 bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 rounded-2xl p-3 sm:p-4 shadow-xs text-slate-900 dark:text-slate-100 flex flex-col justify-between">
           {/* Map Filter Pills */}
           <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
             <div className="flex flex-wrap gap-1.5">
@@ -681,8 +573,8 @@ export default function UnifiedRadarMap({
           </div>
 
           {/* Map Canvas */}
-          <div className="relative rounded-xl overflow-hidden border border-[#e8e4db] dark:border-slate-800 bg-[#091927] flex items-center justify-center">
-            <MapPanel
+          <div className="radar-map-canvas relative min-w-0 w-full rounded-xl overflow-hidden border border-[#e8e4db] dark:border-slate-800 bg-[#091927]">
+            {userLocation ? <MapPanel
               center={liveCoords || userLocation}
               items={filteredMapItems}
               peers={peers}
@@ -704,11 +596,10 @@ export default function UnifiedRadarMap({
                     text: item.text || item.summary || item.description || 'Selected map location'
                   };
                   setSelectedTargetId(newTarget.id);
-                  playChirp(newTarget.category === 'casualty' ? 1200 : 800);
                   if (onNavigateTarget) onNavigateTarget(newTarget);
                 }
               }}
-            />
+            /> : <div className="radar-map-placeholder flex min-h-48 flex-col items-center justify-center gap-2 bg-[linear-gradient(90deg,transparent_95%,#174057_96%),linear-gradient(transparent_95%,#174057_96%)] bg-[length:32px_32px] p-4 text-center text-cyan-200"><MapPin size={24} /><p className="text-sm font-semibold">Locating with GPS…</p><p className="text-xs">Compass and nearby phones remain available.</p><button type="button" onClick={handleManualRefreshGps} className="rounded-lg border border-cyan-500 px-3 py-1 text-xs font-bold">Retry GPS</button></div>}
 
             {/* Compass Rose Mini Watermark overlay on map */}
             <div className="absolute top-2.5 right-2.5 bg-slate-900/85 backdrop-blur-md border border-slate-700/60 rounded-lg px-2 py-0.5 text-[11px] font-mono text-cyan-300 font-bold flex items-center gap-1 shadow-sm">
@@ -719,10 +610,12 @@ export default function UnifiedRadarMap({
         </div>
 
         {/* RIGHT COLUMN: Compass Navigation & Target Situation Card */}
-        <div className="lg:col-span-5 bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 rounded-2xl p-3 sm:p-4 shadow-xs flex flex-col justify-between gap-3">
+        <div className="min-w-0 lg:col-span-5 bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 rounded-2xl p-3 sm:p-4 shadow-xs flex flex-col justify-between gap-3">
           {/* Live Alignment Action Banner */}
           <div className="w-full font-mono h-[34px] min-h-[34px] flex items-center justify-center">
-            {!activeTarget ? (
+            {!userLocation ? (
+              <div className="w-full h-full rounded-xl bg-cyan-500/10 border border-cyan-500/40 text-cyan-900 dark:text-cyan-300 font-bold text-xs flex items-center justify-center px-3">Waiting for GPS · heading still available</div>
+            ) : !activeTarget ? (
               <div className="w-full h-full rounded-xl bg-amber-500/10 border border-amber-500/40 text-amber-900 dark:text-amber-300 font-bold text-xs flex items-center justify-center px-3">
                 Select a destination to start guidance
               </div>
@@ -738,12 +631,12 @@ export default function UnifiedRadarMap({
             ) : turnRightAngle > 0 ? (
               <div className="w-full h-full rounded-xl bg-amber-500/10 border border-amber-500/40 text-amber-900 dark:text-amber-300 font-bold text-xs flex items-center justify-center gap-1.5 px-3">
                 <ArrowRight size={15} className="text-amber-600 shrink-0" />
-                <span className="truncate tabular-nums">TURN RIGHT {Math.round(turnRightAngle)}° TO ALIGN</span>
+                <span className="truncate tabular-nums">Turn right {Math.round(turnRightAngle)}°</span>
               </div>
             ) : (
               <div className="w-full h-full rounded-xl bg-amber-500/10 border border-amber-500/40 text-amber-900 dark:text-amber-300 font-bold text-xs flex items-center justify-center gap-1.5 px-3">
                 <ArrowLeft size={15} className="text-amber-600 shrink-0" />
-                <span className="truncate tabular-nums">TURN LEFT {Math.round(turnLeftAngle)}° TO ALIGN</span>
+                <span className="truncate tabular-nums">Turn left {Math.round(turnLeftAngle)}°</span>
               </div>
             )}
           </div>
@@ -754,12 +647,12 @@ export default function UnifiedRadarMap({
             <div className="survivor-compass-dial flex flex-col items-center justify-center shrink-0">
               <div
                 onClick={requestCompassPermission}
-                className="relative w-[150px] h-[150px] flex items-center justify-center select-none cursor-pointer"
+                className="relative w-[200px] h-[200px] max-w-[68vw] max-h-[68vw] flex items-center justify-center select-none cursor-pointer"
                 title="Live 360° Compass Navigation"
               >
                 <svg
-                  width={150}
-                  height={150}
+                  width="100%"
+                  height="100%"
                   viewBox={`0 0 ${COMPASS_SIZE} ${COMPASS_SIZE}`}
                   className="select-none drop-shadow-md"
                 >
@@ -814,7 +707,7 @@ export default function UnifiedRadarMap({
                   <line x1={COMPASS_CENTER - 20} y1={COMPASS_CENTER} x2={COMPASS_CENTER + 20} y2={COMPASS_CENTER} stroke="#0e7490" strokeWidth="0.8" opacity="0.3" />
                   <line x1={COMPASS_CENTER} y1={COMPASS_CENTER - 20} x2={COMPASS_CENTER} y2={COMPASS_CENTER + 20} stroke="#0e7490" strokeWidth="0.8" opacity="0.3" />
 
-                  {activeTarget && currentHeading !== null && (
+                  {hasTargetFix && currentHeading !== null && (
                     <g
                       transform={`rotate(${needleAngle} ${COMPASS_CENTER} ${COMPASS_CENTER})`}
                       filter="url(#needleGlow)"
@@ -863,7 +756,7 @@ export default function UnifiedRadarMap({
                     fontWeight="900"
                     fontFamily="monospace"
                   >
-                    {activeTarget ? `${targetDistance}m` : '0m'}
+                    {hasTargetFix ? `${targetDistance}m` : '—'}
                   </text>
                   <text
                     x={COMPASS_CENTER}
@@ -874,16 +767,15 @@ export default function UnifiedRadarMap({
                     fontWeight="bold"
                     fontFamily="monospace"
                   >
-                    {targetCardinal}
+                    {hasTargetFix ? targetCardinal : 'GPS'}
                   </text>
                 </svg>
               </div>
 
               <div className="mt-0.5 text-center font-mono text-[10px] text-slate-500 dark:text-slate-400">
                 <span>Heading: </span>
-                <strong className="text-cyan-600 dark:text-cyan-400">{currentHeading === null ? 'Unavailable' : `${Math.round(currentHeading)}° ${cardinalDirection(currentHeading)} · ${compassReference === 'true' ? 'true north' : 'magnetic north'}`}</strong>
+                <strong className="text-cyan-600 dark:text-cyan-400">{currentHeading === null ? 'Calibrating…' : `${Math.round(currentHeading)}° ${cardinalDirection(currentHeading)} · ${compassReference === 'true' ? 'true north' : 'magnetic north'}`}</strong>
               </div>
-              <p className="mt-1 max-w-[160px] text-center text-[10px] leading-tight text-slate-500 dark:text-slate-400">Point the top of your phone toward the direction you face.</p>
             </div>
 
             {/* Metrics Matrix */}
@@ -898,18 +790,18 @@ export default function UnifiedRadarMap({
                       </span>
                     )}
                   </div>
-                  <strong className="text-xs sm:text-sm font-black text-slate-900 dark:text-cyan-400 tabular-nums">{targetDistance} m</strong>
+                  <strong className="text-xs sm:text-sm font-black text-slate-900 dark:text-cyan-400 tabular-nums">{hasTargetFix ? `${targetDistance} m` : '—'}</strong>
                 </div>
                 <div className="bg-[#f8fafc] dark:bg-slate-950/80 p-2 rounded-xl border border-[#dbe6f0] dark:border-slate-800">
                   <span className="text-[9px] text-slate-500 uppercase block font-semibold mb-0.5">Azimuth</span>
-                  <strong className="text-xs sm:text-sm font-black text-slate-900 dark:text-cyan-400 tabular-nums">{targetBearing}° {targetCardinal}</strong>
+                  <strong className="text-xs sm:text-sm font-black text-slate-900 dark:text-cyan-400 tabular-nums">{hasTargetFix ? `${targetBearing}° ${targetCardinal}` : '—'}</strong>
                 </div>
               </div>
 
               <div className="bg-[#f8fafc] dark:bg-slate-950/80 p-1.5 rounded-xl border border-[#dbe6f0] dark:border-slate-800 text-center flex items-center justify-around">
                 <div>
                   <span className="text-[9px] text-slate-500 uppercase block font-semibold">Est. Walk</span>
-                  <strong className="text-xs sm:text-sm font-black text-slate-900 dark:text-cyan-400 tabular-nums">~{Math.max(1, Math.round(targetDistance / 75))} min</strong>
+                  <strong className="text-xs sm:text-sm font-black text-slate-900 dark:text-cyan-400 tabular-nums">{hasTargetFix ? `~${Math.max(1, Math.round(targetDistance / 75))} min` : '—'}</strong>
                 </div>
                 {totalMetersWalked > 0 && (
                   <div className="border-l border-[#dbe6f0] dark:border-slate-800 pl-3">
@@ -952,15 +844,15 @@ export default function UnifiedRadarMap({
                     ? '💧 SAFE RESOURCE'
                     : activeTarget.category === 'shelter'
                     ? '🏥 SAFE SHELTER'
-                    : '⚠️ HAZARD ALERT'}
+                    : activeTarget.category === 'hazard' ? 'HAZARD ALERT' : 'NEARBY PHONE'}
                 </span>
                 <span className="text-[11px] font-mono font-bold text-slate-600 dark:text-slate-400">
-                  {targetBearing}° ({targetCardinal})
+                  {hasTargetFix ? `${targetBearing}° (${targetCardinal})` : 'GPS pending'}
                 </span>
               </div>
 
               <h3 className="text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white truncate">
-                {activeTarget.name}
+                {activeTarget.name?.startsWith('node_') ? `Phone ${activeTarget.name.slice(-8)}` : activeTarget.name}
               </h3>
 
               <p className="text-[11px] sm:text-xs text-slate-800 dark:text-slate-200 leading-snug line-clamp-2 mt-1">
@@ -975,7 +867,6 @@ export default function UnifiedRadarMap({
                     if (onNavigateTarget && activeTarget.location) {
                       onNavigateTarget(activeTarget);
                     }
-                    playChirp(1000);
                   }}
                   className="flex-1 py-1.5 px-2.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center justify-center gap-1 shadow-xs transition-all active:scale-98 cursor-pointer"
                 >
@@ -983,14 +874,6 @@ export default function UnifiedRadarMap({
                   <span>Center Target</span>
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => playChirp(activeTarget.category === 'casualty' ? 1400 : 900)}
-                  className="py-1.5 px-3 rounded-lg border border-[#cbdbe9] dark:border-slate-700 hover:border-cyan-500 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 font-bold text-xs flex items-center justify-center gap-1 transition-all active:scale-98 cursor-pointer"
-                >
-                  <Volume2 size={13} className="text-cyan-600 dark:text-cyan-400" />
-                  <span>Ping</span>
-                </button>
               </div>
             </div>
           ) : (

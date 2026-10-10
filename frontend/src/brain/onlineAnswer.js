@@ -14,7 +14,6 @@ export async function formatOnlineAnswer(local, question, { url, request = fetch
     citation_label: r.citation_label || `R${index + 1}`,
     distance_m: r.distance_m ?? null, cardinal: r.cardinal || '',
   }));
-  if (!cards.length && !reports.length) return { ...local, ai_status: 'no_evidence' };
   const controller = new AbortController();
   const disconnected = () => controller.abort();
   const timer = setTimeout(disconnected, timeoutMs);
