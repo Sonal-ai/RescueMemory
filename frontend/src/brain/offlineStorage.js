@@ -86,6 +86,13 @@ export async function getAllLocalReports() {
   });
 }
 
+function sameSourceReport(a, b) {
+  if (a.id !== b.id || (a.source_report_id !== a.id && b.source_report_id !== b.id)) return false;
+  return a.kind === b.kind && a.text === b.text && a.reporter_id === b.reporter_id &&
+    a.visibility === b.visibility && a.location?.lat === b.location?.lat &&
+    a.location?.lon === b.location?.lon;
+}
+
 export async function saveImportedReports(reports, { markForRelay = false } = {}) {
   if (!Array.isArray(reports) || reports.length === 0) return 0;
   const db = await openDB();
@@ -98,6 +105,10 @@ export async function saveImportedReports(reports, { markForRelay = false } = {}
       const getReq = store.get(rep.id);
       getReq.onsuccess = () => {
         const existing = getReq.result;
+        if (existing && rep.source_report_id === rep.id) {
+          if (!existing.synced) store.put({ ...existing, synced: true });
+          return;
+        }
         const incomingTime = Date.parse(rep.observed_at || rep.created_at || '');
         const existingTime = Date.parse(existing?.observed_at || existing?.created_at || '');
         if (Number.isFinite(incomingTime) && Number.isFinite(existingTime) && incomingTime < existingTime) return;
@@ -198,8 +209,14 @@ export async function commitMeshReports(reports, { sessionId, peerId, transport 
       const read = store.get(report.id);
       read.onsuccess = () => {
         const existing = read.result;
-        if (existing && canonical(wireReport(existing)) !== canonical(wireReport(report))) { result.conflicts++; return; }
-        if (existing) result.duplicates++;
+        if (existing && canonical(wireReport(existing)) !== canonical(wireReport(report)) && !sameSourceReport(existing, report)) { result.conflicts++; return; }
+        if (existing) {
+          if (sameSourceReport(existing, report) && existing.source_report_id === existing.id && report.source_report_id !== report.id) {
+            store.put({ ...wireReport(report), synced: existing.synced, imported: true,
+              imported_at: existing.imported_at || new Date().toISOString(), received_from: peerId });
+          }
+          result.duplicates++;
+        }
         else {
           store.put({ ...wireReport(report), synced: false, imported: true,
             imported_at: new Date().toISOString(), received_from: peerId });

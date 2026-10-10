@@ -20,7 +20,7 @@ export function meshError(stage, error, context) {
 }
 export function transferSummary(result) {
   if (!result?.peer_id || !result.inventory_checked) return result?.error || 'Connection attempt; report exchange has not been confirmed.';
-  const counts = [['sent', 'Sent'], ['received', 'Received'], ['duplicates', 'Already present'], ['conflicts', 'Conflicts'], ['pending', 'Pending']]
+  const counts = [['sent', 'Sent'], ['received', 'Received'], ['duplicates', 'Already shared'], ['conflicts', 'Conflicts'], ['pending', 'Pending']]
     .filter(([key]) => Number.isSafeInteger(result[key]) && result[key] > 0)
     .map(([key, label]) => `${label} ${result[key]}`);
   if (counts.length) return `${counts.join(' · ')}${result.status === 'partial' ? ' · partial' : ''}`;

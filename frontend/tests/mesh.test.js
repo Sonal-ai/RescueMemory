@@ -6,6 +6,7 @@ import { eligibleReports, mergePeers, mergePeerTelemetry, reportBatches, reportH
 import { verifyResponder, toBase64, seal, unseal, ephemeralKey, sessionKey } from '../src/brain/meshSecurity.js';
 import { meshLocation, peerRadarPosition } from '../src/brain/meshRadar.js';
 import { saveOfflineReport, saveImportedReports, commitMeshReports, getAllLocalReports, recordMeshSent, getMeshHistory, getUnsyncedReports } from '../src/brain/offlineStorage.js';
+import { radarDestinationLabel, radarDestinationOption } from '../src/brain/radarLabels.js';
 
 globalThis.window = new EventTarget();
 globalThis.localStorage = { values: new Map(), getItem(k) { return this.values.get(k) || null; }, setItem(k, v) { this.values.set(k, v); } };
@@ -56,6 +57,30 @@ test('unchanged cloud downlinks import once; revisions count once and preserve p
   assert.equal(await saveImportedReports([report('cloud-local-pending', { text: 'Remote overwrite' })]), 0);
 });
 
+test('a server copy of a phone report keeps its original local identity and mesh receipt', async () => {
+  const original = await saveOfflineReport(report('phone-sos-unique', { kind: 'sos', reporter_id: 'phone-a' }));
+  const serverCopy = { ...original, source_report_id: original.id, origin_device: 'hq', synced: true };
+  assert.equal(await saveImportedReports([serverCopy]), 0);
+  assert.equal((await getAllLocalReports()).filter(r => r.id === original.id).length, 1);
+
+  const cloudFirst = { ...report('phone-sos-cloud-first', { kind: 'sos', reporter_id: 'phone-a' }),
+    source_report_id: 'phone-sos-cloud-first', synced: true, origin_device: 'hq' };
+  assert.equal(await saveImportedReports([cloudFirst]), 1);
+  const received = await commitMeshReports([report(cloudFirst.id, { kind: 'sos', reporter_id: 'phone-a' })],
+    { sessionId: 'phone-sos-session', peerId: 'phone-a' });
+  assert.equal(received.conflicts, 0);
+  assert.equal(received.duplicates, 1);
+  assert.equal((await getAllLocalReports()).find(r => r.id === cloudFirst.id).received_from, 'phone-a');
+});
+
+test('radar labels show report intent and a short need without raw node IDs', () => {
+  const target = { name: 'node_077rv2_gt5a (survivor)', category: 'casualty',
+    text: 'Cannot walk and need help near the gate', distance_m: 6, cardinal: 'SSW' };
+  assert.equal(radarDestinationLabel(target), 'SOS · Cannot walk and need');
+  assert.equal(radarDestinationOption(target), 'SOS · Cannot walk and need · 6m SSW');
+  assert.equal(radarDestinationLabel({ category: 'shelter', name: 'North gate shelter' }), 'Shelter · North gate shelter');
+});
+
 test('more than four long Unicode reports survive byte-sized batching without truncation', async () => {
   const reports = Array.from({ length: 18 }, (_, i) => report(`long-${i}`, { text: '🆘 सहायता '.repeat(1000) }));
   const batches = reportBatches(reports);
@@ -75,7 +100,7 @@ test('storage commits receipts, deduplicates retries, preserves local edits and 
   const conflict = await commitMeshReports([report('storage-own', { text: 'different content' })], context);
   assert.equal(conflict.conflicts, 1); assert.deepEqual(conflict.acceptedIds, []);
   await recordMeshSent(['storage-own'], 's-two', 'B');
-  const history = await getMeshHistory(); assert.equal(history.receipts.length, 3);
+  const history = await getMeshHistory(); assert.equal(history.receipts.filter(r => ['s-one', 's-two'].includes(r.session_id)).length, 3);
   assert.ok((await getUnsyncedReports()).some(r => r.id === 'storage-own'));
   assert.equal((await getAllLocalReports()).find(r => r.id === 'storage-own').text, original.text);
 });

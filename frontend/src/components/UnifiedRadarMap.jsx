@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { getSurvivalRadar, distM, bearingDeg, cardinalDirection } from '../api';
 import MapPanel from '../MapPanel';
+import { radarDestinationLabel, radarDestinationOption } from '../brain/radarLabels.js';
 
 const COMPASS_SIZE = 220;
 const COMPASS_CENTER = COMPASS_SIZE / 2;
@@ -496,7 +497,7 @@ export default function UnifiedRadarMap({
               const icon = isCas ? '🆘' : isResource ? '💧' : isShelter ? '🏥' : '📍';
               return (
                 <option key={dest.id} value={dest.id}>
-                  {icon} {dest.name} — {dest.distance_m}m {dest.cardinal} ({dest.bearing_deg}°) {isCas ? '· IMMEDIATE HELP' : isResource ? '· REPORTED RESOURCE' : ''}
+                  {icon} {radarDestinationOption(dest)}
                 </option>
               );
             })}
@@ -531,7 +532,7 @@ export default function UnifiedRadarMap({
                 }`}
               >
                 <span>{isCas ? '🆘' : isResource ? '💧' : isShelter ? '🏥' : '📍'}</span>
-                <span className="truncate max-w-[140px]">{dest.name.split('(')[0].trim()}</span>
+                <span className="truncate max-w-[140px]">{radarDestinationLabel(dest)}</span>
               </button>
             );
           })}
@@ -852,7 +853,7 @@ export default function UnifiedRadarMap({
               </div>
 
               <h3 className="text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white truncate">
-                {activeTarget.name?.startsWith('node_') ? `Phone ${activeTarget.name.slice(-8)}` : activeTarget.name}
+                {radarDestinationLabel(activeTarget)}
               </h3>
 
               <p className="text-[11px] sm:text-xs text-slate-800 dark:text-slate-200 leading-snug line-clamp-2 mt-1">

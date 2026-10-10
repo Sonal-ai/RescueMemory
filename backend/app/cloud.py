@@ -7,7 +7,8 @@ authorization boundary; separate collections reduce cross-scope mistakes.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from uuid import NAMESPACE_URL, uuid5
+import hashlib
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 from fastapi import HTTPException
 from qdrant_client import QdrantClient, models
@@ -64,6 +65,17 @@ def _point_id(record_id: str) -> str:
     return str(uuid5(NAMESPACE_URL, record_id))
 
 
+def _event_point_id(record: dict) -> str:
+    source_id = record.get("source_report_id")
+    if not source_id:
+        return _point_id(record["id"])
+    # Matches the phone's strToUuid: first 16 SHA-256 bytes with UUID v4 bits.
+    raw = bytearray(hashlib.sha256(source_id.encode()).digest()[:16])
+    raw[6] = (raw[6] & 0x0f) | 0x40
+    raw[8] = (raw[8] & 0x3f) | 0x80
+    return str(UUID(bytes=bytes(raw)))
+
+
 def _ensure_collection(client: QdrantClient, name: str, *, events: bool) -> None:
     if client.collection_exists(name):
         return
@@ -97,7 +109,7 @@ def _upsert_new(client: QdrantClient, name: str, records: list[dict],
         batch = records[start:start + 16]
         vectors = list(service.memory.embedder.embed([text_of(record) for record in batch], batch_size=16))
         client.upsert(name, points=[
-            models.PointStruct(id=_point_id(record["id"]),
+            models.PointStruct(id=_event_point_id(record),
                                vector={"dense": vector.tolist()}, payload=record)
             for record, vector in zip(batch, vectors)
         ], wait=True)
@@ -192,9 +204,13 @@ def mirror_to_qdrant_server(service: RescueService) -> dict:
                             continue
                     except (ValueError, TypeError):
                         pass
-                if not event.get("id") or not event.get("content_hash"):
+                if not event.get("id"):
                     continue
-                existing[event["id"]] = event["content_hash"]
+                existing[event["id"]] = event.get("content_hash") or ""
+                if not event.get("content_hash"):
+                    # A phone may have uploaded the same report directly. Replace
+                    # that point with the normalized server event at the same ID.
+                    continue
                 if scope != "group" or service.memory.get("groups", event.get("group_id") or ""):
                     cloud_events.append(event)
             if expired_points:
@@ -205,7 +221,7 @@ def mirror_to_qdrant_server(service: RescueService) -> dict:
                 downloaded += service.import_events(cloud_events[start:start + 64])["imported"]
             local_events = [event for event in service.memory.all("events")
                             if event["visibility"] == scope]
-            to_upload = [event for event in local_events if event["id"] not in existing]
+            to_upload = [event for event in local_events if not existing.get(event["id"])]
             if to_upload:
                 _upsert_new(client, collection, to_upload, service, lambda item: item["text"])
             result["events_uploaded"][scope] = len(to_upload)

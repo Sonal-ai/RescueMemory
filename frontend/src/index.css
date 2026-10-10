@@ -563,7 +563,7 @@ html:not(.dark) .chat-assistant-bubble h4 {
 .app-native.survivor-shell .shell-heading { display: none; }
 .app-native.survivor-shell .shell-header-status { padding: 0 10px 6px; overflow: hidden; text-overflow: ellipsis; color: var(--text-muted); }
 .radar-view, .radar-view > div, .radar-map-card, .radar-map-canvas, .radar-map-canvas > div { min-width: 0; max-width: 100%; }
-.radar-map-canvas svg { display: block; width: 100%; max-width: 100%; height: auto; }
+.radar-map-canvas .map-panel-grid { display: block; width: 100%; max-width: 100%; height: auto; }
 .app-native.survivor-chat-active .app-main > :not(.survivor-chat-region) {
   flex-shrink: 0;
   max-height: 20%;

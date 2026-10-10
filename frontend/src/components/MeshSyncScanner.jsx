@@ -157,11 +157,13 @@ export default function MeshSyncScanner({ initialPeers = [], onSyncComplete = nu
 
   useEffect(() => {
     if (!message) return;
-    const timer = setTimeout(() => setMessage(''), 8000);
+    const timer = setTimeout(() => setMessage(''), 20000);
     return () => clearTimeout(timer);
   }, [message]);
 
   const nearby = peers.filter(p => p.source === 'native_ble');
+  const receivedReports = reports.filter(report => report.imported && report.received_from)
+    .sort((a, b) => Date.parse(b.imported_at || 0) - Date.parse(a.imported_at || 0));
   const onlinePeers = peers.filter(p => p.source !== 'native_ble');
   const visibleReports = reports;
   const sentIds = new Set(history.receipts.filter(r => r.direction === 'sent' || r.direction === 'confirmed').map(r => r.report_id));
@@ -219,6 +221,7 @@ export default function MeshSyncScanner({ initialPeers = [], onSyncComplete = nu
       <MeshRadar peers={nearby} location={location} scanning={busy === 'scan'} onSelect={peer => setSelectedPhone(peer.node_id)} />
       <div className="space-y-2">{nearby.map(peer => {
         const latest = history.transfers.find(t => t.peer_id === peer.node_id && t.transport === 'bluetooth');
+        const lastExchange = history.transfers.find(t => t.peer_id === peer.node_id && t.transport === 'bluetooth' && (t.sent > 0 || t.received > 0));
         const position = peerRadarPosition(location, peer);
         return <article key={peer.node_id} className={`rounded-xl border p-3 ${selectedPhone === peer.node_id ? 'border-emerald-500 bg-emerald-500/5' : 'border-slate-200 dark:border-slate-800'}`}>
           <div className="flex items-start justify-between gap-2"><div className="min-w-0"><h4 className="break-words text-sm font-bold">{peer.available ? `${nearby.filter(p => p.available).findIndex(p => p.node_id === peer.node_id) + 1}. ` : ''}{peer.name}</h4>
@@ -231,11 +234,21 @@ export default function MeshSyncScanner({ initialPeers = [], onSyncComplete = nu
             <span>{radarDistance(position.distance_m)} · {position.source === 'gps' ? 'GPS' : 'signal estimate'}</span>
             {position.bearing_deg != null && <span>{Math.round(position.bearing_deg)}° from north</span>}
             </div>
-          {latest && <p className="mt-2 text-[11px] text-slate-500">{transferSummary(latest)} · {time(latest.updated_at)}</p>}
-          {peer.error && <p className="mt-1 text-xs text-slate-500">{latest?.status === 'complete' ? 'Shared · refreshing connection' : 'Retrying connection…'}</p>}
+          {lastExchange ? <p className="mt-2 text-xs text-slate-500">Last exchange: {transferSummary(lastExchange)} · {time(lastExchange.updated_at)}</p>
+            : latest?.inventory_checked ? <p className="mt-2 text-xs text-slate-500">Reports up to date · {time(latest.updated_at)}</p> : null}
+          {peer.error && !peer.available && <p className="mt-1 text-xs text-slate-500">Last seen {ago(peer.last_seen_epoch)} · retrying discovery</p>}
         </article>;
       })}</div>
       {!nearby.length && <p className="py-2 text-center text-xs text-slate-500">No nearby phones found yet. Turn on Bluetooth and allow Nearby devices and precise Location on both phones.</p>}
+    </section>
+
+    <section className={panel} aria-label="Received reports">
+      <div className="flex items-center justify-between gap-2"><h3 className="text-sm font-bold">Received reports</h3><span className="text-xs text-slate-500">{receivedReports.length} unique</span></div>
+      {receivedReports.length ? <div className="mt-2 space-y-2">{receivedReports.slice(0, 8).map(report =>
+        <article key={report.id} className="min-w-0 border-t border-slate-200 pt-2 dark:border-slate-800">
+          <p className="text-xs font-bold uppercase text-cyan-700 dark:text-cyan-300">{report.kind === 'checkpoint' ? 'Shelter' : report.kind || 'Report'} · Phone {String(report.received_from).slice(-6)}</p>
+          <p className="mt-0.5 line-clamp-2 break-words text-sm">{report.text}</p>
+        </article>)}</div> : <p className="mt-2 text-xs text-slate-500">New reports from nearby phones will stay here after sync.</p>}
     </section>
 
     {debugOpen && <div className="native-overlay fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-3" role="dialog" aria-modal="true" aria-label="Mesh Sync details">

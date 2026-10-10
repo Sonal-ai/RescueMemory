@@ -71,6 +71,7 @@ class Event(BaseModel):
     id: str = Field(min_length=1, max_length=128)
     content_hash: str = Field(min_length=1, max_length=128)
     origin_device: str = Field(min_length=1, max_length=100)
+    source_report_id: str | None = Field(default=None, max_length=100)
     kind: str
     text: str = Field(min_length=1, max_length=2000)
     reporter_id: str = Field(min_length=1, max_length=100)
@@ -172,6 +173,18 @@ class RescueService:
             body["authority_tag"] = hmac.new(
                 self.settings.guide_trust_key.encode(), canonical(body), hashlib.sha256
             ).hexdigest()
+        # Reports created on a phone keep their ID through BLE, the API and Cloud.
+        # Older server releases used a server-specific hash. Honor an existing
+        # legacy event so a retry after deployment does not create another copy.
+        if idempotency_key:
+            legacy_id = hashlib.sha256(f"{self.settings.node_id}:{idempotency_key}".encode()).hexdigest()
+            legacy = self.memory.get("events", legacy_id)
+            if legacy:
+                legacy_body = Event(id="0" * 64, content_hash="0" * 64, **body).body()
+                if legacy["content_hash"] != hashlib.sha256(canonical(legacy_body)).hexdigest():
+                    raise HTTPException(409, "idempotency key reused with different report")
+                return {"event": legacy, "duplicate": True}
+            body["source_report_id"] = idempotency_key
         normalized = Event(id="0" * 64, content_hash="0" * 64, **body).body()
         body = normalized
         if body.get("verified"):
@@ -181,7 +194,7 @@ class RescueService:
             ).hexdigest()
         event_hash = hashlib.sha256(canonical(body)).hexdigest()
         if idempotency_key:
-            event_id = hashlib.sha256(f"{self.settings.node_id}:{idempotency_key}".encode()).hexdigest()
+            event_id = idempotency_key
         else:
             # Same report by the same reporter in the same minute is one event.
             dedup = {k: v for k, v in body.items() if k not in ("observed_at", "expires_at")}
@@ -623,7 +636,7 @@ class RescueService:
             raw_id = str(raw_copy.get("id", ""))
             if not raw_id:
                 raw_copy["id"] = hashlib.sha256(canonical(raw_copy)).hexdigest()
-            elif len(raw_id) < 64:
+            elif len(raw_id) < 64 and raw_copy.get("source_report_id") != raw_id:
                 raw_copy["id"] = hashlib.sha256(raw_id.encode()).hexdigest()
             raw_hash = str(raw_copy.get("content_hash", ""))
             if len(raw_hash) < 64:
