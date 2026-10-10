@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { formatOnlineAnswer } from '../src/brain/onlineAnswer.js';
 const local = { local_answer: 'Retrieved protocol unchanged', text: 'Retrieved protocol unchanged', engine: 'qdrant-edge',
   cards: [{ id: 'guide', title: 'Actual Qdrant hit', steps: ['Actual source step'], warnings: ['Source warning'] }],
-  memory_hits: [{ text: 'Public water report', visibility: 'public' }, { text: 'Private SOS', visibility: 'responders' }] };
+  memory_hits: [{ text: 'Private SOS', visibility: 'responders', citation_label: 'R1' }, { text: 'Public water report', visibility: 'public', citation_label: 'R2' }] };
 
 test('Gemini receives actual retrieved evidence, excludes private reports and retains original answer', async () => {
   let payload;
@@ -11,6 +11,7 @@ test('Gemini receives actual retrieved evidence, excludes private reports and re
     request: async (_, options) => { payload = JSON.parse(options.body); return { ok: true, json: async () => ({ ai_answer: 'Formatted with evidence [G1]' }) }; } });
   assert.equal(payload.cards[0].title, 'Actual Qdrant hit'); assert.deepEqual(payload.cards[0].steps, ['Actual source step']);
   assert.equal(payload.reports.length, 1); assert.equal(result.ai_answer, 'Formatted with evidence [G1]');
+  assert.equal(payload.reports[0].citation_label, 'R2');
   assert.equal(result.local_answer, local.local_answer); assert.equal(result.engine, 'qdrant-edge');
 });
 test('connection loss during formatting aborts and returns the previously retrieved answer', async () => {

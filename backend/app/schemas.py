@@ -38,6 +38,7 @@ class RetrievedPublicReport(BaseModel):
     status: str = Field(default="", max_length=80)
     observed_at: str = Field(default="", max_length=80)
     visibility: Literal["public"]
+    citation_label: str | None = Field(default=None, pattern=r"^R[1-5]$")
     distance_m: float | None = Field(default=None, ge=0, le=21000000)
     cardinal: str = Field(default="", max_length=3)
 

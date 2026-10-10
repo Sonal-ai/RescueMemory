@@ -9,8 +9,9 @@ export async function formatOnlineAnswer(local, question, { url, request = fetch
   }));
   // Responder/group observations stay on the phone. BLE sharing permission
   // does not imply permission to upload that material to an online LLM.
-  const reports = (local.memory_hits || []).filter(r => r.visibility === 'public').slice(0, 5).map(r => ({
+  const reports = (local.memory_hits || []).filter(r => r.visibility === 'public').slice(0, 5).map((r, index) => ({
     text: r.text, status: r.status || '', observed_at: r.observed_at || r.created_at || '', visibility: 'public',
+    citation_label: r.citation_label || `R${index + 1}`,
     distance_m: r.distance_m ?? null, cardinal: r.cardinal || '',
   }));
   if (!cards.length && !reports.length) return { ...local, ai_status: 'no_evidence' };

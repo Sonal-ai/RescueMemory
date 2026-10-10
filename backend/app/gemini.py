@@ -45,7 +45,7 @@ def grounded_answer(question: str, cards: list[dict], reports: list[dict],
         })
     for index, report in enumerate(reports, 1):
         evidence.append({
-            "label": report.get("citation_label", f"R{index}"),
+            "label": report.get("citation_label") or f"R{index}",
             "type": "unverified observation" if not report.get("verified") else "command-verified observation",
             "text": report.get("text"),
             "status": report.get("status"),

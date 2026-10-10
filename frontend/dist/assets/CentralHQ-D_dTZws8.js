@@ -1,0 +1,1 @@
+import{t as e}from"./index-DX8V_V65.js";import t from"./AdminPortal-BHH0yAze.js";var n=e();function r(){return(0,n.jsx)(t,{initialTab:`hq`})}export{r as default};
