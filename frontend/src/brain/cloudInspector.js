@@ -53,9 +53,21 @@ export async function readCloudRecords(request, { url, key, online = true, colle
   const result = await jsonRequest(request, url, key, `/collections/${collection}/points/scroll`, {
     limit, with_payload: true, with_vector: false, ...(offset == null ? {} : { offset }),
   });
-  if (!Array.isArray(result.points)) throw new Error('Invalid cloud record page.');
-  return { items: result.points.map(p => ({ point_id: String(p.id), payload: p.payload || {} })),
-    collection, next_offset: result.next_page_offset ?? null, source: 'qdrant_cloud', checked_at: checkedAt() };
+  const items = result.points.map(p => ({ point_id: String(p.id), payload: p.payload || {} }));
+  items.sort((a, b) => {
+    const parseTime = (p) => {
+      const payload = p.payload || {};
+      const t = payload.observed_at || payload.created_at || payload.published_at || payload.timestamp || payload.time || payload.updated_at;
+      if (!t) return 0;
+      const ms = Date.parse(t);
+      return Number.isNaN(ms) ? 0 : ms;
+    };
+    const tA = parseTime(a);
+    const tB = parseTime(b);
+    if (tA !== tB) return tB - tA;
+    return 0;
+  });
+  return { items, collection, next_offset: result.next_page_offset ?? null, source: 'qdrant_cloud', checked_at: checkedAt() };
 }
 export function cloudMirrorSummary(result) {
   if (['offline', 'unreachable'].includes(result?.status)) throw new Error('Cloud sync unavailable; no cloud mirror was confirmed. Reports remain stored locally.');

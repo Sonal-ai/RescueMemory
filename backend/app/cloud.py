@@ -77,7 +77,15 @@ def read_cloud_records(service: RescueService, collection: str, offset=None, lim
             if exc.status_code != 404:
                 raise
             points, next_offset = [], None
-        return {"collection": collection, "items": [{"point_id": str(p.id), "payload": p.payload or {}} for p in points],
+        items = [{"point_id": str(p.id), "payload": p.payload or {}} for p in points]
+        def _record_timestamp(item):
+            payload = item.get("payload") or {}
+            val = (payload.get("observed_at") or payload.get("created_at") or 
+                   payload.get("published_at") or payload.get("timestamp") or 
+                   payload.get("updated_at") or payload.get("time") or "")
+            return str(val)
+        items.sort(key=_record_timestamp, reverse=True)
+        return {"collection": collection, "items": items,
                 "next_offset": next_offset, "source": "qdrant_cloud",
                 "checked_at": datetime.now(timezone.utc).isoformat()}
     except Exception as exc:

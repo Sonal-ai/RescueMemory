@@ -1,18 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import {
-  AlertOctagon,
   ArrowLeft,
   ArrowRight,
   CheckCircle2,
   ChevronDown,
   Compass,
   MapPin,
+  MapPinOff,
   Navigation,
   RefreshCw,
+  Search,
 } from 'lucide-react';
-import { getSurvivalRadar, distM, bearingDeg, cardinalDirection } from '../api';
+import { getSurvivalRadar, distM, bearingDeg, cardinalDirection, isOnlineMode } from '../api';
 import MapPanel from '../MapPanel';
+import { PAYTM_SKYMARK } from '../brain/paytmSkymark.js';
 import { radarDestinationLabel, radarDestinationOption } from '../brain/radarLabels.js';
 import { savedShelters, targetMeasurements } from '../brain/survivorReports.js';
 
@@ -67,6 +69,16 @@ export default function UnifiedRadarMap({
   const [error, setError] = useState('');
   const [mapFilter, setMapFilter] = useState('all');
 
+  // Modal states
+  const [isSelectorModalOpen, setIsSelectorModalOpen] = useState(false);
+  const [selectorSearchQuery, setSelectorSearchQuery] = useState('');
+  const [selectorCategoryFilter, setSelectorCategoryFilter] = useState('all');
+
+  // Offline / Location missing popup state
+  const [isOffline, setIsOffline] = useState(() => typeof navigator !== 'undefined' ? !navigator.onLine : false);
+  const [showLocationPopup, setShowLocationPopup] = useState(false);
+  const hasPromptedLocation = useRef(false);
+
   // Device orientation / heading state (0 = North, 90 = East, 180 = South, 270 = West)
   const [deviceHeading, setDeviceHeading] = useState(null);
   const [isCompassActive, setIsCompassActive] = useState(false);
@@ -78,6 +90,7 @@ export default function UnifiedRadarMap({
   const isLiveWalking = gpsLive;
   const [totalMetersWalked, setTotalMetersWalked] = useState(0);
   const previousFix = useRef(null);
+
   useEffect(() => {
     if (!gpsLive || !userLocation) return;
     const previous = previousFix.current;
@@ -87,6 +100,44 @@ export default function UnifiedRadarMap({
     }
     previousFix.current = userLocation;
   }, [userLocation, gpsLive]);
+
+  // Monitor network status & trigger location popup if offline with no GPS fix
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => {
+      setIsOffline(true);
+      if (!userLocation) {
+        setShowLocationPopup(true);
+      }
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', handleOnline);
+      window.addEventListener('offline', handleOffline);
+
+      // Check initially: if internet is turned off (or navigator.onLine is false) and location is null
+      if ((!navigator.onLine || !isOnlineMode()) && !userLocation && !hasPromptedLocation.current) {
+        const timer = setTimeout(() => {
+          if (!userLocation) {
+            setShowLocationPopup(true);
+            hasPromptedLocation.current = true;
+          }
+        }, 1800);
+        return () => {
+          clearTimeout(timer);
+          window.removeEventListener('online', handleOnline);
+          window.removeEventListener('offline', handleOffline);
+        };
+      }
+    }
+
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('online', handleOnline);
+        window.removeEventListener('offline', handleOffline);
+      }
+    };
+  }, [userLocation]);
 
   // Request iOS 13+ sensor permissions on first user gesture
   const requestCompassPermission = useCallback(async () => {
@@ -269,15 +320,33 @@ export default function UnifiedRadarMap({
     }
   }, [selectedTarget]);
 
-  // Build unified destinations list with live relative geodesics
+  // Build unified destinations list with live relative geodesics, ALWAYS including Paytm Skymark
   const destinationOptions = useMemo(() => {
     const list = [...radarItems];
     for (const shelter of shelters) {
       if (!list.some(item => item.id === shelter.id || (shelter.entity_id && (item.entity_id === shelter.entity_id || item.name === shelter.entity_id))))
         list.push(shelter);
     }
+
     const uLat = liveCoords?.lat ?? userLocation?.lat;
     const uLon = liveCoords?.lon ?? userLocation?.lon;
+
+    // Always ensure Paytm HQ Tower-D One Skymark Noida is in destination options
+    if (!list.some(item => item.id === PAYTM_SKYMARK.id || item.entity_id === PAYTM_SKYMARK.id)) {
+      const dist = (Number.isFinite(uLat) && Number.isFinite(uLon))
+        ? Math.round(distM(uLat, uLon, PAYTM_SKYMARK.lat, PAYTM_SKYMARK.lon))
+        : null;
+      const bearing = (Number.isFinite(uLat) && Number.isFinite(uLon))
+        ? bearingDeg(uLat, uLon, PAYTM_SKYMARK.lat, PAYTM_SKYMARK.lon)
+        : null;
+
+      list.push({
+        ...PAYTM_SKYMARK,
+        distance_m: dist,
+        bearing_deg: bearing,
+        cardinal: bearing !== null ? cardinalDirection(bearing) : null,
+      });
+    }
 
     // If external target passed (e.g. from SafePlace reroute or casualty), inject it at the top
     if (selectedTarget && Number.isFinite(uLat) && Number.isFinite(uLon)) {
@@ -332,8 +401,8 @@ export default function UnifiedRadarMap({
     }
   }, [activeTarget, selectedTargetId]);
 
-  // Current heading from smoothed device magnetometer
-  const currentHeading = isCompassActive ? deviceHeading : null;
+  // Current heading from smoothed device magnetometer (or 0 if calibrating)
+  const currentHeading = isCompassActive ? deviceHeading : (deviceHeading ?? null);
 
   // Real-time geodesic metrics between live walking GPS and activeTarget.location
   const liveTargetMetrics = useMemo(() => {
@@ -368,25 +437,36 @@ export default function UnifiedRadarMap({
     );
   }, [activeTarget]);
 
-  // Relative Bearing: Difference between device heading and target bearing
-  const relativeAngle = currentHeading === null || !hasTargetDirection ? null : ((targetBearing - currentHeading + 360) % 360);
+  // COMPASS NEEDLE BEARING LOGIC:
+  // 1. If target is selected and has directional bearing: relative angle = (targetBearing - heading + 360) % 360
+  // 2. If NO target is selected or coordinates unavailable: relative angle = (0 - heading + 360) % 360 (POINTS NORTH!)
+  const targetRelativeAngle = useMemo(() => {
+    const h = currentHeading ?? 0;
+    if (hasTargetDirection) {
+      return ((targetBearing - h + 360) % 360);
+    }
+    // Magnetic North reference (0° Azimuth relative to device heading)
+    return ((360 - (h % 360)) % 360);
+  }, [hasTargetDirection, targetBearing, currentHeading]);
 
   // Maintain continuous smooth needle rotation (prevents 360° flip spins)
   const [needleAngle, setNeedleAngle] = useState(0);
   useEffect(() => {
-    if (relativeAngle === null) return;
     setNeedleAngle((prev) => {
-      let delta = (relativeAngle - (prev % 360) + 540) % 360 - 180;
+      let delta = (targetRelativeAngle - (prev % 360) + 540) % 360 - 180;
       return prev + delta;
     });
-  }, [relativeAngle]);
+  }, [targetRelativeAngle]);
 
   // Alignment Calculation with Hysteresis (prevents edge flickering between aligned and turning)
   const [isAligned, setIsAligned] = useState(false);
-  const angularError = relativeAngle === null ? null : Math.abs(((relativeAngle + 180) % 360) - 180);
+  const angularError = useMemo(() => {
+    if (!hasTargetDirection || currentHeading === null) return null;
+    return Math.abs(((targetRelativeAngle + 180) % 360) - 180);
+  }, [hasTargetDirection, currentHeading, targetRelativeAngle]);
 
   useEffect(() => {
-    if (currentHeading === null || !hasTargetDirection) {
+    if (currentHeading === null || !hasTargetDirection || angularError === null) {
       setIsAligned(false);
     } else if (!isAligned && angularError <= 12) {
       setIsAligned(true);
@@ -395,8 +475,8 @@ export default function UnifiedRadarMap({
     }
   }, [angularError, isAligned, currentHeading, hasTargetDirection]);
 
-  const turnRightAngle = relativeAngle > 180 ? 0 : relativeAngle;
-  const turnLeftAngle = relativeAngle > 180 ? 360 - relativeAngle : 0;
+  const turnRightAngle = targetRelativeAngle > 180 ? 0 : targetRelativeAngle;
+  const turnLeftAngle = targetRelativeAngle > 180 ? 360 - targetRelativeAngle : 0;
 
   // Haptic feedback when user aligns phone directly with target
   useEffect(() => {
@@ -443,6 +523,25 @@ export default function UnifiedRadarMap({
     return list;
   }, [items, destinationOptions, mapFilter]);
 
+  // Filtered destinations inside the Custom Selection Modal
+  const filteredModalDestinations = useMemo(() => {
+    return destinationOptions.filter((dest) => {
+      // Category filter
+      if (selectorCategoryFilter !== 'all' && dest.category !== selectorCategoryFilter) {
+        return false;
+      }
+      // Search query
+      if (selectorSearchQuery.trim()) {
+        const q = selectorSearchQuery.toLowerCase();
+        const nameMatch = (dest.name || dest.title || '').toLowerCase().includes(q);
+        const textMatch = (dest.text || dest.description || '').toLowerCase().includes(q);
+        const facMatch = Array.isArray(dest.facilities) && dest.facilities.some(f => f.toLowerCase().includes(q));
+        return nameMatch || textMatch || facMatch;
+      }
+      return true;
+    });
+  }, [destinationOptions, selectorCategoryFilter, selectorSearchQuery]);
+
   return (
     <div className="radar-view flex min-w-0 flex-col gap-3 text-slate-900 dark:text-slate-100">
       {/* Sleek Tactical Radar & Destination Header */}
@@ -458,52 +557,59 @@ export default function UnifiedRadarMap({
             </h2>
           </div>
 
-          {/* Compact refresh control; shared header carries GPS and mesh status. */}
+          {/* Controls: Offline warning badge + Refresh */}
           <div className="flex items-center gap-1.5">
+            {(!userLocation || isOffline) && (
+              <button
+                type="button"
+                onClick={() => setShowLocationPopup(true)}
+                className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-300 text-[11px] font-bold hover:bg-amber-500/20 transition-colors cursor-pointer"
+                title="Tap to turn on location"
+              >
+                <MapPinOff size={11} className="animate-pulse" />
+                <span>{isOffline ? 'Offline · GPS' : 'GPS Off'}</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={handleManualRefreshGps}
               disabled={loading}
-              className="p-1 rounded-lg border border-[#cbdbe9] dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-[#edf5fb] dark:hover:bg-slate-800 transition-colors"
+              className="p-1 rounded-lg border border-[#cbdbe9] dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-[#edf5fb] dark:hover:bg-slate-800 transition-colors cursor-pointer"
               title="Refresh local radar"
             >
               <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
             </button>
           </div>
         </div>
+
         {error && <p role="alert" className="mb-2 break-words text-xs text-amber-700 dark:text-amber-300">Radar update unavailable: {error}</p>}
 
-        {/* Streamlined Destination Selector Bar */}
-        <div className="relative">
-          <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-red-500">
-            <MapPin size={15} />
+        {/* CUSTOM PROFESSIONAL DESTINATION SELECTOR BAR (Replaces native <select>) */}
+        <div
+          onClick={() => setIsSelectorModalOpen(true)}
+          className="w-full py-2.5 px-3 rounded-xl border border-[#cbd5e1] dark:border-slate-700 bg-white dark:bg-[#07111e] text-slate-900 dark:text-slate-100 flex items-center justify-between shadow-xs cursor-pointer hover:border-cyan-500 transition-colors"
+          role="button"
+          tabIndex={0}
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-5 h-5 rounded-lg bg-red-500/10 text-red-500 flex items-center justify-center shrink-0">
+              <MapPin size={13} />
+            </div>
+            <span className="text-[13px] sm:text-sm font-bold truncate">
+              {activeTarget ? radarDestinationOption(activeTarget) : 'Select target destination / safe shelter…'}
+            </span>
           </div>
-          <select
-            value={selectedTargetId}
-            onChange={(e) => handleSelectDestination(e.target.value)}
-            className="w-full appearance-none py-2 pl-8 pr-8 rounded-xl border border-[#cbd5e1] dark:border-slate-700 bg-white dark:bg-[#07111e] text-slate-900 dark:text-slate-100 text-[13px] sm:text-sm font-bold focus:outline-none focus:ring-1 focus:ring-cyan-500 cursor-pointer shadow-xs"
-          >
-            {!destinationOptions.length && <option value="">No reported destinations</option>}
-            {destinationOptions.map((dest) => {
-              const isCas = dest.category === 'casualty';
-              const isResource = dest.category === 'resource';
-              const isShelter = dest.category === 'shelter';
-              const icon = isCas ? '🆘' : isResource ? '💧' : isShelter ? '🏥' : '📍';
-              return (
-                <option key={dest.id} value={dest.id}>
-                  {icon} {radarDestinationOption(dest)}
-                </option>
-              );
-            })}
-          </select>
-          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2.5 text-slate-400">
+
+          <div className="flex items-center gap-1.5 shrink-0 text-slate-400">
+            <span className="text-[11px] font-mono hidden sm:inline text-cyan-600 dark:text-cyan-400">Choose</span>
             <ChevronDown size={15} />
           </div>
         </div>
 
         {/* Quick Facility Target Chips */}
         <div className="radar-facility-chips flex items-center gap-1.5 overflow-x-auto pb-0.5 mt-2.5 no-scrollbar">
-          {destinationOptions.slice(0, 5).map((dest) => {
+          {destinationOptions.slice(0, 6).map((dest) => {
             const isSelected = selectedTargetId === dest.id;
             const isCas = dest.category === 'casualty';
             const isResource = dest.category === 'resource';
@@ -513,7 +619,7 @@ export default function UnifiedRadarMap({
                 key={dest.id}
                 type="button"
                 onClick={() => handleSelectDestination(dest.id)}
-                className={`text-xs px-2.5 py-1 rounded-lg border font-bold shrink-0 flex items-center gap-1 transition-all ${
+                className={`text-xs px-2.5 py-1 rounded-lg border font-bold shrink-0 flex items-center gap-1 transition-all cursor-pointer ${
                   isSelected
                     ? 'bg-cyan-600 text-white border-cyan-500 shadow-xs ring-1 ring-cyan-400'
                     : isCas
@@ -531,24 +637,103 @@ export default function UnifiedRadarMap({
             );
           })}
         </div>
-
       </div>
 
-      {shelters.length > 0 && <section className="rounded-2xl border border-emerald-200 bg-white p-3 dark:border-emerald-900 dark:bg-[#0b1626]" aria-label="Saved shelters">
-        <h3 className="text-sm font-bold text-emerald-800 dark:text-emerald-300">Saved shelters ({shelters.length})</h3>
-        <div className="mt-2 space-y-2">
-          {shelters.map(shelter => <button type="button" key={shelter.id} onClick={() => handleSelectDestination(shelter.id)} className="block w-full rounded-xl border border-slate-200 p-2 text-left dark:border-slate-700">
-            <p className="text-sm font-semibold">{shelter.name}</p>
-            <p className="text-xs text-slate-500 dark:text-slate-400">{shelter.location ? `${shelter.location.lat.toFixed(5)}, ${shelter.location.lon.toFixed(5)}` : 'Shelter coordinates unavailable'} · {shelter.prototype_confirmed ? 'Saved locally · publication pending' : shelter.imported ? 'Received report' : 'Saved report'}</p>
-            <p className="mt-1 break-words text-xs">{shelter.text}</p>
-          </button>)}
-        </div>
-        <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{userLocation ? 'Select a shelter for direction and distance. The map shows your current area.' : 'GPS unavailable · shelters remain saved. Enable location for map positions, distance and direction.'}</p>
-      </section>}
+      {/* SELECTED DESTINATION / SHELTER INFO CARD (Replaces the bulky list of all saved shelters) */}
+      <section className="rounded-2xl border border-emerald-300/80 bg-white dark:border-emerald-900/80 dark:bg-[#0b1626] p-3 sm:p-4 shadow-xs" aria-label="Selected Shelter Information">
+        {activeTarget ? (
+          <div className="space-y-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800/80 pb-2">
+              <div className="flex items-center gap-2">
+                <span
+                  className={`text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full ${
+                    activeTarget.category === 'shelter'
+                      ? 'bg-emerald-600 text-white'
+                      : activeTarget.category === 'resource'
+                      ? 'bg-sky-600 text-white'
+                      : activeTarget.category === 'casualty'
+                      ? 'bg-red-600 text-white'
+                      : 'bg-amber-600 text-white'
+                  }`}
+                >
+                  {activeTarget.category === 'shelter'
+                    ? '🏥 SELECTED DESTINATION SHELTER'
+                    : activeTarget.category === 'resource'
+                    ? '💧 SAFE RESOURCE'
+                    : activeTarget.category === 'casualty'
+                    ? '🆘 PRIORITY CASUALTY / SOS'
+                    : '📍 ACTIVE TARGET'}
+                </span>
 
-      {/* TACTICAL TWO-COLUMN GRID: MAP (LEFT) & COMPASS/TELEMETRY (RIGHT) */}
+                <span className="text-xs font-mono font-bold text-slate-600 dark:text-slate-400">
+                  {hasTargetFix ? `${targetDistance} m · ${targetCardinal}` : 'Coordinates pending'}
+                </span>
+              </div>
+
+              {/* Button to open custom selection popup */}
+              <button
+                type="button"
+                onClick={() => setIsSelectorModalOpen(true)}
+                className="text-xs font-bold text-cyan-600 dark:text-cyan-400 hover:underline flex items-center gap-1 cursor-pointer"
+              >
+                <span>Change Shelter</span>
+                <ChevronDown size={14} />
+              </button>
+            </div>
+
+            <div className="flex items-start justify-between gap-2">
+              <div className="space-y-1 min-w-0">
+                <h3 className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white truncate">
+                  {radarDestinationLabel(activeTarget)}
+                </h3>
+                <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                  {targetDescription}
+                </p>
+              </div>
+            </div>
+
+            {/* Key Tags: Capacity, Coordinates, Status */}
+            <div className="flex flex-wrap items-center gap-1.5 pt-1">
+              {activeTarget.capacity && (
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 font-bold">
+                  👥 {activeTarget.capacity}
+                </span>
+              )}
+              {activeTarget.location && (
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800">
+                  📍 {activeTarget.location.lat.toFixed(5)}, {activeTarget.location.lon.toFixed(5)}
+                </span>
+              )}
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800 font-bold">
+                ⚡ {activeTarget.status || 'Operational'}
+              </span>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between gap-3 p-1">
+            <div className="space-y-0.5">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                No Shelter Selected
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Choose a designated safe shelter for compass heading and route distance.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsSelectorModalOpen(true)}
+              className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm cursor-pointer transition-all"
+            >
+              <span>Select Shelter</span>
+              <ChevronDown size={14} />
+            </button>
+          </div>
+        )}
+      </section>
+
+      {/* TACTICAL TWO-COLUMN GRID: REAL REAL-LIFE MAP (LEFT) & COMPASS/TELEMETRY (RIGHT) */}
       <div className="grid lg:grid-cols-12 gap-3 sm:gap-4 items-stretch">
-        {/* LEFT COLUMN: Interactive Tactical Map */}
+        {/* LEFT COLUMN: Real GPS Pointer & Zoomable Real-life Satellite Map */}
         <div className="radar-map-card min-w-0 lg:col-span-7 bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 rounded-2xl p-3 sm:p-4 shadow-xs text-slate-900 dark:text-slate-100 flex flex-col justify-between">
           {/* Map Filter Pills */}
           <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
@@ -579,13 +764,13 @@ export default function UnifiedRadarMap({
             </div>
           </div>
 
-          {/* Map Canvas */}
+          {/* REAL MAP CANVAS (Zoomable, Satellite View, Real GPS Pointer, One Skymark Noida) */}
           <div className="radar-map-canvas relative min-w-0 w-full rounded-xl overflow-hidden border border-[#e8e4db] dark:border-slate-800 bg-[#091927]">
-            {userLocation ? <MapPanel
-              center={liveCoords || userLocation}
+            <MapPanel
+              center={liveCoords || userLocation || PAYTM_SKYMARK.location}
               items={filteredMapItems}
               peers={peers}
-              selected={activeTarget?.location || (liveCoords || userLocation)}
+              selected={activeTarget || (liveCoords || userLocation)}
               onSelect={onSelectLocation}
               onMarker={(item) => {
                 if (!item) return;
@@ -606,12 +791,12 @@ export default function UnifiedRadarMap({
                   if (onNavigateTarget) onNavigateTarget(newTarget);
                 }
               }}
-            /> : <div className="radar-map-placeholder flex min-h-48 flex-col items-center justify-center gap-2 bg-[linear-gradient(90deg,transparent_95%,#174057_96%),linear-gradient(transparent_95%,#174057_96%)] bg-[length:32px_32px] p-4 text-center text-cyan-200"><MapPin size={24} /><p className="text-sm font-semibold">Locating with GPS…</p><p className="text-xs">Compass and nearby phones remain available.</p><button type="button" onClick={handleManualRefreshGps} className="rounded-lg border border-cyan-500 px-3 py-1 text-xs font-bold">Retry GPS</button></div>}
+            />
 
             {/* Compass Rose Mini Watermark overlay on map */}
-            <div className="absolute top-2.5 right-2.5 bg-slate-900/85 backdrop-blur-md border border-slate-700/60 rounded-lg px-2 py-0.5 text-[11px] font-mono text-cyan-300 font-bold flex items-center gap-1 shadow-sm">
+            <div className="absolute top-3 right-28 z-10 bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-xl px-2.5 py-1 text-[11px] font-mono text-cyan-300 font-bold flex items-center gap-1.5 shadow-lg pointer-events-none">
               <Compass size={12} className="text-cyan-400" />
-              <span>{currentHeading === null ? 'N —' : `N ${String(Math.round(currentHeading)).padStart(3, '0')}°`}</span>
+              <span>{currentHeading === null ? 'N 000°' : `N ${String(Math.round(currentHeading)).padStart(3, '0')}°`}</span>
             </div>
           </div>
         </div>
@@ -621,16 +806,29 @@ export default function UnifiedRadarMap({
           {/* Live Alignment Action Banner */}
           <div className="w-full font-mono h-[34px] min-h-[34px] flex items-center justify-center">
             {!userLocation ? (
-              <div className="w-full h-full rounded-xl bg-cyan-500/10 border border-cyan-500/40 text-cyan-900 dark:text-cyan-300 font-bold text-xs flex items-center justify-center px-3">Waiting for GPS · heading still available</div>
-            ) : !activeTarget ? (
-              <div className="w-full h-full rounded-xl bg-amber-500/10 border border-amber-500/40 text-amber-900 dark:text-amber-300 font-bold text-xs flex items-center justify-center px-3">
-                Select a destination to start guidance
+              <div
+                onClick={() => setShowLocationPopup(true)}
+                className="w-full h-full rounded-xl bg-cyan-500/10 border border-cyan-500/40 text-cyan-900 dark:text-cyan-300 font-bold text-xs flex items-center justify-center px-3 cursor-pointer hover:bg-cyan-500/20 transition-all gap-1.5"
+                title="Tap to turn on location"
+              >
+                <span>Waiting for GPS · Needle points North</span>
+                <span className="text-[10px] underline">(Help)</span>
               </div>
+            ) : !activeTarget ? (
+              <button
+                type="button"
+                onClick={() => setIsSelectorModalOpen(true)}
+                className="w-full h-full rounded-xl bg-cyan-500/10 border border-cyan-500/40 text-cyan-900 dark:text-cyan-300 font-bold text-xs flex items-center justify-center px-3 cursor-pointer hover:bg-cyan-500/20 transition-all"
+              >
+                🧭 Compass Active · Tap to select destination
+              </button>
             ) : !hasTargetDirection ? (
-              <div className="w-full h-full rounded-xl bg-cyan-500/10 border border-cyan-500/40 text-cyan-900 dark:text-cyan-300 font-bold text-xs flex items-center justify-center px-3">{hasTargetFix ? 'At reported coordinates · direction unavailable' : 'Destination coordinates unavailable'}</div>
+              <div className="w-full h-full rounded-xl bg-cyan-500/10 border border-cyan-500/40 text-cyan-900 dark:text-cyan-300 font-bold text-xs flex items-center justify-center px-3">
+                {hasTargetFix ? 'At reported coordinates · Needle points North' : 'Target coordinates pending · Needle points North'}
+              </div>
             ) : currentHeading === null ? (
               <div className="w-full h-full rounded-xl bg-amber-500/10 border border-amber-500/40 text-amber-900 dark:text-amber-300 font-bold text-xs flex items-center justify-center px-3">
-                Compass unavailable · move phone in a figure eight
+                Calibrating compass · Move phone in figure eight
               </div>
             ) : isAligned ? (
               <div className="w-full h-full rounded-xl bg-emerald-500/10 border border-emerald-500/40 text-emerald-800 dark:text-emerald-300 font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs animate-pulse px-3">
@@ -683,79 +881,121 @@ export default function UnifiedRadarMap({
                   <circle cx={COMPASS_CENTER} cy={COMPASS_CENTER} r={COMPASS_RADIUS + 11} fill="#030712" stroke="#0e7490" strokeWidth="1" strokeDasharray="3 3" />
                   <circle cx={COMPASS_CENTER} cy={COMPASS_CENTER} r={COMPASS_RADIUS} fill="#060e1a" stroke="#1e293b" strokeWidth="1.5" />
 
+                  {/* Rotating Dial Group */}
                   <g transform={`rotate(${-Number(currentHeading || 0)} ${COMPASS_CENTER} ${COMPASS_CENTER})`} className="transition-transform duration-200 ease-out">
-                  {Array.from({ length: 36 }).map((_, i) => {
-                    const deg = i * 10;
-                    const isMajor = deg % 30 === 0;
-                    const isCardinal = deg % 90 === 0;
-                    const tickLen = isCardinal ? 11 : isMajor ? 7 : 3.5;
-                    const rad = (deg * Math.PI) / 180;
-                    const x1 = COMPASS_CENTER + (COMPASS_RADIUS - 2) * Math.sin(rad);
-                    const y1 = COMPASS_CENTER - (COMPASS_RADIUS - 2) * Math.cos(rad);
-                    const x2 = COMPASS_CENTER + (COMPASS_RADIUS - 2 - tickLen) * Math.sin(rad);
-                    const y2 = COMPASS_CENTER - (COMPASS_RADIUS - 2 - tickLen) * Math.cos(rad);
-                    return (
-                      <line
-                        key={deg}
-                        x1={x1}
-                        y1={y1}
-                        x2={x2}
-                        y2={y2}
-                        stroke={isCardinal ? '#ef4444' : isMajor ? '#38bdf8' : '#334155'}
-                        strokeWidth={isCardinal ? 2 : isMajor ? 1.5 : 0.75}
-                      />
-                    );
-                  })}
+                    {Array.from({ length: 36 }).map((_, i) => {
+                      const deg = i * 10;
+                      const isMajor = deg % 30 === 0;
+                      const isCardinal = deg % 90 === 0;
+                      const tickLen = isCardinal ? 11 : isMajor ? 7 : 3.5;
+                      const rad = (deg * Math.PI) / 180;
+                      const x1 = COMPASS_CENTER + (COMPASS_RADIUS - 2) * Math.sin(rad);
+                      const y1 = COMPASS_CENTER - (COMPASS_RADIUS - 2) * Math.cos(rad);
+                      const x2 = COMPASS_CENTER + (COMPASS_RADIUS - 2 - tickLen) * Math.sin(rad);
+                      const y2 = COMPASS_CENTER - (COMPASS_RADIUS - 2 - tickLen) * Math.cos(rad);
+                      return (
+                        <line
+                          key={deg}
+                          x1={x1}
+                          y1={y1}
+                          x2={x2}
+                          y2={y2}
+                          stroke={isCardinal ? '#ef4444' : isMajor ? '#38bdf8' : '#334155'}
+                          strokeWidth={isCardinal ? 2 : isMajor ? 1.5 : 0.75}
+                        />
+                      );
+                    })}
 
-                  <text x={COMPASS_CENTER} y={COMPASS_CENTER - COMPASS_RADIUS + 15} textAnchor="middle" fill="#ef4444" fontSize="13" fontWeight="900" fontFamily="monospace">N</text>
-                  <text x={COMPASS_CENTER + COMPASS_RADIUS - 13} y={COMPASS_CENTER + 4} textAnchor="middle" fill="#38bdf8" fontSize="11" fontWeight="bold" fontFamily="monospace">E</text>
-                  <text x={COMPASS_CENTER} y={COMPASS_CENTER + COMPASS_RADIUS - 6} textAnchor="middle" fill="#38bdf8" fontSize="11" fontWeight="bold" fontFamily="monospace">S</text>
-                  <text x={COMPASS_CENTER - COMPASS_RADIUS + 13} y={COMPASS_CENTER + 4} textAnchor="middle" fill="#38bdf8" fontSize="11" fontWeight="bold" fontFamily="monospace">W</text>
+                    <text x={COMPASS_CENTER} y={COMPASS_CENTER - COMPASS_RADIUS + 15} textAnchor="middle" fill="#ef4444" fontSize="13" fontWeight="900" fontFamily="monospace">N</text>
+                    <text x={COMPASS_CENTER + COMPASS_RADIUS - 13} y={COMPASS_CENTER + 4} textAnchor="middle" fill="#38bdf8" fontSize="11" fontWeight="bold" fontFamily="monospace">E</text>
+                    <text x={COMPASS_CENTER} y={COMPASS_CENTER + COMPASS_RADIUS - 6} textAnchor="middle" fill="#38bdf8" fontSize="11" fontWeight="bold" fontFamily="monospace">S</text>
+                    <text x={COMPASS_CENTER - COMPASS_RADIUS + 13} y={COMPASS_CENTER + 4} textAnchor="middle" fill="#38bdf8" fontSize="11" fontWeight="bold" fontFamily="monospace">W</text>
                   </g>
 
+                  {/* Crosshairs */}
                   <line x1={COMPASS_CENTER - 20} y1={COMPASS_CENTER} x2={COMPASS_CENTER + 20} y2={COMPASS_CENTER} stroke="#0e7490" strokeWidth="0.8" opacity="0.3" />
                   <line x1={COMPASS_CENTER} y1={COMPASS_CENTER - 20} x2={COMPASS_CENTER} y2={COMPASS_CENTER + 20} stroke="#0e7490" strokeWidth="0.8" opacity="0.3" />
 
-                  {hasTargetDirection && currentHeading !== null && (
-                    <g
-                      transform={`rotate(${needleAngle} ${COMPASS_CENTER} ${COMPASS_CENTER})`}
-                      filter="url(#needleGlow)"
-                      className="transition-transform duration-200 ease-out"
-                    >
-                      <polygon
-                        points={`${COMPASS_CENTER},${COMPASS_CENTER - COMPASS_RADIUS + 12} ${COMPASS_CENTER - 9},${COMPASS_CENTER - 14} ${COMPASS_CENTER},${COMPASS_CENTER - 7} ${COMPASS_CENTER + 9},${COMPASS_CENTER - 14}`}
-                        fill={isAligned ? '#10b981' : activeTarget.category === 'resource' ? '#06b6d4' : '#ef4444'}
-                        stroke="#ffffff"
-                        strokeWidth="1.5"
-                      />
-                      <line
-                        x1={COMPASS_CENTER}
-                        y1={COMPASS_CENTER}
-                        x2={COMPASS_CENTER}
-                        y2={COMPASS_CENTER - COMPASS_RADIUS + 12}
-                        stroke={isAligned ? '#10b981' : activeTarget.category === 'resource' ? '#06b6d4' : '#ef4444'}
-                        strokeWidth="3.5"
-                        strokeLinecap="round"
-                      />
-                      <polygon
-                        points={`${COMPASS_CENTER},${COMPASS_CENTER + 24} ${COMPASS_CENTER - 5},${COMPASS_CENTER + 10} ${COMPASS_CENTER + 5},${COMPASS_CENTER + 10}`}
-                        fill="#475569"
-                      />
-                      <circle
-                        cx={COMPASS_CENTER}
-                        cy={COMPASS_CENTER - COMPASS_RADIUS + 12}
-                        r="5.5"
-                        fill="none"
-                        stroke={isAligned ? '#10b981' : activeTarget.category === 'resource' ? '#06b6d4' : '#ef4444'}
-                        strokeWidth="2"
-                        className={isAligned ? 'animate-pulse' : ''}
-                      />
-                    </g>
-                  )}
+                  {/* NEEDLE: ALWAYS VISIBLE (Points to destination if set, else points North) */}
+                  <g
+                    transform={`rotate(${needleAngle} ${COMPASS_CENTER} ${COMPASS_CENTER})`}
+                    filter="url(#needleGlow)"
+                    className="transition-transform duration-200 ease-out"
+                  >
+                    {hasTargetDirection ? (
+                      /* ACTIVE TARGET GUIDANCE NEEDLE */
+                      <>
+                        <polygon
+                          points={`${COMPASS_CENTER},${COMPASS_CENTER - COMPASS_RADIUS + 12} ${COMPASS_CENTER - 9},${COMPASS_CENTER - 14} ${COMPASS_CENTER},${COMPASS_CENTER - 7} ${COMPASS_CENTER + 9},${COMPASS_CENTER - 14}`}
+                          fill={isAligned ? '#10b981' : activeTarget?.category === 'resource' ? '#06b6d4' : '#ef4444'}
+                          stroke="#ffffff"
+                          strokeWidth="1.5"
+                        />
+                        <line
+                          x1={COMPASS_CENTER}
+                          y1={COMPASS_CENTER}
+                          x2={COMPASS_CENTER}
+                          y2={COMPASS_CENTER - COMPASS_RADIUS + 12}
+                          stroke={isAligned ? '#10b981' : activeTarget?.category === 'resource' ? '#06b6d4' : '#ef4444'}
+                          strokeWidth="3.5"
+                          strokeLinecap="round"
+                        />
+                        <polygon
+                          points={`${COMPASS_CENTER},${COMPASS_CENTER + 24} ${COMPASS_CENTER - 5},${COMPASS_CENTER + 10} ${COMPASS_CENTER + 5},${COMPASS_CENTER + 10}`}
+                          fill="#475569"
+                        />
+                        <circle
+                          cx={COMPASS_CENTER}
+                          cy={COMPASS_CENTER - COMPASS_RADIUS + 12}
+                          r="5.5"
+                          fill="none"
+                          stroke={isAligned ? '#10b981' : activeTarget?.category === 'resource' ? '#06b6d4' : '#ef4444'}
+                          strokeWidth="2"
+                          className={isAligned ? 'animate-pulse' : ''}
+                        />
+                      </>
+                    ) : (
+                      /* CLASSIC MAGNETIC COMPASS NEEDLE (POINTS NORTH) */
+                      <>
+                        {/* North Arrow (Bright Radiant Red) */}
+                        <polygon
+                          points={`${COMPASS_CENTER},${COMPASS_CENTER - COMPASS_RADIUS + 12} ${COMPASS_CENTER - 8},${COMPASS_CENTER - 8} ${COMPASS_CENTER},${COMPASS_CENTER} ${COMPASS_CENTER + 8},${COMPASS_CENTER - 8}`}
+                          fill="#ef4444"
+                          stroke="#ffffff"
+                          strokeWidth="1.2"
+                        />
+                        <line
+                          x1={COMPASS_CENTER}
+                          y1={COMPASS_CENTER - 8}
+                          x2={COMPASS_CENTER}
+                          y2={COMPASS_CENTER - COMPASS_RADIUS + 12}
+                          stroke="#ffffff"
+                          strokeWidth="1.5"
+                          strokeLinecap="round"
+                        />
+                        {/* South Arrow (Sleek Slate/Silver) */}
+                        <polygon
+                          points={`${COMPASS_CENTER},${COMPASS_CENTER + COMPASS_RADIUS - 12} ${COMPASS_CENTER - 8},${COMPASS_CENTER + 8} ${COMPASS_CENTER},${COMPASS_CENTER} ${COMPASS_CENTER + 8},${COMPASS_CENTER + 8}`}
+                          fill="#64748b"
+                          stroke="#ffffff"
+                          strokeWidth="1.2"
+                        />
+                        {/* North Tip Dot */}
+                        <circle
+                          cx={COMPASS_CENTER}
+                          cy={COMPASS_CENTER - COMPASS_RADIUS + 12}
+                          r="3"
+                          fill="#ffffff"
+                        />
+                      </>
+                    )}
+                  </g>
 
+                  {/* Compass Center Bezel */}
                   <circle cx={COMPASS_CENTER} cy={COMPASS_CENTER} r="26" fill="#091424" stroke="#1e293b" strokeWidth="2" />
                   <circle cx={COMPASS_CENTER} cy={COMPASS_CENTER} r="22" fill="#030712" />
 
+                  {/* Center Telemetry Readout */}
                   <text
                     x={COMPASS_CENTER}
                     y={COMPASS_CENTER - 2}
@@ -765,7 +1005,7 @@ export default function UnifiedRadarMap({
                     fontWeight="900"
                     fontFamily="monospace"
                   >
-                    {hasTargetFix ? `${targetDistance}m` : '—'}
+                    {hasTargetFix ? `${targetDistance}m` : (currentHeading !== null ? `${Math.round(currentHeading)}°` : '0°')}
                   </text>
                   <text
                     x={COMPASS_CENTER}
@@ -776,14 +1016,14 @@ export default function UnifiedRadarMap({
                     fontWeight="bold"
                     fontFamily="monospace"
                   >
-                    {hasTargetDirection ? targetCardinal : '—'}
+                    {hasTargetDirection ? targetCardinal : (currentHeading !== null ? cardinalDirection(currentHeading) : 'N')}
                   </text>
                 </svg>
               </div>
 
               <div className="mt-0.5 text-center font-mono text-[10px] text-slate-500 dark:text-slate-400">
                 <span>Heading: </span>
-                <strong className="text-cyan-600 dark:text-cyan-400">{currentHeading === null ? 'Calibrating…' : `${Math.round(currentHeading)}° ${cardinalDirection(currentHeading)} · ${compassReference === 'true' ? 'true north' : 'magnetic north'}`}</strong>
+                <strong className="text-cyan-600 dark:text-cyan-400">{currentHeading === null ? '0° N · Calibrating…' : `${Math.round(currentHeading)}° ${cardinalDirection(currentHeading)} · ${compassReference === 'true' ? 'true north' : 'magnetic north'}`}</strong>
               </div>
             </div>
 
@@ -803,14 +1043,14 @@ export default function UnifiedRadarMap({
                 </div>
                 <div className="bg-[#f8fafc] dark:bg-slate-950/80 p-2 rounded-xl border border-[#dbe6f0] dark:border-slate-800">
                   <span className="text-[9px] text-slate-500 uppercase block font-semibold mb-0.5">Azimuth</span>
-                  <strong className="text-xs sm:text-sm font-black text-slate-900 dark:text-cyan-400 tabular-nums">{hasTargetDirection ? `${targetBearing}° ${targetCardinal}` : '—'}</strong>
+                  <strong className="text-xs sm:text-sm font-black text-slate-900 dark:text-cyan-400 tabular-nums">{hasTargetDirection ? `${targetBearing}° ${targetCardinal}` : (currentHeading !== null ? `${Math.round(currentHeading)}°` : '0° N')}</strong>
                 </div>
               </div>
 
               <div className="bg-[#f8fafc] dark:bg-slate-950/80 p-1.5 rounded-xl border border-[#dbe6f0] dark:border-slate-800 text-center flex items-center justify-around">
                 <div>
                   <span className="text-[9px] text-slate-500 uppercase block font-semibold">Reported status</span>
-                  <strong className="text-xs sm:text-sm font-black text-slate-900 dark:text-cyan-400 tabular-nums">{activeTarget?.status || 'Not reported'}</strong>
+                  <strong className="text-xs sm:text-sm font-black text-slate-900 dark:text-cyan-400 tabular-nums">{activeTarget?.status || 'Active Compass'}</strong>
                 </div>
                 {totalMetersWalked > 0 && (
                   <div className="border-l border-[#dbe6f0] dark:border-slate-800 pl-3">
@@ -822,76 +1062,277 @@ export default function UnifiedRadarMap({
             </div>
           </div>
 
-          {/* Target Card Details */}
-          {activeTarget ? (
-            <div
-              className={`p-2.5 sm:p-3 rounded-xl border transition-all shadow-xs ${
-                activeTarget.category === 'casualty'
-                  ? 'bg-red-50/90 dark:bg-red-950/30 border-red-300 dark:border-red-500/70'
-                  : activeTarget.category === 'resource'
-                  ? 'bg-sky-50/90 dark:bg-sky-950/30 border-sky-300 dark:border-sky-500/70'
-                  : activeTarget.category === 'shelter'
-                  ? 'bg-emerald-50/90 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-500/70'
-                  : 'bg-[#f0f5fa] dark:bg-slate-900/60 border-[#dbe6f0] dark:border-slate-700'
-              }`}
-            >
-              <div className="flex items-center justify-between gap-1 mb-1">
-                <span
-                  className={`text-[9.5px] font-extrabold uppercase px-2 py-0.5 rounded-full ${
-                    activeTarget.category === 'casualty'
-                      ? 'bg-red-600 text-white animate-pulse'
-                      : activeTarget.category === 'resource'
-                      ? 'bg-sky-600 text-white'
-                      : activeTarget.category === 'shelter'
-                      ? 'bg-emerald-600 text-white'
-                      : 'bg-amber-600 text-white'
-                  }`}
-                >
-                  {activeTarget.category === 'casualty'
-                    ? '🆘 PRIORITY CASUALTY / SOS'
-                    : activeTarget.category === 'resource'
-                    ? '💧 SAFE RESOURCE'
-                    : activeTarget.category === 'shelter'
-                    ? '🏥 SAFE SHELTER'
-                    : activeTarget.category === 'hazard' ? 'HAZARD ALERT' : 'NEARBY PHONE'}
-                </span>
-                <span className="text-[11px] font-mono font-bold text-slate-600 dark:text-slate-400">
-                  {hasTargetDirection ? `${targetBearing}° (${targetCardinal})` : 'Direction unavailable'}
-                </span>
-              </div>
+          {/* Target Situation Action Buttons */}
+          {activeTarget && (
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (onNavigateTarget && activeTarget.location) {
+                    onNavigateTarget(activeTarget);
+                  }
+                }}
+                className="flex-1 py-1.5 px-2.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center justify-center gap-1 shadow-xs transition-all active:scale-98 cursor-pointer"
+              >
+                <Navigation size={13} />
+                <span>Center Target</span>
+              </button>
 
-              <h3 className="text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white truncate">
-                {radarDestinationLabel(activeTarget)}
-              </h3>
-
-              <p className="text-[11px] sm:text-xs text-slate-800 dark:text-slate-200 leading-snug line-clamp-2 mt-1">
-                {targetDescription}
-              </p>
-
-              {/* 1-Tap Action Buttons */}
-              <div className="flex gap-2 mt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (onNavigateTarget && activeTarget.location) {
-                      onNavigateTarget(activeTarget);
-                    }
-                  }}
-                  className="flex-1 py-1.5 px-2.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center justify-center gap-1 shadow-xs transition-all active:scale-98 cursor-pointer"
-                >
-                  <Navigation size={13} />
-                  <span>Center Target</span>
-                </button>
-
-              </div>
-            </div>
-          ) : (
-            <div className="p-3 rounded-xl border border-dashed border-[#cbdbe9] dark:border-slate-800 text-center text-xs text-slate-500 dark:text-slate-400">
-              Select a target destination from the dropdown above to point the compass and view tactical telemetry.
+              <button
+                type="button"
+                onClick={() => setIsSelectorModalOpen(true)}
+                className="py-1.5 px-3 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs flex items-center gap-1 transition-all cursor-pointer"
+              >
+                <span>Change Target</span>
+                <ChevronDown size={13} />
+              </button>
             </div>
           )}
         </div>
       </div>
+
+      {/* CUSTOM PROFESSIONAL UI POPUP TO SELECT SHELTER / DESTINATION */}
+      {isSelectorModalOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="w-full max-w-lg bg-white dark:bg-[#0b1626] border border-cyan-500/40 rounded-3xl p-4 sm:p-5 shadow-2xl flex flex-col max-h-[88vh]">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-cyan-600/10 text-cyan-600 dark:text-cyan-400 flex items-center justify-center">
+                  <Navigation size={18} />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white">
+                    Select Emergency Destination
+                  </h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Choose shelter or safe point to align compass & map
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsSelectorModalOpen(false)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors cursor-pointer"
+                title="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Instant Search Bar */}
+            <div className="pt-3 pb-2">
+              <div className="relative">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search shelters, hospitals, relief camps…"
+                  value={selectorSearchQuery}
+                  onChange={(e) => setSelectorSearchQuery(e.target.value)}
+                  className="w-full py-2 pl-8 pr-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-[#07111e] text-slate-900 dark:text-slate-100 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                  autoFocus
+                />
+              </div>
+            </div>
+
+            {/* Category Filter Tabs */}
+            <div className="flex items-center gap-1 overflow-x-auto pb-2 no-scrollbar">
+              {[
+                ['all', 'All Points'],
+                ['shelter', '🏥 Shelters'],
+                ['resource', '💧 Resources'],
+                ['casualty', '🆘 Casualties'],
+                ['hazard', '⚠️ Hazards']
+              ].map(([cat, label]) => (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => setSelectorCategoryFilter(cat)}
+                  className={`text-[11px] px-2.5 py-1 rounded-lg font-bold shrink-0 transition-all cursor-pointer ${
+                    selectorCategoryFilter === cat
+                      ? 'bg-cyan-600 text-white shadow-xs'
+                      : 'bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {/* Scrollable Destination List */}
+            <div className="flex-1 overflow-y-auto space-y-2 py-1 pr-0.5">
+              {filteredModalDestinations.length === 0 ? (
+                <div className="p-6 text-center text-xs text-slate-500 dark:text-slate-400">
+                  No destinations match your search.
+                </div>
+              ) : (
+                filteredModalDestinations.map((dest) => {
+                  const isSelected = selectedTargetId === dest.id;
+                  const isCas = dest.category === 'casualty';
+                  const isRes = dest.category === 'resource';
+                  const isShelter = dest.category === 'shelter';
+                  const isPaytm = dest.id === PAYTM_SKYMARK.id;
+
+                  return (
+                    <div
+                      key={dest.id}
+                      onClick={() => {
+                        handleSelectDestination(dest.id);
+                        setIsSelectorModalOpen(false);
+                      }}
+                      className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-start justify-between gap-2.5 ${
+                        isSelected
+                          ? 'border-cyan-500 bg-cyan-50/80 dark:bg-cyan-950/30 ring-1 ring-cyan-400'
+                          : isPaytm
+                          ? 'border-sky-300 dark:border-sky-800 bg-sky-50/50 dark:bg-sky-950/20 hover:border-cyan-500'
+                          : 'border-slate-200 dark:border-slate-800 hover:border-cyan-500/60 bg-white dark:bg-[#07111e]'
+                      }`}
+                    >
+                      <div className="space-y-1 min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm">
+                            {isPaytm ? '🏢' : isCas ? '🆘' : isRes ? '💧' : isShelter ? '🏥' : '📍'}
+                          </span>
+                          <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
+                            {radarDestinationLabel(dest)}
+                          </span>
+                        </div>
+
+                        {dest.text && (
+                          <p className="text-[11px] text-slate-600 dark:text-slate-400 line-clamp-2">
+                            {dest.text}
+                          </p>
+                        )}
+
+                        <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                          {dest.distance_m != null && (
+                            <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-cyan-400">
+                              {dest.distance_m}m · {dest.cardinal || 'bearing'}
+                            </span>
+                          )}
+                          {dest.capacity && (
+                            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-300">
+                              👥 {dest.capacity}
+                            </span>
+                          )}
+                          {dest.status && (
+                            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-sky-50 dark:bg-sky-950/40 text-sky-600 dark:text-sky-300">
+                              {dest.status}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Selection radio/check circle */}
+                      <div className="shrink-0 pt-0.5">
+                        <div
+                          className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
+                            isSelected
+                              ? 'border-cyan-500 bg-cyan-600 text-white'
+                              : 'border-slate-400 dark:border-slate-600'
+                          }`}
+                        >
+                          {isSelected && <span className="text-xs font-bold">✓</span>}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center text-xs text-slate-500">
+              <span>{filteredModalDestinations.length} available locations</span>
+              <button
+                type="button"
+                onClick={() => setIsSelectorModalOpen(false)}
+                className="px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 font-bold cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* POPUP: TURN ON DEVICE LOCATION (GPS) WHEN OFFLINE / LOCATION OFF */}
+      {showLocationPopup && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="w-full max-w-md bg-white dark:bg-[#0b1626] border-2 border-amber-500/50 rounded-3xl p-5 shadow-2xl space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 flex items-center justify-center shrink-0">
+                  <MapPin size={22} className="animate-bounce" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
+                    Turn On Device Location (GPS)
+                  </h3>
+                  <p className="text-xs text-amber-600 dark:text-amber-400 font-semibold">
+                    {isOffline ? 'Internet is turned off · Offline mode active' : 'Waiting for device GPS fix'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowLocationPopup(false)}
+                className="p-1 rounded-xl text-slate-400 hover:text-slate-100 hover:bg-slate-800/60 transition-colors cursor-pointer"
+                title="Dismiss"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 rounded-2xl p-3 text-xs text-slate-800 dark:text-slate-200 space-y-2">
+              <p className="font-medium">
+                {isOffline
+                  ? 'Without internet or mobile data, RescueMemory uses your phone’s built-in GNSS satellite GPS chip to navigate.'
+                  : 'Location fix is required to calculate distances and bearings to shelters.'}
+              </p>
+              <div className="bg-white/80 dark:bg-black/30 rounded-xl p-2.5 space-y-1 font-mono text-[11px]">
+                <p className="font-bold text-amber-700 dark:text-amber-300">How to fix this:</p>
+                <p>1. Swipe down from top of screen to open Quick Settings.</p>
+                <p>2. Tap to turn <strong>Location / GPS ON</strong>.</p>
+                <p>3. Set location accuracy to <strong>High Accuracy / Precise</strong>.</p>
+              </div>
+              <p className="text-[11px] text-emerald-700 dark:text-emerald-400 font-bold flex items-center gap-1">
+                <span>🧭 Note:</span> The compass needle below is ALWAYS active and points North even without internet or GPS!
+              </p>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-2 pt-1">
+              <button
+                type="button"
+                onClick={async () => {
+                  await handleManualRefreshGps();
+                  setShowLocationPopup(false);
+                }}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md cursor-pointer transition-all"
+              >
+                <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+                <span>Retry GPS Fix</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowLocationPopup(false)}
+                className="flex-1 py-2.5 px-4 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs flex items-center justify-center cursor-pointer transition-all"
+              >
+                <span>Continue with Compass</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
