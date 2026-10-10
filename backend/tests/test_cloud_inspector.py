@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from threading import Barrier
 from unittest.mock import Mock
 from datetime import datetime, timezone
 
@@ -7,6 +8,8 @@ import numpy as np
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from httpx import Headers
+from qdrant_client.http.exceptions import UnexpectedResponse
 
 from backend.app import cloud
 from backend.app.config import Settings
@@ -70,7 +73,7 @@ def test_cloud_mirror_replaces_direct_phone_point_without_creating_another(monke
         ([SimpleNamespace(id=cloud._event_point_id(record), payload={
             "id": source_id, "kind": "sos", "text": record["text"], "visibility": "public"})], None)
         if name == cloud.EVENT_COLLECTIONS["public"] else ([], None))
-    client.get_collections.return_value.collections = []
+    client.get_collections.return_value.collections = [SimpleNamespace(name=n) for n in cloud.EVENT_COLLECTIONS.values()]
     monkeypatch.setattr(cloud, "QdrantClient", lambda **kwargs: client)
     monkeypatch.setattr(cloud, "_cloud_inventory", lambda client, names: {})
     memory = SimpleNamespace(all=lambda table: [record] if table == "events" else [],
@@ -86,6 +89,8 @@ def test_cloud_mirror_replaces_direct_phone_point_without_creating_another(monke
     assert len(points) == 1
     assert points[0].id == cloud._event_point_id(record)
     assert points[0].payload["content_hash"] == "verified-hash"
+    client.collection_exists.assert_not_called()
+    client.get_collections.assert_called_once()
 
 
 def test_inventory_is_exact_app_only_and_preserves_zero(monkeypatch):
@@ -114,6 +119,23 @@ def test_failed_count_is_unknown_instead_of_zero():
     assert result['count_errors'][cloud.GUIDES_COLLECTION] == 'cloud count unavailable'
 
 
+def test_cloud_inventory_counts_independent_collections_concurrently():
+    names = [*cloud.EVENT_COLLECTIONS.values(), cloud.GUIDES_COLLECTION]
+    barrier = Barrier(len(names))
+    client = Mock()
+
+    def count(name, exact):
+        assert exact is True
+        barrier.wait(timeout=2)
+        return SimpleNamespace(count=names.index(name) + 1)
+
+    client.count.side_effect = count
+    result = cloud._cloud_inventory(client, names)
+    assert result['counts_verified'] is True
+    assert result['total_points'] == 10
+    assert result['shards'] == {name: index + 1 for index, name in enumerate(names)}
+
+
 def test_cloud_records_read_actual_payloads_and_preserve_cursor(monkeypatch):
     client = Mock()
     client.collection_exists.return_value = True
@@ -124,10 +146,22 @@ def test_cloud_records_read_actual_payloads_and_preserve_cursor(monkeypatch):
     assert result['items'] == [{'point_id': 'point', 'payload': {'text': 'Actual cloud payload'}}]
     assert result['next_offset'] == 0
     client.scroll.assert_called_once_with(cloud.GUIDES_COLLECTION, offset=0, limit=2, with_payload=True, with_vectors=False)
+    client.collection_exists.assert_not_called()
     client.close.assert_called_once()
     with pytest.raises(HTTPException) as error:
         cloud.read_cloud_records(service, 'other-collection')
     assert error.value.status_code == 422
+
+
+def test_missing_cloud_collection_is_empty_without_a_separate_exists_request(monkeypatch):
+    client = Mock()
+    client.scroll.side_effect = UnexpectedResponse(404, 'Not Found', b'collection missing', Headers())
+    monkeypatch.setattr(cloud, 'QdrantClient', lambda **kwargs: client)
+    service = SimpleNamespace(settings=SimpleNamespace(qdrant_url='https://test.invalid', qdrant_api_key='test'))
+    result = cloud.read_cloud_records(service, cloud.GUIDES_COLLECTION)
+    assert result['items'] == []
+    assert result['next_offset'] is None
+    client.collection_exists.assert_not_called()
 
 
 def test_cloud_record_endpoint_requires_admin_and_rejects_invalid_collection(monkeypatch, tmp_path):

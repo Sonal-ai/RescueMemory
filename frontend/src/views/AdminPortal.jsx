@@ -161,15 +161,14 @@ export default function AdminPortal({ initialTab = 'hq' }) {
     const generation = ++dataGeneration.current;
     setLoading(true);
     try {
-      const [h, s, feed, cloudInfo, disc] = await Promise.all([
+      const [h, s, feed, disc] = await Promise.all([
         api('/health', { preferCache: !forceRefresh, cacheTtl: 10000 }).catch(() => null),
         api('/api/sync/status', { preferCache: !forceRefresh, cacheTtl: 10000 }).catch(() => null),
         getAllLocalReports().then(reports => loadDashboardFeed(api, forceRefresh, reports)),
-        api('/api/sync/cloud-status', { admin: true, noCache: true }).catch(err => ({ connected: false, counts_verified: false, error: err.message })),
         getDiscoveredPeers().catch(err => ({ peers: [], error: err.message })),
       ]);
       if (generation !== dataGeneration.current) return;
-      setHealth(h); setSync(s); setCloudStatus(cloudInfo);
+      setHealth(h); setSync(s);
       setPeers(disc?.peers || []);
       setFeedState({ ...feed, peerError: disc?.error });
       setEvents(feed.items);
@@ -190,6 +189,18 @@ export default function AdminPortal({ initialTab = 'hq' }) {
     return () => clearInterval(timer);
   }, [loadData]);
 
+  // Cloud inventory is independent of the local dashboard feed. Fetch it only
+  // while Inspector is open so a slow remote cluster cannot delay every view.
+  useEffect(() => {
+    if (activeTab !== 'inspector') return;
+    let cancelled = false;
+    setCloudStatus(null);
+    api('/api/sync/cloud-status', { admin: true, noCache: true })
+      .then(result => { if (!cancelled) setCloudStatus(result); })
+      .catch(err => { if (!cancelled) setCloudStatus({ connected: false, counts_verified: false, error: err.message }); });
+    return () => { cancelled = true; };
+  }, [activeTab, cloudRefresh]);
+
   useEffect(() => {
     const refreshConnection = () => {
       // Results started before a mode change must not overwrite the new state.
@@ -199,7 +210,13 @@ export default function AdminPortal({ initialTab = 'hq' }) {
       loadData(true);
       setCloudRefresh(value => value + 1);
     };
-    const unsubscribe = onOnlineModeChange(refreshConnection);
+    // The subscription immediately reports its current value. Initial data
+    // and cloud effects already load it, so only refresh on actual changes.
+    let subscribed = false;
+    const unsubscribe = onOnlineModeChange(() => {
+      if (!subscribed) { subscribed = true; return; }
+      refreshConnection();
+    });
     window.addEventListener('online', refreshConnection);
     window.addEventListener('offline', refreshConnection);
     return () => {
@@ -439,7 +456,7 @@ export default function AdminPortal({ initialTab = 'hq' }) {
   });
 
   const currentShards = cloudStatus?.connected ? cloudStatus.shards || {} : {};
-  const totalPoints = cloudStatus?.connected ? displayCloudCount(cloudStatus.total_points) : 'Unavailable';
+  const totalPoints = cloudStatus === null ? 'Checking…' : cloudStatus.connected ? displayCloudCount(cloudStatus.total_points) : 'Unavailable';
 
 
   return (
@@ -886,7 +903,7 @@ export default function AdminPortal({ initialTab = 'hq' }) {
                 <span title={cloudStatus?.connected ? 'Cloud reachable' : 'Cloud unavailable'} className={`w-2 h-2 rounded-full ${cloudStatus?.connected ? 'bg-emerald-400' : 'bg-slate-500'}`} />
               </div>
               <div className="text-[10px] text-slate-400 font-mono mt-2 pt-1.5 border-t border-slate-800">
-                {cloudStatus?.connected ? cloudStatus.counts_verified ? 'Counts verified' : 'Some counts unavailable' : 'Cloud unavailable'}{cloudStatus?.checked_at ? ` · ${formatTime(cloudStatus.checked_at)}` : ''}
+                {cloudStatus === null ? 'Checking cloud inventory…' : cloudStatus.connected ? cloudStatus.counts_verified ? 'Counts verified' : 'Some counts unavailable' : 'Cloud unavailable'}{cloudStatus?.checked_at ? ` · ${formatTime(cloudStatus.checked_at)}` : ''}
               </div>
             </div>
 

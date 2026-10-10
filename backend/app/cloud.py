@@ -6,12 +6,15 @@ authorization boundary; separate collections reduce cross-scope mistakes.
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 import hashlib
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from fastapi import HTTPException
 from qdrant_client import QdrantClient, models
+from qdrant_client.http.exceptions import UnexpectedResponse
+from qdrant_client.local.qdrant_local import QdrantLocal
 
 from .service import RescueService
 
@@ -27,15 +30,31 @@ GUIDES_COLLECTION = "rescue_approved_guides"
 def _cloud_inventory(client: QdrantClient, available: list[str]) -> dict:
     """Count the same application collections the cloud record browser reads."""
     shards, errors = {}, {}
-    for name in [*EVENT_COLLECTIONS.values(), GUIDES_COLLECTION]:
-        if name not in available:
-            shards[name] = 0  # Collection list confirmed it is absent.
-            continue
+    names = [*EVENT_COLLECTIONS.values(), GUIDES_COLLECTION]
+    available_set = set(available)
+
+    def count_collection(name: str):
+        if name not in available_set:
+            return name, 0, None  # Collection list confirmed it is absent.
         try:
-            shards[name] = client.count(name, exact=True).count
+            return name, client.count(name, exact=True).count, None
         except Exception as exc:
-            shards[name] = None
-            errors[name] = str(exc)
+            return name, None, str(exc)
+
+    # Remote counts cost independent network round trips. Qdrant's local mode
+    # has thread-affine storage, so keep that path on the calling thread.
+    if isinstance(getattr(client, "_client", None), QdrantLocal):
+        counted = map(count_collection, names)
+        for name, value, error in counted:
+            shards[name] = value
+            if error is not None:
+                errors[name] = error
+    else:
+        with ThreadPoolExecutor(max_workers=len(names)) as executor:
+            for name, value, error in executor.map(count_collection, names):
+                shards[name] = value
+                if error is not None:
+                    errors[name] = error
     return {"shards": shards, "count_errors": errors, "counts_verified": not errors,
             "total_points": sum(shards.values()) if not errors else None,
             "checked_at": datetime.now(timezone.utc).isoformat(), "source": "qdrant_cloud"}
@@ -49,9 +68,13 @@ def read_cloud_records(service: RescueService, collection: str, offset=None, lim
     client = QdrantClient(url=service.settings.qdrant_url,
                           api_key=service.settings.qdrant_api_key, timeout=10)
     try:
-        points, next_offset = (client.scroll(collection, offset=offset, limit=limit,
-                                           with_payload=True, with_vectors=False)
-                               if client.collection_exists(collection) else ([], None))
+        try:
+            points, next_offset = client.scroll(collection, offset=offset, limit=limit,
+                                                with_payload=True, with_vectors=False)
+        except UnexpectedResponse as exc:
+            if exc.status_code != 404:
+                raise
+            points, next_offset = [], None
         return {"collection": collection, "items": [{"point_id": str(p.id), "payload": p.payload or {}} for p in points],
                 "next_offset": next_offset, "source": "qdrant_cloud",
                 "checked_at": datetime.now(timezone.utc).isoformat()}
@@ -76,8 +99,10 @@ def _event_point_id(record: dict) -> str:
     return str(UUID(bytes=bytes(raw)))
 
 
-def _ensure_collection(client: QdrantClient, name: str, *, events: bool) -> None:
-    if client.collection_exists(name):
+def _ensure_collection(client: QdrantClient, name: str, *, events: bool,
+                       available: set[str] | None = None) -> None:
+    exists = name in available if available is not None else client.collection_exists(name)
+    if exists:
         return
     client.create_collection(
         name, vectors_config={"dense": models.VectorParams(size=384, distance=models.Distance.COSINE)}
@@ -89,6 +114,8 @@ def _ensure_collection(client: QdrantClient, name: str, *, events: bool) -> None
                   ("id", models.PayloadSchemaType.KEYWORD),)
     for field, kind in fields:
         client.create_payload_index(name, field, kind)
+    if available is not None:
+        available.add(name)
 
 
 def _cloud_payloads(client: QdrantClient, name: str):
@@ -182,8 +209,9 @@ def mirror_to_qdrant_server(service: RescueService) -> dict:
               "guides_uploaded": 0, "guides_downloaded": 0}
     try:
         service.purge_expired()
+        available = {c.name for c in client.get_collections().collections}
         for scope, collection in EVENT_COLLECTIONS.items():
-            _ensure_collection(client, collection, events=True)
+            _ensure_collection(client, collection, events=True, available=available)
             existing: dict[str, str] = {}
             cloud_events: list[dict] = []
             expired_points: list[str] = []
@@ -230,7 +258,7 @@ def mirror_to_qdrant_server(service: RescueService) -> dict:
                 service.record_transfer(event["id"], service.settings.node_id, "qdrant-cloud")
 
         if service.settings.guide_trust_key:
-            _ensure_collection(client, GUIDES_COLLECTION, events=False)
+            _ensure_collection(client, GUIDES_COLLECTION, events=False, available=available)
             existing_guides: dict[str, dict] = {}
             for point in _cloud_payloads(client, GUIDES_COLLECTION):
                 if not isinstance(point.payload, dict) or "id" not in point.payload:
@@ -248,7 +276,7 @@ def mirror_to_qdrant_server(service: RescueService) -> dict:
                         lambda item: f"{item['title']} {item['keywords']} {item['summary']}")
             result["guides_uploaded"] = len(to_upload)
 
-        result.update(_cloud_inventory(client, [c.name for c in client.get_collections().collections]))
+        result.update(_cloud_inventory(client, list(available)))
         result.update({"mirrored": True, "status": "ok"})
         return result
     finally:
