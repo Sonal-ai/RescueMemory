@@ -1,0 +1,1 @@
+import{t as e}from"./index-CrKmgpc_.js";import t from"./AdminPortal-BpRk_FSB.js";var n=e();function r(){return(0,n.jsx)(t,{initialTab:`hq`})}export{r as default};

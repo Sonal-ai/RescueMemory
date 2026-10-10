@@ -1,1 +1,0 @@
-import{t as e}from"./index-BA_Aw-CN.js";import t from"./AdminPortal-DO2GR-1N.js";var n=e();function r(){return(0,n.jsx)(t,{initialTab:`hq`})}export{r as default};
