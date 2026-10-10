@@ -16,6 +16,12 @@ PAGE_SIZE = 64
 def authorize(service: RescueService, scope: str, mesh_key: str | None,
               group_token: str | None, responder_key: str | None,
               group_id: str | None) -> None:
+    if service.settings.prototype_access:
+        if scope not in {"public", "responders", "group"}:
+            raise HTTPException(422, "invalid scope")
+        if scope == "group" and not group_id:
+            raise HTTPException(422, "group_id required")
+        return
     expected = service.settings.mesh_key
     valid_mesh_keys = {
         k for k in [
@@ -51,7 +57,7 @@ def sync_with_peer(service: RescueService, peer_url: str, scope: str,
     if scope == "group":
         headers["X-Group-Token"] = service.group_token(group_id or "")
     if scope == "responders":
-        if service.settings.role == "survivor":
+        if service.settings.role == "survivor" and not service.settings.prototype_access:
             raise HTTPException(403, "responder exchange requires a volunteer or central node")
         headers["X-Responder-Key"] = service.settings.responder_key
     common = {"scope": scope, "group_id": group_id}

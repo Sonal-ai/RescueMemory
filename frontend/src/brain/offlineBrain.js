@@ -436,6 +436,7 @@ export async function recordReportLocal(reportData) {
   triggerAutoSync();
   return {
     status: 'saved_locally',
+    ...saved,
     event_id: saved.id,
     on_device: true,
     message: 'Report saved to phone storage. Will automatically sync to field hub upon connection.',
@@ -502,10 +503,14 @@ export async function triggerAutoSync() {
           severity: report.severity || 'red',
           reporter_id: report.reporter_id || 'survivor-mobile',
           observed_at: report.created_at || report.observed_at || new Date().toISOString(),
+          verified: report.verified === true || report.prototype_confirmed === true,
+          group_id: report.group_id,
         };
         const res = await fetch(`${edgeBase}/api/reports`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json',
+            'X-Node-Admin-Key': sessionStorage.getItem('rescue.adminKey') || 'rescue-admin-key-2026',
+            'X-Responder-Key': sessionStorage.getItem('rescue.responderKey') || 'rescue-responder-shared-key-2026' },
           body: JSON.stringify(payload),
           signal: AbortSignal.timeout(3000),
         });
@@ -519,6 +524,24 @@ export async function triggerAutoSync() {
     if (syncedIds.length > 0) {
       await markReportsSynced(syncedIds);
       totalSyncedCount += syncedIds.length;
+    }
+
+    // Offline protocol drafts become signed publications only after a real
+    // server acknowledgement. Keep unsuccessful drafts queued for retry.
+    for (const guide of (await getAllLocalGuides()).filter(g => g.pending_publication)) {
+      try {
+        const payload = Object.fromEntries(['id', 'title', 'keywords', 'summary', 'steps', 'warnings', 'source', 'reviewer'].map(key => [key, guide[key]]));
+        const response = await fetch(`${edgeBase}/api/guides/publish`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json',
+            'X-Node-Admin-Key': sessionStorage.getItem('rescue.adminKey') || 'rescue-admin-key-2026' },
+          body: JSON.stringify(payload), signal: AbortSignal.timeout(3000),
+        });
+        if (response.ok) {
+          const published = await response.json();
+          if (published.id === guide.id && published.auth_tag)
+            await saveImportedGuides([{ ...published, pending_publication: false }]);
+        }
+      } catch (error) { console.warn('[AutoSync] Protocol publication pending:', error.message); }
     }
 
     // Downlink from Edge

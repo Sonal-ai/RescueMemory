@@ -6,6 +6,10 @@ import { readFileSync } from 'node:fs';
 
 // Match Vite's bundled JSON import behavior in the Node API integration test.
 registerHooks({ load(url, context, nextLoad) {
+  if (url.endsWith('/prototypeAccess.js')) {
+    const result = nextLoad(url, context);
+    return { ...result, source: String(result.source).replace("import.meta.env?.VITE_PROTOTYPE_ACCESS !== 'false'", 'false') };
+  }
   if (url.endsWith('.json')) return { format: 'module', source: `export default ${JSON.stringify(JSON.parse(readFileSync(new URL(url), 'utf8')))};`, shortCircuit: true };
   return nextLoad(url, context);
 } });

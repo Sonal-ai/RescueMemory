@@ -165,15 +165,20 @@ class RescueService:
 
     def _event(self, body: dict, idempotency_key: str | None = None) -> dict:
         body["origin_device"] = self.settings.node_id
-        body["source_role"] = self.settings.role
+        body["source_role"] = "central" if body.get("verified") and self.settings.prototype_access else self.settings.role
         if body.get("verified"):
-            if self.settings.role != "central" or not self.settings.guide_trust_key:
+            if (self.settings.role != "central" and not self.settings.prototype_access) or not self.settings.guide_trust_key:
                 raise HTTPException(403, "verified command reports require the guide trust key")
             body["authority_tag"] = hmac.new(
                 self.settings.guide_trust_key.encode(), canonical(body), hashlib.sha256
             ).hexdigest()
         normalized = Event(id="0" * 64, content_hash="0" * 64, **body).body()
         body = normalized
+        if body.get("verified"):
+            unsigned = {key: value for key, value in body.items() if key != "authority_tag"}
+            body["authority_tag"] = hmac.new(
+                self.settings.guide_trust_key.encode(), canonical(unsigned), hashlib.sha256
+            ).hexdigest()
         event_hash = hashlib.sha256(canonical(body)).hexdigest()
         if idempotency_key:
             event_id = hashlib.sha256(f"{self.settings.node_id}:{idempotency_key}".encode()).hexdigest()
@@ -196,7 +201,7 @@ class RescueService:
                                             "responders" if request.kind == "incident" else "public")
         if request.kind == "incident" and visibility == "public":
             raise HTTPException(422, "medical incidents cannot be public")
-        if request.verified and self.settings.role != "central":
+        if request.verified and self.settings.role != "central" and not self.settings.prototype_access:
             raise HTTPException(403, "only command may verify a report")
         if visibility == "group":
             if not request.group_id:
@@ -958,7 +963,7 @@ class RescueService:
         return hmac.new(self.settings.guide_trust_key.encode(), canonical(body), hashlib.sha256).hexdigest()
 
     def publish_guide(self, request: GuidePublishRequest) -> dict:
-        if self.settings.role != "central" or not self.settings.guide_trust_key:
+        if (self.settings.role != "central" and not self.settings.prototype_access) or not self.settings.guide_trust_key:
             raise HTTPException(403, "command guide publishing is unavailable")
         current = self.memory.get("reference", request.id)
         guide = request.model_dump()

@@ -22,14 +22,14 @@ export function dashboardSummary(events) {
   const current = [...latest.values()];
   const casualties = current.filter(e => ['incident', 'sos'].includes(e.kind));
   const hazards = current.filter(e => e.kind === 'hazard');
-  const havens = current.filter(e => ['checkpoint', 'resource'].includes(e.kind) && e.verified === true && e.status === 'operational' && e.severity !== 'red');
+  const havens = current.filter(e => ['checkpoint', 'resource'].includes(e.kind) && (e.verified === true || e.prototype_confirmed === true) && e.status === 'operational' && e.severity !== 'red');
   return { current, casualties, hazards, havens,
     redCount: casualties.filter(e => e.severity === 'red' && e.status !== 'rescued_transported').length,
     yellowCount: casualties.filter(e => e.severity === 'yellow' && e.status !== 'rescued_transported').length,
     rescuedCount: casualties.filter(e => e.status === 'rescued_transported').length };
 }
 
-export async function loadDashboardFeed(request, forceRefresh = false) {
+export async function loadDashboardFeed(request, forceRefresh = false, pendingLocal = []) {
   const results = await Promise.allSettled(['public', 'responders'].map(async scope => {
     const items = new Map(); let page = 0;
     while (true) {
@@ -48,7 +48,8 @@ export async function loadDashboardFeed(request, forceRefresh = false) {
     }
   }));
   const errors = results.flatMap((result, index) => result.status === 'rejected' ? [`${index ? 'Responders' : 'Public'}: ${result.reason.message}`] : []);
-  const items = [...new Map(results.flatMap(result => result.status === 'fulfilled' ? result.value : []).map(item => [item.id, item])).values()];
+  const items = [...new Map([...results.flatMap(result => result.status === 'fulfilled' ? result.value : []),
+    ...pendingLocal.filter(item => (!item.synced || item.prototype_confirmed) && item.id)].map(item => [item.id, item])).values()];
   items.sort((a, b) => eventTime(b) - eventTime(a));
   return { items, complete: errors.length === 0, errors };
 }

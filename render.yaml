@@ -8,6 +8,8 @@ services:
     envVars:
       - key: NODE_ROLE
         value: central
+      - key: PROTOTYPE_ACCESS
+        value: "true"
       - key: NODE_ID
         value: central-hq
       - key: NODE_ADMIN_KEY

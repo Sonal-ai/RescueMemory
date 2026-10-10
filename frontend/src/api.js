@@ -1,6 +1,7 @@
 import { reportRadar } from './brain/reportRadar.js';
 import { localReportAnswer } from './brain/localReportChat.js';
 import { formatOnlineAnswer } from './brain/onlineAnswer.js';
+import { prototypeAccess, prototypeReport, prototypeGuide } from './brain/prototypeAccess.js';
 import { gpsPosition, hardwareLocationWatch } from './brain/locationTracking.js';
 import { coordinates, requiresAuthorityServer, storedEntityTimeline, localMemoryPage } from './brain/adminData.js';
 import {
@@ -11,7 +12,7 @@ import {
   triggerAutoSync,
   onSyncStateChange,
 } from './brain/offlineBrain.js';
-import { getAllLocalReports, getUnsyncedReports, getAllLocalGuides, saveOfflineReport, markReportsSynced, getMeshHistory } from './brain/offlineStorage.js';
+import { getAllLocalReports, getUnsyncedReports, getAllLocalGuides, saveImportedGuides, saveOfflineReport, markReportsSynced, getMeshHistory } from './brain/offlineStorage.js';
 import {
   distM,
   bearingDeg,
@@ -274,7 +275,7 @@ export async function api(path, options = {}) {
   // Immediate offline fallback if offline mode is toggled OR device is known to be offline
   if (!isOnlineMode() || (typeof navigator !== 'undefined' && navigator.onLine === false)) {
     if (liveCloud) return offlineCloudResult(path);
-    if (authorityWrite) throw new Error('Authority signing requires the central server. Nothing was signed or published.');
+    if (authorityWrite && !prototypeAccess) throw new Error('Authority signing requires the central server. Nothing was signed or published.');
     setStandaloneMode(true);
     const cached = getCachedApi(cacheKey);
     if (cached && !liveCloud) return cached;
@@ -347,6 +348,8 @@ export async function api(path, options = {}) {
         console.warn('[Reports] Saved remotely, but local copy failed:', storageError.message);
       }
     }
+    if (path === '/api/guides/publish' && method === 'POST' && data.id)
+      await saveImportedGuides([{ ...data, pending_publication: false }]);
     if (method === 'GET') {
       setCachedApi(cacheKey, data, options.cacheTtl || 15000);
     } else {
@@ -355,8 +358,14 @@ export async function api(path, options = {}) {
     return data;
   } catch (err) {
     if (timeoutId) clearTimeout(timeoutId);
-    if (authorityWrite) throw new Error(`Authority request failed: ${err.message}. No local signed publication was created.`);
-    if ((liveCloud || path.startsWith('/api/memory')) && [401, 403].includes(err.status)) throw err;
+    if (authorityWrite) {
+      if (!prototypeAccess || err.status === 422) throw new Error(`Authority request failed: ${err.message}. No local signed publication was created.`);
+      invalidateApiCache();
+      return { ...await handleOfflineFallback(path, method, body), server_error: err.message };
+    }
+    if ((liveCloud || (path.startsWith('/api/memory') && !prototypeAccess)) && [401, 403].includes(err.status)) throw err;
+    if (path.startsWith('/api/memory') && prototypeAccess && [401, 403].includes(err.status))
+      return handleOfflineFallback(path, method, body);
     const cached = getCachedApi(cacheKey);
     if (cached && !liveCloud) {
       console.log(`[API] Returning cached SWR data for ${path}`);
@@ -468,15 +477,13 @@ async function handleOfflineFallback(path, method, body) {
 
   // 3. Save Observation / SOS report locally & opportunistically push to cloud
   if (path === '/api/reports' && method === 'POST') {
-    const saved = await recordReportLocal(body || {});
+    const saved = await recordReportLocal(prototypeAccess && body?.verified ? prototypeReport(body) : body || {});
     // Proactively trigger background auto-sync so it pushes to backend/cloud when connection returns
     triggerAutoSync().catch(() => {});
-    const evtId = saved.id || saved.event_id || `evt_${Date.now()}`;
+    const evtId = saved.id || saved.event_id;
     return {
       event: {
         id: evtId,
-        content_hash: saved.content_hash || `hash_${Date.now()}`,
-        ...body,
         ...saved,
       },
       id: evtId,
@@ -486,6 +493,15 @@ async function handleOfflineFallback(path, method, body) {
       local_fallback: true,
       mode: 'standalone_mobile_brain',
     };
+  }
+
+  if (path === '/api/guides/publish' && method === 'POST' && prototypeAccess) {
+    const existing = (await getAllLocalGuides()).find(g => g.id === body?.id);
+    const guide = prototypeGuide(body, existing, getDeviceId());
+    await saveImportedGuides([guide]);
+    triggerAutoSync().catch(() => {});
+    invalidateApiCache();
+    return { ...guide, queued: true, local_fallback: true };
   }
 
   // 5. Nearby Map Records

@@ -14,7 +14,6 @@ import {
   Menu,
   Moon,
   Radio,
-  Settings2,
   ShieldCheck,
   Sun,
   Users,
@@ -22,7 +21,7 @@ import {
   WifiOff,
   X
 } from 'lucide-react';
-import { api, saveSetting, setting, isOnlineMode, setOnlineMode, onOnlineModeChange } from './api';
+import { api, isOnlineMode, setOnlineMode, onOnlineModeChange } from './api';
 import { useNodeStatus } from './hooks/useNodeStatus';
 import { useNativeViewport } from './hooks/useNativeViewport';
 export { useNodeStatus };
@@ -35,120 +34,6 @@ const NAV_LINKS = [
   { path: '/hq', label: 'Command HQ', icon: Radio, desc: 'Incident Ledger Relay', badge: 'Central' },
   { path: '/command', label: 'Inspector', icon: Activity, desc: 'Qdrant Cloud & Proofs', badge: 'Dev' },
 ];
-
-export function SettingsPanel({ onClose }) {
-  const [values, setValues] = useState({
-    backendUrl: setting('backendUrl'),
-    adminKey: setting('adminKey'),
-    responderKey: setting('responderKey'),
-    groupId: setting('groupId'),
-    groupToken: setting('groupToken'),
-    peerUrl: setting('peerUrl'),
-    reporterId: setting('reporterId') || 'survivor-1',
-  });
-
-  const save = () => {
-    Object.entries(values).forEach(([key, value]) => saveSetting(key, value));
-    onClose();
-  };
-
-  return (
-    <div className={`${Capacitor.isNativePlatform() ? 'native-overlay' : ''} fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4`}>
-      <div className="settings-dialog w-full max-w-xl bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-700/80 rounded-3xl p-6 sm:p-8 shadow-2xl max-h-[90vh] overflow-auto">
-        <div className="flex justify-between items-center mb-2">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border border-cyan-500/20">
-              <Settings2 size={20} />
-            </div>
-            <div>
-              <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">Node Configuration</h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Local device & peer mesh parameters</p>
-            </div>
-          </div>
-          <button
-            aria-label="Close settings"
-            onClick={onClose}
-            className="icon-btn text-slate-400 hover:text-slate-900 dark:hover:text-white"
-          >
-            <X size={20} />
-          </button>
-        </div>
-
-        <p className="text-xs text-slate-700 dark:text-slate-300 mb-6 bg-[#f0f5fa] dark:bg-slate-900/60 p-3 rounded-xl border border-[#dbe6f0] dark:border-slate-800 font-medium">
-          🔒 Private credentials stay isolated in your local session. They are never published or leaked across nodes.
-        </p>
-
-        <div className="grid sm:grid-cols-2 gap-4">
-          {[
-            ['backendUrl', 'Central Server URL', 'https://rescuememory-backend.onrender.com'],
-            ['reporterId', 'Survivor / Device Name', 'e.g. survivor-alpha'],
-            ['peerUrl', 'Nearby Node Hotspot URL', 'http://192.168.43.12:8001'],
-            ['groupId', 'Private Team Group ID', 'Optional team identifier'],
-            ['groupToken', 'Private Group Token', 'Shared mesh passphrase'],
-            ['adminKey', 'Node Admin Secret', 'For sync & verification'],
-            ['responderKey', 'Medic / Responder Key', 'Unlocks responder scope'],
-          ].map(([name, label, placeholder]) => (
-            <label key={name} className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-              {label}
-              <input
-                className="field mt-1.5"
-                type={name.toLowerCase().includes('key') || name === 'groupToken' ? 'password' : 'text'}
-                placeholder={placeholder}
-                value={values[name]}
-                onChange={(event) => setValues({ ...values, [name]: event.target.value })}
-              />
-            </label>
-          ))}
-        </div>
-
-        <div className="flex flex-wrap items-center justify-between gap-3 mt-7 pt-4 border-t border-[#dbe6f0] dark:border-slate-800">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[11px] text-slate-500 font-medium">Quick Presets:</span>
-            <button
-              type="button"
-              className="text-[11px] font-mono py-1 px-2 rounded-lg bg-cyan-50 dark:bg-slate-800 text-cyan-700 dark:text-cyan-300 border border-cyan-200 dark:border-slate-700 hover:bg-cyan-100 cursor-pointer"
-              onClick={() => setValues(v => ({ ...v, backendUrl: 'http://10.0.2.2:8000' }))}
-            >
-              📱 Emulator (10.0.2.2)
-            </button>
-            <button
-              type="button"
-              className="text-[11px] font-mono py-1 px-2 rounded-lg bg-emerald-50 dark:bg-slate-800 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-slate-700 hover:bg-emerald-100 cursor-pointer"
-              onClick={() => setValues(v => ({ ...v, backendUrl: 'http://10.122.244.213:8000' }))}
-            >
-              📶 Wi-Fi PC (10.122.244.213)
-            </button>
-            <button
-              type="button"
-              className="text-[11px] font-mono py-1 px-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700 hover:bg-slate-200 cursor-pointer"
-              onClick={() => {
-                setValues({
-                  backendUrl: 'http://10.0.2.2:8000',
-                  reporterId: 'survivor-1',
-                  peerUrl: 'http://10.0.2.2:8000',
-                  groupId: 'camp-alpha',
-                  groupToken: 'demo-mesh-shared-key',
-                  adminKey: 'rescue-admin-key-2026',
-                  responderKey: 'rescue-responder-shared-key-2026'
-                });
-              }}
-            >
-              ⚡ Fill Demo Keys
-            </button>
-          </div>
-          <div className="flex items-center gap-3">
-            <button className="btn-secondary text-sm" onClick={onClose}>
-              Cancel
-            </button>
-            <button className="btn-primary text-sm px-6" onClick={save}>
-              Save Configuration
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export function QuietTelemetryPill({ health, sync, error }) {
   const [open, setOpen] = useState(false);
@@ -244,7 +129,6 @@ export function Shell({ title, subtitle, children, className = '', bottomBar, he
   const location = useLocation();
   const { health, sync, error } = useNodeStatus();
   const last = sync?.last_sync || sync?.last_uplink;
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [navDrawerOpen, setNavDrawerOpen] = useState(false);
   const [theme, setTheme] = useState(() => {
     const saved = localStorage.getItem('rescue.theme') || localStorage.getItem('theme');
@@ -378,15 +262,6 @@ export function Shell({ title, subtitle, children, className = '', bottomBar, he
               )}
             </button>
 
-            {/* Node Settings Button */}
-            <button
-              title="Device & Mesh Settings"
-              aria-label="Device & Mesh Settings"
-              className="p-1 rounded-lg border border-[#cbdbe9] dark:border-slate-700 bg-[#e6f0f7] dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all active:scale-95"
-              onClick={() => setSettingsOpen(true)}
-            >
-              <Settings2 size={14} />
-            </button>
           </div>
         </div>
         {headerStatus && <div className="shell-header-status max-w-7xl mx-auto px-3 pb-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300">{headerStatus}</div>}
@@ -446,13 +321,6 @@ export function Shell({ title, subtitle, children, className = '', bottomBar, he
             </nav>
 
             <div className="pt-3 border-t border-[#e2e8f0] dark:border-slate-800 flex items-center justify-between">
-              <button
-                type="button"
-                onClick={() => { setNavDrawerOpen(false); setSettingsOpen(true); }}
-                className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 hover:text-cyan-500 font-semibold"
-              >
-                <Settings2 size={13} /> Node Settings
-              </button>
               <button
                 type="button"
                 onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
@@ -540,8 +408,6 @@ export function Shell({ title, subtitle, children, className = '', bottomBar, he
       </main>
       {bottomBar}
 
-      {/* Settings Modal */}
-      {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}
     </div>
   );
 }

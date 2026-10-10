@@ -40,8 +40,6 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import {
   api,
   formatTime,
-  setting,
-  saveSetting,
   getNativeOrWebLocation,
   getDiscoveredPeers,
   updateDeviceLocation,
@@ -59,6 +57,7 @@ import MapPanel from '../MapPanel';
 import MeshSyncScanner from '../components/MeshSyncScanner';
 import { CLOUD_COLLECTIONS, displayCloudCount, cloudMirrorSummary } from '../brain/cloudInspector.js';
 import { offlineCloudResult } from '../brain/cloudApi.js';
+import { getAllLocalReports } from '../brain/offlineStorage.js';
 
 import { coordinates, equipmentInventory, dashboardSummary, loadDashboardFeed } from '../brain/adminData.js';
 
@@ -135,16 +134,6 @@ export default function AdminPortal({ initialTab = 'hq' }) {
   const dataLoading = useRef(false);
   const dataGeneration = useRef(0);
 
-  // Ensure default demo admin credentials
-  useEffect(() => {
-    if (!setting('adminKey')) {
-      saveSetting('adminKey', 'rescue-admin-key-2026');
-    }
-    if (!setting('responderKey')) {
-      saveSetting('responderKey', 'rescue-responder-shared-key-2026');
-    }
-  }, []);
-
   // Sync tab with URL if user lands on /volunteer or /command
   useEffect(() => {
     if (location.pathname === '/volunteer') setActiveTab('volunteer');
@@ -175,7 +164,7 @@ export default function AdminPortal({ initialTab = 'hq' }) {
       const [h, s, feed, cloudInfo, disc] = await Promise.all([
         api('/health', { preferCache: !forceRefresh, cacheTtl: 10000 }).catch(() => null),
         api('/api/sync/status', { preferCache: !forceRefresh, cacheTtl: 10000 }).catch(() => null),
-        loadDashboardFeed(api, forceRefresh),
+        getAllLocalReports().then(reports => loadDashboardFeed(api, forceRefresh, reports)),
         api('/api/sync/cloud-status', { admin: true, noCache: true }).catch(err => ({ connected: false, counts_verified: false, error: err.message })),
         getDiscoveredPeers().catch(err => ({ peers: [], error: err.message })),
       ]);
@@ -315,7 +304,7 @@ export default function AdminPortal({ initialTab = 'hq' }) {
       });
       setShowHazardVerifyModal(false);
       invalidateApiCache();
-      setMessage(`Hazard report saved for #${verifyHazardInput.entity_id}${res.event?.authority_tag ? ' with a server authority signature' : ''}.`);
+      setMessage(`Hazard report saved for #${verifyHazardInput.entity_id}${res.queued ? ' locally · cloud publication pending' : ''}.`);
       await loadData(true);
     } catch (err) {
       setError(`Verification failed: ${err.message}`);
@@ -341,7 +330,7 @@ export default function AdminPortal({ initialTab = 'hq' }) {
       const res = await api('/api/guides/publish', { method: 'POST', admin: true, body });
       setShowProtocolModal(false);
       invalidateApiCache();
-      setMessage(`Protocol #${res.id || protocolInput.id} published${res.auth_tag ? ' with a server signature' : ''}.`);
+      setMessage(`Protocol #${res.id || protocolInput.id} ${res.queued ? 'saved locally · cloud publication pending' : 'published'}.`);
       await loadData(true);
     } catch (err) {
       setError(`Publish failed: ${err.message}`);
@@ -377,7 +366,7 @@ export default function AdminPortal({ initialTab = 'hq' }) {
       });
       setShowSafeHavenModal(false);
       invalidateApiCache();
-      setMessage(`Safe haven "${safeHavenInput.name}" saved${res.event?.authority_tag ? ' with a server authority signature' : ''}.`);
+      setMessage(`Safe haven "${safeHavenInput.name}" saved${res.queued ? ' locally · cloud publication pending' : ''}.`);
       await loadData(true);
     } catch (err) {
       setError(`Failed to register safe haven: ${err.message}`);
@@ -456,7 +445,7 @@ export default function AdminPortal({ initialTab = 'hq' }) {
   return (
     <Shell
       title="Tactical Command & Operations Portal"
-      subtitle="Role-Based Incident Response, Autonomous Mesh Relay & Qdrant Cloud Telemetry"
+      subtitle="Prototype dashboard · Full access · Incident response and cloud sync"
     >
       {/* GLOBAL TOAST ALERTS */}
       {error && (
@@ -768,9 +757,9 @@ export default function AdminPortal({ initialTab = 'hq' }) {
             </div>
 
             <div className="bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 rounded-2xl p-2.5 sm:p-3 shadow-xs">
-              <div className="text-[10px] font-mono uppercase text-slate-500 font-bold">Verified Operational Facilities</div>
+              <div className="text-[10px] font-mono uppercase text-slate-500 font-bold">Operational Facilities</div>
               <div className="text-xl sm:text-2xl font-black font-mono text-emerald-600 dark:text-emerald-400">{countLabel(openSafeHavens)}</div>
-              <div className="text-[10px] text-slate-500 font-mono">Latest reports marked verified & operational</div>
+              <div className="text-[10px] text-slate-500 font-mono">Latest confirmed operational reports</div>
             </div>
 
             <div className="bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 rounded-2xl p-2.5 sm:p-3 shadow-xs">
@@ -806,13 +795,13 @@ export default function AdminPortal({ initialTab = 'hq' }) {
                   <div className="flex items-center gap-1.5">
                     <span className="w-1.5 h-3.5 rounded-full bg-amber-500 inline-block"></span>
                     <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100">
-                      Hazard Verification & Authority Signer
+                      Hazard Confirmation
                     </h3>
                   </div>
                 </div>
 
                 <p className="text-xs text-slate-600 dark:text-slate-400 mb-3 leading-relaxed">
-                  Sign official checkpoint directives with HMAC authority key to trigger immediate negative-vector avoidance across all survivor compasses.
+                  Confirm a hazard or checkpoint update and share it with nearby survivors.
                 </p>
 
                 <button
@@ -830,7 +819,7 @@ export default function AdminPortal({ initialTab = 'hq' }) {
                   <div className="flex items-center gap-1.5">
                     <span className="w-1.5 h-3.5 rounded-full bg-cyan-600 inline-block"></span>
                     <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100">
-                      Signed Protocol Publisher
+                      Protocol Publisher
                     </h3>
                   </div>
                 </div>
@@ -844,7 +833,7 @@ export default function AdminPortal({ initialTab = 'hq' }) {
                   className="w-full py-2 px-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition"
                 >
                   <PlusCircle size={14} />
-                  <span>Publish Signed Emergency Protocol</span>
+                  <span>Publish Emergency Protocol</span>
                 </button>
               </div>
 
@@ -1060,7 +1049,7 @@ export default function AdminPortal({ initialTab = 'hq' }) {
                 disabled={working === 'hazard'}
                 className="btn-primary w-full py-2 font-bold text-xs cursor-pointer mt-2"
               >
-                {working === 'hazard' ? 'Signing...' : 'Sign & Broadcast Verification'}
+                {working === 'hazard' ? 'Saving...' : 'Confirm & Share'}
               </button>
             </form>
           </div>
@@ -1072,7 +1061,7 @@ export default function AdminPortal({ initialTab = 'hq' }) {
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="w-full max-w-lg bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 rounded-3xl p-5 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-3">
-              <h3 className="font-bold text-sm">Publish Signed Emergency Protocol</h3>
+              <h3 className="font-bold text-sm">Publish Emergency Protocol</h3>
               <button onClick={() => setShowProtocolModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
                 <X size={16} />
               </button>
@@ -1146,7 +1135,7 @@ export default function AdminPortal({ initialTab = 'hq' }) {
                 disabled={working === 'protocol'}
                 className="btn-primary w-full py-2 font-bold text-xs cursor-pointer mt-2"
               >
-                {working === 'protocol' ? 'Signing...' : 'Sign & Publish to Local Shards'}
+                {working === 'protocol' ? 'Saving...' : 'Save & Publish'}
               </button>
             </form>
           </div>

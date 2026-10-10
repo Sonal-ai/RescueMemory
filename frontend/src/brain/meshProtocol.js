@@ -3,7 +3,7 @@ export const PROTOCOL_VERSION = 2;
 export const MAX_BATCH_BYTES = 60000;
 export const REPORT_FIELDS = ['id', 'entity_id', 'kind', 'text', 'location', 'severity', 'status',
   'visibility', 'group_id', 'reporter_id', 'origin_device', 'created_at', 'observed_at',
-  'materials', 'breathing', 'bleeding_type', 'verified', 'source_role', 'authority_tag'];
+  'materials', 'breathing', 'bleeding_type', 'verified', 'source_role', 'authority_tag', 'prototype_confirmed', 'source_report_id'];
 
 export function wireReport(report) {
   const result = {};
