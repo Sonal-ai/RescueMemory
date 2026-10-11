@@ -1,1 +1,0 @@
-import{t as e}from"./index-CDGSN--e.js";import t from"./AdminPortal-B5v4cTrV.js";var n=e();function r(){return(0,n.jsx)(t,{initialTab:`inspector`})}export{r as default};
