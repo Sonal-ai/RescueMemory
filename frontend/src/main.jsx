@@ -2,6 +2,21 @@ import React, { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
+import { Capacitor } from '@capacitor/core'
+import { installChunkRecovery, isChunkLoadError, reloadLatestApplication } from './chunkRecovery.js'
+
+const refreshApplication = () => reloadLatestApplication({
+  location: window.location, caches: window.caches, serviceWorker: navigator.serviceWorker,
+  native: Capacitor.isNativePlatform(),
+});
+let recoveryStorage;
+try { recoveryStorage = window.sessionStorage; } catch { /* Browser storage may be disabled. */ }
+installChunkRecovery({
+  target: window, storage: recoveryStorage,
+  entry: document.querySelector('script[type="module"][src]')?.src || window.location.pathname,
+  online: () => navigator.onLine !== false, reload: refreshApplication,
+  native: Capacitor.isNativePlatform(),
+});
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -39,7 +54,8 @@ class ErrorBoundary extends React.Component {
             {this.state.error?.message || 'An error occurred while initializing the view.'}
           </p>
           <button
-            onClick={() => window.location.reload()}
+            onClick={() => isChunkLoadError(this.state.error) && navigator.onLine !== false
+              ? refreshApplication() : window.location.reload()}
             style={{
               backgroundColor: '#dc2626',
               color: 'white',

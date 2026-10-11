@@ -86,6 +86,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.rescue.close()
 
     app = FastAPI(title="RescueMemory Edge API", version="0.1.0", lifespan=lifespan)
+
+    @app.middleware("http")
+    async def revalidate_app_shell(request: Request, call_next):
+        response = await call_next(request)
+        # Hashed JS assets may be cached, but the HTML and worker must identify
+        # the current deployment. Include conditional/304 responses as well.
+        if request.url.path in {"/", "/index.html", "/sw.js"} or response.headers.get("content-type", "").startswith("text/html"):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
     app.include_router(credential_router(settings.data_dir))
     app.add_middleware(
         CORSMiddleware,

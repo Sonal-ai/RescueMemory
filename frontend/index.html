@@ -52,7 +52,7 @@
               }
             });
           } else {
-            navigator.serviceWorker.register('/sw.js')
+            navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
               .then(reg => {
                 console.log('RescueMemory ServiceWorker active:', reg.scope);
               })

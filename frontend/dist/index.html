@@ -37,11 +37,11 @@
         } catch(e) {}
       })();
     </script>
-    <script type="module" crossorigin src="./assets/index-CSO9grmh.js"></script>
+    <script type="module" crossorigin src="./assets/index-BkxpijOZ.js"></script>
     <link rel="stylesheet" crossorigin href="./assets/index-KnSyGTKc.css">
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"></div>
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
@@ -53,7 +53,7 @@
               }
             });
           } else {
-            navigator.serviceWorker.register('/sw.js')
+            navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
               .then(reg => {
                 console.log('RescueMemory ServiceWorker active:', reg.scope);
               })
