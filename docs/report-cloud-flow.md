@@ -27,8 +27,20 @@ Existing alternate Cloud point IDs are migrated only when their origin report
 identity is known. The canonical point is committed before alternate IDs for
 that same report are removed. Different shelter entities or independently
 initiated SOS reports are preserved. Missing reports are not interpreted as
-deletions: an offline phone keeps its last received data; closures require an
-explicit report update.
+deletions while offline or after an incomplete download. A complete Cloud scope
+now removes previously Cloud-confirmed records that no longer exist there.
+Pending, unuploaded offline/hop reports remain queued. Failed pages never establish
+deletion. Removed IDs are retained locally so an older backend feed or relay
+cannot restore a Cloud-deleted record; a later actual Cloud record can restore it.
+
+Mesh Sync exposes **Clear local data**, with an explicit confirmation explaining
+that unsent reports will also be removed. One transaction clears reports, pending
+uploads, transfer sessions and receipts, keeping guidance and phone identity.
+An exchange revision rejects older network/Bluetooth replies after clearing.
+When online, the action downloads the current Cloud inventory without uploading
+the old outbox. Radar refreshes after committed storage changes and shows current
+internet records alongside new Bluetooth-hop reports. A newer online coordinate
+update replaces an older saved marker for the same entity.
 
 The survivor HUD resolves the latest observation per entity, uses the operator's
 actual shelter name, classifies checkpoint reports as shelters even when they

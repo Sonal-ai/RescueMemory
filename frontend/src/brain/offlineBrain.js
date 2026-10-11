@@ -15,14 +15,17 @@ import {
   saveOfflineReport,
   getUnsyncedReports,
   markReportsSynced,
-  getAllLocalReports,
   saveImportedReports,
   saveImportedGuides,
   getAllLocalGuides,
+  clearLocalMeshData,
+  reconcileCloudReports,
+  getLocalDataRevision,
+  assertLocalDataRevision,
 } from './offlineStorage.js';
 import {
   pushReportsToCloud,
-  pullReportsFromCloud,
+  pullReportSnapshotFromCloud,
   pullGuidesFromCloud,
 } from './cloudSync.js';
 import staticCards from '../../public/data/knowledge_cards.json';
@@ -461,13 +464,39 @@ function resolveServerUrl(path) {
 }
 
 let syncInFlight = null;
+let resettingLocalData = false;
 export function triggerAutoSync() {
-  if (!syncInFlight) syncInFlight = runAutoSync().finally(() => { syncInFlight = null; });
+  if (resettingLocalData) return Promise.resolve({ status: 'clearing', synced: 0, imported: 0 });
+  if (!syncInFlight) syncInFlight = runAutoSync().catch(error => {
+    if (error.message.startsWith('LOCAL_DATA_CLEARED:')) return { status: 'cleared', synced: 0, imported: 0 };
+    throw error;
+  }).finally(() => { syncInFlight = null; });
   return syncInFlight;
 }
 
+export async function clearLocalDataAndRefresh() {
+  if (resettingLocalData) throw new Error('Local data is already being cleared.');
+  resettingLocalData = true;
+  try {
+    await clearLocalMeshData();
+    // Old network replies cannot restore cleared reports. Wait for that pass
+    // before downloading current Cloud data; do not upload the cleared outbox.
+    await syncInFlight?.catch(error => console.warn('[LocalData] Previous sync stopped:', error.message));
+    const expectedRevision = getLocalDataRevision();
+    if (localStorage.getItem('rescue.online_mode') === 'false' || navigator.onLine === false)
+      return { status: 'offline', imported: 0 };
+    const snapshot = await pullReportSnapshotFromCloud(64, { includeResponders: prototypeAccess });
+    await reconcileCloudReports(snapshot, { expectedRevision });
+    const imported = await saveImportedReports(snapshot.reports, { expectedRevision });
+    return { status: snapshot.errors.length ? 'partial' : 'synced', imported, errors: snapshot.errors };
+  } finally { resettingLocalData = false; }
+}
+
 async function runAutoSync() {
+  const expectedRevision = getLocalDataRevision();
+  const checkRevision = () => assertLocalDataRevision(expectedRevision);
   const unsyncedInitial = await getUnsyncedReports();
+  checkRevision();
   const isOnline = (typeof localStorage !== 'undefined' ? localStorage.getItem('rescue.online_mode') !== 'false' : true) &&
                    (typeof navigator === 'undefined' || navigator.onLine !== false);
   if (!isOnline) {
@@ -478,6 +507,8 @@ async function runAutoSync() {
   notifySync({ state: 'syncing', pendingCount: unsyncedInitial.length });
   let totalSyncedCount = 0;
   let remoteImportedCount = 0;
+  let totalRemovedCount = 0;
+  const errors = [];
   let anyChannelConnected = false;
 
   // 1. Channel A: Try Local Edge / Central Server if reachable
@@ -496,9 +527,11 @@ async function runAutoSync() {
   }
 
   if (edgeReachable) {
+    checkRevision();
     const unsynced = await getUnsyncedReports();
     const syncedIds = [];
     for (const report of unsynced) {
+      checkRevision();
       try {
         const payload = {
           idempotency_key: originalReportId(report),
@@ -534,13 +567,14 @@ async function runAutoSync() {
       }
     }
     if (syncedIds.length > 0) {
-      await markReportsSynced(syncedIds, { channel: 'edge' });
+      await markReportsSynced(syncedIds, { channel: 'edge', expectedRevision });
       totalSyncedCount += unsynced.filter(r => syncedIds.includes(r.id) && r.visibility === 'group').length;
     }
 
     // Offline protocol drafts become signed publications only after a real
     // server acknowledgement. Keep unsuccessful drafts queued for retry.
     for (const guide of (await getAllLocalGuides()).filter(g => g.pending_publication)) {
+      checkRevision();
       try {
         const payload = Object.fromEntries(['id', 'title', 'keywords', 'summary', 'steps', 'warnings', 'source', 'reviewer'].map(key => [key, guide[key]]));
         const response = await fetch(`${edgeBase}/api/guides/publish`, {
@@ -562,6 +596,7 @@ async function runAutoSync() {
         let page = 0;
         const seen = new Set();
         while (true) {
+          checkRevision();
           const response = await fetch(`${edgeBase}/api/memory?scope=${scope}&limit=100&page=${page}`, {
             headers: { Accept: 'application/json',
               'X-Responder-Key': sessionStorage.getItem('rescue.responderKey') || 'rescue-responder-shared-key-2026' },
@@ -570,7 +605,7 @@ async function runAutoSync() {
           if (!response.ok) throw new Error(`${scope} feed rejected (HTTP ${response.status})`);
           const data = await response.json();
           if (!Array.isArray(data.items)) throw new Error(`${scope} feed returned invalid records`);
-          remoteImportedCount += await saveImportedReports(data.items, { markForRelay: true });
+          remoteImportedCount += await saveImportedReports(data.items, { markForRelay: true, expectedRevision });
           if (!data.has_more) break;
           const before = seen.size;
           data.items.forEach(item => seen.add(item.id));
@@ -584,24 +619,32 @@ async function runAutoSync() {
   }
 
   // 2. Channel B: Direct Qdrant Cloud Uplink & Downlink (Guaranteed multi-device mesh channel)
+  checkRevision();
   try {
     const remainingUnsynced = await getUnsyncedReports();
+    checkRevision();
     if (remainingUnsynced.length > 0) {
       const cloudSyncedIds = await pushReportsToCloud(remainingUnsynced);
       if (cloudSyncedIds.length > 0) {
-        await markReportsSynced(cloudSyncedIds);
+        await markReportsSynced(cloudSyncedIds, { expectedRevision });
         totalSyncedCount += cloudSyncedIds.length;
         anyChannelConnected = true;
       }
     }
 
     // Downlink latest remote public reports from other devices in Qdrant Cloud
-    const cloudReports = await pullReportsFromCloud(64, { includeResponders: prototypeAccess });
-    if (cloudReports.length > 0) {
-      const imp = await saveImportedReports(cloudReports);
+    const snapshot = await pullReportSnapshotFromCloud(64, { includeResponders: prototypeAccess });
+    checkRevision();
+    const removedCount = await reconcileCloudReports(snapshot, { expectedRevision });
+    totalRemovedCount += removedCount;
+    errors.push(...snapshot.errors);
+    if (snapshot.completeScopes.length) anyChannelConnected = true;
+    if (snapshot.reports.length > 0) {
+      const imp = await saveImportedReports(snapshot.reports, { expectedRevision });
       remoteImportedCount += imp;
       anyChannelConnected = true;
     }
+    if (removedCount) notifySync({ state: 'updated', removedCount });
 
     // Downlink verified clinical guides
     const cloudGuides = await pullGuidesFromCloud(32);
@@ -610,21 +653,22 @@ async function runAutoSync() {
     }
   } catch (cloudErr) {
     console.warn('[AutoSync] Direct Cloud Sync pass notice:', cloudErr.message);
+    errors.push(cloudErr.message);
   }
 
   const remaining = (await getUnsyncedReports()).length;
-  if (!anyChannelConnected && remaining > 0) {
-    notifySync({ state: 'server_unreachable', pendingCount: remaining });
-  } else {
-    notifySync({ state: remaining === 0 ? 'synced' : 'partial', pendingCount: remaining,
-      uploadedCount: totalSyncedCount, receivedCount: remoteImportedCount });
-  }
+  checkRevision();
+  const status = !anyChannelConnected ? 'server_unreachable' : remaining > 0 || errors.length ? 'partial' : 'synced';
+  notifySync({ state: status, pendingCount: remaining,
+    uploadedCount: totalSyncedCount, receivedCount: remoteImportedCount, removedCount: totalRemovedCount });
 
   return {
     synced: totalSyncedCount,
     imported: remoteImportedCount,
     pending: remaining,
-    status: remaining === 0 ? 'synced' : 'partial',
+    removed: totalRemovedCount,
+    errors,
+    status,
   };
 }
 

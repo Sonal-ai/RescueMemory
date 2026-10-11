@@ -1,5 +1,5 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
-import { getAllLocalReports, commitMeshReports, recordMeshSent, saveTransferSession } from './offlineStorage.js';
+import { getAllLocalReports, commitMeshReports, recordMeshSent, saveTransferSession, getLocalDataRevision, assertLocalDataRevision } from './offlineStorage.js';
 import { eligibleReports, reportHash, reportBatches, PROTOCOL_VERSION, mergePeerTelemetry } from './meshProtocol.js';
 import { cachedMeshLocation, meshLocation } from './meshRadar.js';
 import { meshTrace, meshError, getMeshTrace } from './meshDiagnostics.js';
@@ -118,6 +118,7 @@ async function verifyPhoneProof(publicKey, signature, text) {
   return result.valid === true;
 }
 const resultFor = (id, peerId) => ({ id, peer_id: peerId, transport: 'bluetooth', sent: 0, received: 0,
+  report_revision: getLocalDataRevision(),
   inventory_checked: false, phase: 'authenticating',
   duplicates: 0, conflicts: 0, pending: 0, status: 'syncing', started_at: new Date().toISOString() });
 
@@ -161,6 +162,7 @@ async function handleMessage(address, message) {
   const session = sessions.get(address);
   if (!session) throw new Error('Sync session expired. Retry to continue.');
   const request = await unseal(session, message);
+  assertLocalDataRevision(session.result.report_revision);
   if (request.action === 'authorize') {
     if (session.authorized || !await verifyPhoneProof(session.remoteIdentity.public_key, request.proof, session.text))
       throw new Error('Phone identity proof failed.');
@@ -192,14 +194,14 @@ async function handleMessage(address, message) {
     }
     case 'put': {
       if (!Array.isArray(request.reports) || request.reports.length > 128) throw new Error('Invalid report batch.');
-      response = await commitMeshReports(request.reports, { sessionId: session.id, peerId: session.peerId });
+      response = await commitMeshReports(request.reports, { sessionId: session.id, peerId: session.peerId, expectedRevision: session.result.report_revision });
       session.result.inventory_checked = true; session.result.phase = 'receiving';
       session.result.received += response.received; session.result.duplicates += response.duplicates; session.result.conflicts += response.conflicts;
       await saveTransferSession(session.result); break;
     }
     case 'ack': {
       if (!Array.isArray(request.ids) || request.ids.some(id => !session.offered.has(id))) throw new Error('Invalid receipt.');
-      await recordMeshSent(request.ids, session.id, session.peerId);
+      await recordMeshSent(request.ids, session.id, session.peerId, 'sent', session.result.report_revision);
       request.ids.forEach(id => session.offered.delete(id)); session.result.sent += request.ids.length;
       await saveTransferSession(session.result); response = { acknowledged: true }; break;
     }
@@ -325,6 +327,7 @@ export async function syncWithBlePeer(peer) {
   if (!onAndroid || (!peer.sync_ready && !peer.node_id.startsWith('unresolved_'))) throw new Error('Update required on both Android phones.');
   return serialize(async () => {
     let result, session, stage = 'receiver.start';
+    const revision = getLocalDataRevision();
     try {
       await startBleReceiver();
       stage = 'gatt.connect'; meshTrace(stage, 'CONNECTING', 'Connecting to detected advertisement.', { address: peer.address });
@@ -338,7 +341,9 @@ export async function syncWithBlePeer(peer) {
       const hello = { v: 2, type: 'hello', identity, nonce: nonce(), ephemeral: ephemeral.public_key,
         metadata: await getPhoneTelemetry() };
       const exchange = async message => {
+        assertLocalDataRevision(revision);
         const response = await nativeBle.exchange({ payload: JSON.stringify(message) });
+        assertLocalDataRevision(revision);
         const reply = JSON.parse(response.payload); if (reply.error) throw new Error(reply.error); return reply;
       };
       const reply = await exchange(hello);
@@ -368,7 +373,7 @@ export async function syncWithBlePeer(peer) {
       meshTrace(stage, 'CHECKED', 'Authenticated report inventories compared.', { peer: peer.node_id, local_reports: local.length, remote_reports: remote.length });
       result.duplicates = remote.filter(item => localInventory.get(item.id) === item.hash).length;
       const confirmed = remote.filter(item => localInventory.get(item.id) === item.hash).map(item => item.id);
-      if (confirmed.length) await recordMeshSent(confirmed, session.id, peer.node_id, 'confirmed');
+      if (confirmed.length) await recordMeshSent(confirmed, session.id, peer.node_id, 'confirmed', revision);
       result.conflicts = remote.filter(item => localInventory.has(item.id) && localInventory.get(item.id) !== item.hash).length;
       const outgoing = local.filter(r => !remoteIds.has(r.id));
       const needed = remote.filter(item => !localInventory.has(item.id)).map(item => item.id);
@@ -377,7 +382,7 @@ export async function syncWithBlePeer(peer) {
         stage = 'reports.send'; result.phase = 'sending';
         const ack = await rpc({ action: 'put', reports: batch });
         if (!Array.isArray(ack.acceptedIds) || ack.acceptedIds.some(id => !batch.some(r => r.id === id))) throw new Error('Invalid storage acknowledgement.');
-        await recordMeshSent(ack.acceptedIds, session.id, peer.node_id);
+        await recordMeshSent(ack.acceptedIds, session.id, peer.node_id, 'sent', revision);
         result.sent += ack.acceptedIds.length; result.pending -= ack.acceptedIds.length; result.conflicts += ack.conflicts || 0;
         meshTrace(stage, 'RECEIVER_COMMITTED', 'Receiver acknowledged stored reports.', { peer: peer.node_id, reports: ack.acceptedIds.length });
         await saveTransferSession(result);
@@ -386,7 +391,7 @@ export async function syncWithBlePeer(peer) {
         stage = 'reports.receive'; result.phase = 'receiving';
         const requested = needed.slice(0, 32), data = await rpc({ action: 'get', ids: requested });
         if (!data.reports?.length || data.reports.some(r => !requested.includes(r.id))) throw new Error('Incomplete remote report response.');
-        const committed = await commitMeshReports(data.reports, { sessionId: session.id, peerId: peer.node_id });
+        const committed = await commitMeshReports(data.reports, { sessionId: session.id, peerId: peer.node_id, expectedRevision: revision });
         await rpc({ action: 'ack', ids: committed.acceptedIds });
         const returned = new Set(data.reports.map(r => r.id));
         for (let i = needed.length - 1; i >= 0; i--) if (returned.has(needed[i])) needed.splice(i, 1);

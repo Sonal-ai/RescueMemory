@@ -293,8 +293,9 @@ export async function pushReportsToCloud(reports = []) {
 /**
  * Downloads public reports from Qdrant Cloud (excludes peer beacons).
  */
-export async function pullReportsFromCloud(limit = 64, { includeResponders = false } = {}) {
+export async function pullReportSnapshotFromCloud(limit = 64, { includeResponders = false } = {}) {
   const reports = new Map();
+  const completeScopes = [], errors = [];
   for (const [scope, collection] of [['public', PUBLIC_EVENTS_COLLECTION],
     ...(includeResponders ? [['responders', RESPONDER_EVENTS_COLLECTION]] : [])]) {
     try {
@@ -323,7 +324,8 @@ export async function pullReportsFromCloud(limit = 64, { includeResponders = fal
 
         if (!res.ok) throw new Error(`[cloud.download/${collection}] HTTP ${res.status}`);
         const data = await res.json();
-        const points = data?.result?.points || [];
+        const points = data?.result?.points;
+        if (!Array.isArray(points)) throw new Error(`[cloud.download/${collection}] Invalid report page`);
 
         for (const pt of points) {
           const payload = pt.payload;
@@ -338,11 +340,17 @@ export async function pullReportsFromCloud(limit = 64, { includeResponders = fal
         if (offset != null && offsets.has(String(offset))) throw new Error(`[cloud.download/${collection}] Pagination did not advance`);
         offsets.add(String(offset));
       } while (offset != null);
+      completeScopes.push(scope);
     } catch (err) {
       console.warn('[CloudMesh] pullReportsFromCloud error:', err.message);
+      errors.push(err.message);
     }
   }
-  return [...reports.values()];
+  return { reports: [...reports.values()], completeScopes, errors };
+}
+
+export async function pullReportsFromCloud(limit = 64, options = {}) {
+  return (await pullReportSnapshotFromCloud(limit, options)).reports;
 }
 
 /**

@@ -29,6 +29,26 @@ export function currentSurvivorReports(...feeds) {
   return [...latest.values()];
 }
 
+// Marker popups and click targets must refresh when an existing report changes,
+// including a new position with the same report ID.
+export function mapMarkerSignature(items, selected) {
+  return JSON.stringify([items, selected?.id || selected?.entity_id || null, coordinates(selected?.location || selected)]);
+}
+
+export function radarMapReports(reports, destinations, removedIds = []) {
+  const removed = new Set(removedIds);
+  const available = reports.filter(report => !removed.has(report.source_report_id || report.id));
+  const points = destinations.filter(report => !removed.has(report.source_report_id || report.id)).map(point => {
+    const original = available.find(report => report.id === point.id || report.id === point.source_report_id
+      || (point.entity_id && report.entity_id === point.entity_id));
+    return { ...original, ...point, entity_id: point.entity_id || original?.entity_id || point.source_report_id || point.id,
+      title: point.name || point.title || original?.title,
+      kind: point.kind || (point.category === 'casualty' ? 'incident' : point.category === 'hazard' ? 'hazard'
+        : point.category === 'resource' ? 'resource' : 'checkpoint') };
+  });
+  return currentSurvivorReports(available, points);
+}
+
 export function savedShelters(reports, now = Date.now()) {
   return currentSurvivorReports(reports).filter(report => report.kind === 'checkpoint'
     && !/^(closed|inactive|unavailable|destroyed|danger|flooded|blocked|compromised)$/i.test(report.status || '')
@@ -58,12 +78,14 @@ export function reportedFacilities(reports, origin, needs = {}, radius = Infinit
 }
 
 export function mergeSurvivalRadar(remote, local) {
-  const savedIds = new Set(local.radar_items.map(item => item.id));
-  const savedEntities = new Set(local.radar_items.map(item => item.entity_id).filter(Boolean));
   const current = new Map((local.current_reports || []).map(report => [report.entity_id || report.source_report_id || report.id, report]));
-  const items = [...(remote?.radar_items || []).filter(item => item.kind !== 'presence' && item.kind !== 'peer_beacon' && !savedIds.has(item.id)
-    && !savedEntities.has(item.entity_id || item.name)
-    && (!current.has(item.entity_id || item.source_report_id || item.id) || observed(item) > observed(current.get(item.entity_id || item.source_report_id || item.id)))), ...local.radar_items]
+  const localById = new Map((local.current_reports || []).map(report => [report.id, report]));
+  const acceptedRemote = (remote?.radar_items || []).filter(item => item.kind !== 'presence' && item.kind !== 'peer_beacon').map(item => {
+    const previous = current.get(item.entity_id || item.source_report_id || item.id) || current.get(item.name) || localById.get(item.id);
+    if (previous && observed(item) <= observed(previous)) return null;
+    return previous?.entity_id ? { ...item, entity_id: previous.entity_id } : item;
+  }).filter(Boolean);
+  const items = currentSurvivorReports(acceptedRemote, local.radar_items)
     .sort((a, b) => (a.distance_m ?? Infinity) - (b.distance_m ?? Infinity));
   const casualties = items.filter(item => item.category === 'casualty');
   const shelters = items.filter(item => item.category === 'shelter' && item.status === 'operational');

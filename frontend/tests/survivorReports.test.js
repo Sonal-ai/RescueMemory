@@ -1,12 +1,29 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { reportRadar } from '../src/brain/reportRadar.js';
-import { savedShelters, currentSurvivorReports, mergeSurvivalRadar, targetMeasurements, reportedFacilities } from '../src/brain/survivorReports.js';
+import { savedShelters, currentSurvivorReports, mergeSurvivalRadar, targetMeasurements, reportedFacilities, radarMapReports, mapMarkerSignature } from '../src/brain/survivorReports.js';
 
 const shelter = { id: 'local-shelter', entity_id: 'shelter-entered', kind: 'checkpoint',
   text: 'Community Hall (Shelter). Facilities: Drinking water', status: 'operational',
   location: { lat: 0, lon: 0.001 }, visibility: 'public', prototype_confirmed: true,
   observed_at: '2026-10-10T06:00:00Z' };
+
+test('map refreshes a moved or changed report with the same ID and excludes cleared points', () => {
+  const moved = { ...shelter, category: 'shelter', name: 'Community Hall',
+    location: { lat: 0.01, lon: 0.02 }, observed_at: '2026-10-11T06:00:00Z' };
+  const hop = { ...shelter, id: 'hop', entity_id: 'hop', kind: 'sos' };
+  const points = radarMapReports([shelter, hop], [moved]);
+  assert.equal(points.length, 2);
+  assert.deepEqual(points.find(item => item.id === shelter.id).location, moved.location);
+  const before = mapMarkerSignature([shelter], shelter);
+  assert.notEqual(mapMarkerSignature([moved], moved), before);
+  assert.notEqual(mapMarkerSignature([{ ...shelter, status: 'closed' }], shelter), before);
+  assert.notEqual(mapMarkerSignature([], null), before);
+  assert.equal(mapMarkerSignature([structuredClone(shelter)], structuredClone(shelter)), before);
+  assert.deepEqual(radarMapReports([shelter, hop], [moved], [shelter.id]).map(item => item.id), ['hop']);
+  const closed = { ...shelter, status: 'closed', observed_at: '2026-10-12T06:00:00Z' };
+  assert.equal(radarMapReports([closed], [moved])[0].status, 'closed');
+});
 
 test('an operator shelter stays visible without survivor GPS and retains entered coordinates', () => {
   const [item] = savedShelters([shelter]);
@@ -32,6 +49,16 @@ test('same shelter server acknowledgment does not create a second marker', () =>
   const local = reportRadar([shelter], { lat: 0, lon: 0 });
   const result = mergeSurvivalRadar({ radar_items: [{ ...local.radar_items[0], id: 'server-id', entity_id: undefined, name: shelter.entity_id }] }, local);
   assert.equal(result.total_found, 1);
+});
+
+test('a newer online shelter position replaces an older saved marker without duplicating it', () => {
+  const local = reportRadar([shelter], { lat: 0, lon: 0 });
+  const newer = reportRadar([{ ...shelter, id: 'updated-shelter', location: { lat: 0.001, lon: 0 }, observed_at: '2026-10-10T07:00:00Z' }], { lat: 0, lon: 0 });
+  const result = mergeSurvivalRadar(newer, local);
+  assert.equal(result.total_found, 1);
+  assert.deepEqual(result.radar_items[0].location, { lat: 0.001, lon: 0 });
+  assert.equal(result.radar_items[0].cardinal, 'N');
+  assert.equal(mergeSurvivalRadar(local, newer).radar_items[0].id, 'updated-shelter');
 });
 
 test('latest closure removes old shelter from list and radar; expired shelters stay hidden', () => {

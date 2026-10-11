@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Battery, Bluetooth, Info, ChevronDown, ChevronUp, Cloud, RefreshCw,
-  Search, X, Download, Upload, MapPin, Bug } from 'lucide-react';
+  Search, X, Download, Upload, MapPin, Bug, Trash2 } from 'lucide-react';
 import MeshRadar from './MeshRadar.jsx';
 import { cachedMeshLocation, peerRadarPosition, radarDistance } from '../brain/meshRadar.js';
 import { getDiscoveredPeers, syncDiscoveredPeer, triggerAutoSync, getDeviceId, isOnlineMode,
@@ -10,6 +10,7 @@ import { isNativeBle, startBleReceiver, scanForNearbyPhones, getPhoneBattery,
 import { transferSummary, meshTrace } from '../brain/meshDiagnostics.js';
 import { getAllLocalReports, getMeshHistory } from '../brain/offlineStorage.js';
 import { wireReport, mergePeers } from '../brain/meshProtocol.js';
+import { clearLocalDataAndRefresh } from '../brain/offlineBrain.js';
 
 const panel = 'rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0b1626] p-3 shadow-sm';
 const button = 'rounded-xl border border-cyan-500/40 bg-cyan-500/10 px-3 py-2 text-xs font-bold text-cyan-700 dark:text-cyan-300 disabled:opacity-40';
@@ -35,6 +36,7 @@ export default function MeshSyncScanner({ initialPeers = [], onSyncComplete = nu
   const [expanded, setExpanded] = useState(null), [selectedPhone, setSelectedPhone] = useState(null);
   const [debugOpen, setDebugOpen] = useState(false);
   const [diagnostics, setDiagnostics] = useState(null), [copied, setCopied] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
   const mounted = useRef(true), busyRef = useRef(false), autoRef = useRef(auto), retries = useRef(new Map());
   const callback = useRef(onSyncComplete);
   const notifiedTransfers = useRef(new Set());
@@ -176,9 +178,26 @@ export default function MeshSyncScanner({ initialPeers = [], onSyncComplete = nu
     try {
       const result = await triggerAutoSync(); await refreshData();
       if (result.synced > 0 || result.imported > 0) setMessage(`Online channel: ${[result.synced > 0 ? `uploaded ${result.synced}` : '', result.imported > 0 ? `received ${result.imported}` : ''].filter(Boolean).join(' · ')}`);
-      else setMessage(result.status === 'offline' ? 'Online channel unavailable; reports remain on this phone.' : 'Online check finished; no new reports were uploaded or received.');
+      else setMessage(result.status === 'offline' || result.status === 'server_unreachable' ? 'Online channel unavailable; reports remain on this phone.'
+        : result.removed > 0 ? `Radar updated: removed ${result.removed} reports deleted from the cloud.` : 'Online check finished; no new reports were uploaded or received.');
+      if (result.errors?.length) setError(`[cloud.refresh] ${result.errors.join('; ')}`);
       callback.current?.();
     } catch (err) { setError(err.message); } finally { busyRef.current = false; if (mounted.current) setBusy(''); }
+  };
+  const clearLocalData = async () => {
+    if (busyRef.current) return;
+    busyRef.current = true; setBusy('clearing'); setError(''); setMessage(''); setConfirmClear(false);
+    try {
+      const result = await clearLocalDataAndRefresh();
+      await refreshData(); callback.current?.();
+      if (mounted.current) {
+        setMessage(result.status === 'offline' ? 'Local data cleared. Current reports will download when internet returns.'
+          : result.status === 'partial' ? 'Local data cleared. Some cloud reports could not be refreshed.'
+          : 'Local data cleared. Radar refreshed from the cloud.');
+        if (result.errors?.length) setError(`[cloud.refresh] ${result.errors.join('; ')}`);
+      }
+    } catch (err) { if (mounted.current) setError(`[local.clear] ${err.message}`); }
+    finally { busyRef.current = false; if (mounted.current) setBusy(''); }
   };
   const refreshDiagnostics = useCallback(async () => {
     try { const value = await getBleDiagnostics(); if (mounted.current) setDiagnostics(value); }
@@ -249,6 +268,17 @@ export default function MeshSyncScanner({ initialPeers = [], onSyncComplete = nu
           <p className="text-xs font-bold uppercase text-cyan-700 dark:text-cyan-300">{report.kind === 'checkpoint' ? 'Shelter' : report.kind || 'Report'} · Phone {String(report.received_from).slice(-6)}</p>
           <p className="mt-0.5 line-clamp-2 break-words text-sm">{report.text}</p>
         </article>)}</div> : <p className="mt-2 text-xs text-slate-500">New reports from nearby phones will stay here after sync.</p>}
+    </section>
+
+    <section className={panel} aria-label="Local data">
+      <div className="flex items-center justify-between gap-3">
+        <div><h3 className="text-sm font-bold">Local data</h3><p className="mt-1 text-xs text-slate-500">Clear saved reports and transfer history on this phone.</p></div>
+        <button type="button" className={button} disabled={!!busy} onClick={() => setConfirmClear(true)}><span className="flex items-center gap-1"><Trash2 size={14} />{busy === 'clearing' ? 'Clearing…' : 'Clear local data'}</span></button>
+      </div>
+      {confirmClear && <div role="alert" className="mt-3 rounded-xl border border-amber-300 p-3 text-xs dark:border-amber-800">
+        <p>This removes saved SOS, shelters, hazards, unsent reports and transfer history from this phone. Offline guidance and phone identity stay saved. Cloud records stay unchanged and download again when online.</p>
+        <div className="mt-3 flex gap-2"><button type="button" className={button} onClick={() => setConfirmClear(false)}>Cancel</button><button type="button" className="rounded-xl bg-red-600 px-3 py-2 font-bold text-white" disabled={!!busy} onClick={clearLocalData}>Clear this phone</button></div>
+      </div>}
     </section>
 
     {debugOpen && <div className="native-overlay fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-3" role="dialog" aria-modal="true" aria-label="Mesh Sync details">

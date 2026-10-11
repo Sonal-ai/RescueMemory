@@ -14,7 +14,7 @@ import {
   triggerAutoSync,
   onSyncStateChange,
 } from './brain/offlineBrain.js';
-import { getAllLocalReports, getUnsyncedReports, getAllLocalGuides, saveImportedGuides, saveOfflineReport, getMeshHistory } from './brain/offlineStorage.js';
+import { getAllLocalReports, getUnsyncedReports, getAllLocalGuides, saveImportedGuides, saveOfflineReport, getMeshHistory, getRemovedCloudReportIds } from './brain/offlineStorage.js';
 import {
   distM,
   bearingDeg,
@@ -233,6 +233,7 @@ export function buildBackendUrl(path, options) {
 
 
 const apiCache = new Map();
+if (typeof window !== 'undefined') window.addEventListener('rescue:local-data-reset', () => apiCache.clear());
 
 export function getCachedApi(key) {
   const item = apiCache.get(key);
@@ -848,8 +849,11 @@ export async function getSurvivalRadar(params = {}) {
     responder: Boolean(setting('responderKey')),
     group: Boolean(group_id),
   });
-  const local = reportRadar(await getAllLocalReports(), { lat, lon, radius_m, filter_category, include_responders, group_id });
-  return mergeSurvivalRadar(remote, local);
+  const [reports, removed] = await Promise.all([getAllLocalReports(), getRemovedCloudReportIds()]);
+  const local = reportRadar(reports, { lat, lon, radius_m, filter_category, include_responders, group_id });
+  const currentRemote = { ...remote, radar_items: (remote?.radar_items || [])
+    .filter(item => !removed.has(item.source_report_id || item.id)) };
+  return { ...mergeSurvivalRadar(currentRemote, local), removed_report_ids: [...removed] };
 }
 
 export function formatTime(value) {

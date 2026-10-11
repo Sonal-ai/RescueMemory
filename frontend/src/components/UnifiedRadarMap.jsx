@@ -15,9 +15,8 @@ import {
 } from 'lucide-react';
 import { getSurvivalRadar, distM, bearingDeg, cardinalDirection, isOnlineMode } from '../api';
 import MapPanel from '../MapPanel';
-import { PAYTM_SKYMARK } from '../brain/paytmSkymark.js';
 import { radarDestinationLabel, radarDestinationOption } from '../brain/radarLabels.js';
-import { savedShelters, targetMeasurements } from '../brain/survivorReports.js';
+import { currentSurvivorReports, radarMapReports, savedShelters, targetMeasurements } from '../brain/survivorReports.js';
 
 const COMPASS_SIZE = 220;
 const COMPASS_CENTER = COMPASS_SIZE / 2;
@@ -267,8 +266,10 @@ export default function UnifiedRadarMap({
   // Fetch Radar Signals from Qdrant Edge Memory
   const locLat = liveCoords?.lat;
   const locLon = liveCoords?.lon;
+  const radarRequest = useRef(0);
 
   const fetchRadar = useCallback(async () => {
+    const request = ++radarRequest.current;
     if (!Number.isFinite(locLat) || !Number.isFinite(locLon)) { setRadarData(null); return; }
     setLoading(true);
     setError('');
@@ -280,19 +281,32 @@ export default function UnifiedRadarMap({
         filter_category: 'all',
         include_responders: true,
       });
-      setRadarData(data);
+      if (request === radarRequest.current) setRadarData(data);
     } catch (err) {
-      setError(err.message || 'Failed to scan radar space');
+      if (request === radarRequest.current) setError(err.message || 'Failed to scan radar space');
     } finally {
-      setLoading(false);
+      if (request === radarRequest.current) setLoading(false);
     }
   }, [locLat, locLon]);
 
   useEffect(() => {
     fetchRadar();
     const interval = setInterval(fetchRadar, 15000);
+    const reset = () => {
+      ++radarRequest.current;
+      setRadarData(null);
+      setSelectedTargetId('none');
+      setLoading(false);
+      setError('');
+    };
     window.addEventListener('rescue:reports-changed', fetchRadar);
-    return () => { clearInterval(interval); window.removeEventListener('rescue:reports-changed', fetchRadar); };
+    window.addEventListener('rescue:local-data-reset', reset);
+    return () => {
+      ++radarRequest.current;
+      clearInterval(interval);
+      window.removeEventListener('rescue:reports-changed', fetchRadar);
+      window.removeEventListener('rescue:local-data-reset', reset);
+    };
   }, [fetchRadar]);
 
   const handleManualRefreshGps = useCallback(async () => {
@@ -303,7 +317,7 @@ export default function UnifiedRadarMap({
   }, [onRefreshGps, fetchRadar]);
 
   const radarItems = useMemo(() => radarData?.radar_items || [], [radarData]);
-  const shelters = useMemo(() => savedShelters(items), [items]);
+  const shelters = useMemo(() => savedShelters(items).filter(item => !radarData?.removed_report_ids?.includes(item.source_report_id || item.id)), [items, radarData]);
   const summary = useMemo(() => radarData?.summary || {
     urgent_casualties: 0,
     total_casualties: 0,
@@ -333,10 +347,12 @@ export default function UnifiedRadarMap({
     const uLon = liveCoords?.lon ?? userLocation?.lon;
 
     // If external target passed (e.g. from SafePlace reroute or casualty), inject it at the top
-    if (selectedTarget && Number.isFinite(uLat) && Number.isFinite(uLon)) {
+    if (selectedTarget && !radarData?.removed_report_ids?.includes(selectedTarget.source_report_id || selectedTarget.id) && Number.isFinite(uLat) && Number.isFinite(uLon)) {
       const targetId = selectedTarget.id || selectedTarget.entity_id || 'selected_target';
+      const current = currentSurvivorReports(items).find(item => item.id === targetId
+        || (selectedTarget.entity_id && item.entity_id === selectedTarget.entity_id));
       const tLoc = selectedTarget.location || (selectedTarget.lat != null && selectedTarget.lon != null ? { lat: selectedTarget.lat, lon: selectedTarget.lon } : null);
-      if (tLoc && Number.isFinite(tLoc.lat) && Number.isFinite(tLoc.lon) && !list.some((item) => item.id === targetId)) {
+      if (!current && tLoc && Number.isFinite(tLoc.lat) && Number.isFinite(tLoc.lon) && !list.some((item) => item.id === targetId)) {
         const d = Math.round(distM(uLat, uLon, tLoc.lat, tLoc.lon));
         const b = bearingDeg(uLat, uLon, tLoc.lat, tLoc.lon);
         list.unshift({
@@ -356,7 +372,7 @@ export default function UnifiedRadarMap({
     }
 
     return list;
-  }, [radarItems, shelters, selectedTarget, liveCoords, userLocation]);
+  }, [radarItems, shelters, selectedTarget, liveCoords, userLocation, radarData, items]);
 
   // Compute Active Target for Compass Pointer (returns null if user chooses 'none' or no target)
   const activeTarget = useMemo(() => {
@@ -481,27 +497,13 @@ export default function UnifiedRadarMap({
 
   // Filtered items for MapPanel
   const filteredMapItems = useMemo(() => {
-    const list = [...(Array.isArray(items) ? items : [])];
-    for (const d of destinationOptions) {
-      if (!list.some((it) => it.id === d.id || it.entity_id === d.id)) {
-        list.push({
-          id: d.id,
-          entity_id: d.id,
-          title: d.name,
-          kind: d.category === 'casualty' ? 'incident' : d.category === 'hazard' ? 'hazard' : d.category === 'resource' ? 'resource' : 'checkpoint',
-          severity: d.severity || null,
-          status: d.status || null,
-          location: d.location,
-          text: d.text
-        });
-      }
-    }
+    const list = radarMapReports(Array.isArray(items) ? items : [], destinationOptions, radarData?.removed_report_ids);
     if (mapFilter === 'all') return list;
     if (mapFilter === 'sos') return list.filter((i) => i.kind === 'incident' || i.severity === 'red');
     if (mapFilter === 'hazard') return list.filter((i) => i.kind === 'hazard');
     if (mapFilter === 'resource') return list.filter((i) => i.kind === 'resource' || i.kind === 'checkpoint');
     return list;
-  }, [items, destinationOptions, mapFilter]);
+  }, [items, destinationOptions, mapFilter, radarData]);
 
   // Filtered destinations inside the Custom Selection Modal
   const filteredModalDestinations = useMemo(() => {
@@ -775,7 +777,7 @@ export default function UnifiedRadarMap({
           {/* REAL MAP CANVAS (Zoomable, Satellite View, Real GPS Pointer, One Skymark Noida) */}
           <div className="radar-map-canvas relative min-w-0 w-full rounded-xl overflow-hidden border border-[#e8e4db] dark:border-slate-800 bg-[#091927]">
             <MapPanel
-              center={liveCoords || userLocation || PAYTM_SKYMARK.location}
+              center={liveCoords || userLocation}
               items={filteredMapItems}
               peers={peers}
               selected={activeTarget}

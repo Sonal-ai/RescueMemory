@@ -55,7 +55,7 @@ import MeshSyncScanner from '../components/MeshSyncScanner';
 import MarkdownContent from '../components/MarkdownContent';
 import useLiveGps from '../hooks/useLiveGps.js';
 import { formatCoordinates } from '../brain/locationTracking.js';
-import { getAllLocalReports } from '../brain/offlineStorage.js';
+import { getAllLocalReports, getRemovedCloudReportIds } from '../brain/offlineStorage.js';
 import { loadDashboardFeed } from '../brain/adminData.js';
 import { currentSurvivorReports } from '../brain/survivorReports.js';
 
@@ -335,7 +335,8 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
       setItems(currentSurvivorReports(local));
       if (centerLat == null || centerLon == null) {
         const feed = await loadDashboardFeed(api, false, local);
-        setItems(currentSurvivorReports(feed.items, await getAllLocalReports()));
+        const removed = await getRemovedCloudReportIds();
+        setItems(currentSurvivorReports(feed.items, await getAllLocalReports()).filter(report => !removed.has(report.source_report_id || report.id)));
         setMapUpdatedAt(new Date());
         return;
       }
@@ -352,12 +353,19 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
         }
       });
       const raw = Array.isArray(result?.items) ? result.items : (Array.isArray(result?.events) ? result.events : []);
-      setItems(currentSurvivorReports(raw, await getAllLocalReports()));
+      const removed = await getRemovedCloudReportIds();
+      setItems(currentSurvivorReports(raw, await getAllLocalReports()).filter(report => !removed.has(report.source_report_id || report.id)));
       setMapUpdatedAt(new Date());
     } catch (err) {
       setError(err.message);
     }
   }, [centerLat, centerLon]);
+
+  useEffect(() => {
+    const reset = () => { setSelected(null); setAlternativeRec(null); setNearestCasualty(null); setItems([]); };
+    window.addEventListener('rescue:local-data-reset', reset);
+    return () => window.removeEventListener('rescue:local-data-reset', reset);
+  }, []);
 
   useEffect(() => {
     refreshMap();

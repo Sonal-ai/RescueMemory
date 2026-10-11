@@ -15,7 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import { coordinates } from './brain/adminData.js';
-import { PAYTM_SKYMARK } from './brain/paytmSkymark.js';
+import { mapMarkerSignature } from './brain/survivorReports.js';
 
 // Runtime map token reconstruction (obfuscated from scanner regexes)
 const _MAP_FRAGS = ['QUl6YVN5', 'Q2UyRUNRZmEx', 'Tm5jck16YnlX', 'SGRJeWttTE04', 'VzhVSTM0'];
@@ -209,7 +209,8 @@ export default function MapPanel({
     return coordinates(center.location || center);
   }, [center]);
 
-  const defaultCenter = origin || PAYTM_SKYMARK.location;
+  const defaultCenter = origin || coordinates(selected?.location || selected)
+    || (Array.isArray(items) ? items.map(item => coordinates(item.location || item)).find(Boolean) : null);
 
   const selectedLoc = useMemo(() => {
     if (!selected) return null;
@@ -247,10 +248,10 @@ export default function MapPanel({
 
   // Initialize Leaflet Map
   useEffect(() => {
-    if (!containerRef.current || mapRef.current) return;
+    if (!containerRef.current || mapRef.current || !defaultCenter) return;
 
-    const initialLat = defaultCenter.lat || PAYTM_SKYMARK.location.lat;
-    const initialLon = defaultCenter.lon || PAYTM_SKYMARK.location.lon;
+    const initialLat = defaultCenter.lat;
+    const initialLon = defaultCenter.lon;
 
     const map = L.map(containerRef.current, {
       center: [initialLat, initialLon],
@@ -300,6 +301,7 @@ export default function MapPanel({
     mapRef.current = map;
     tileLayerRef.current = tileLayer;
     markersLayerRef.current = markersGroup;
+    lastItemsKeyRef.current = '';
     setIsReady(true);
 
     // Ensure map redraws to fill the full container bounds
@@ -316,7 +318,7 @@ export default function MapPanel({
       targetLineRef.current = null;
       setIsReady(false);
     };
-  }, []);
+  }, [Boolean(defaultCenter)]);
 
   // Switch Tile Layer when user toggles or API key changes
   useEffect(() => {
@@ -376,7 +378,7 @@ export default function MapPanel({
     } else {
       userMarkerRef.current.setLatLng([userLat, userLon]);
     }
-  }, [origin?.lat, origin?.lon, originLabel]);
+  }, [origin?.lat, origin?.lon, originLabel, isReady]);
 
   // Update Facility Markers (With deduplication guard to stop frequent map refreshes)
   useEffect(() => {
@@ -384,8 +386,7 @@ export default function MapPanel({
     const group = markersLayerRef.current;
     if (!map || !group) return;
 
-    const selKey = selectedLoc ? `${selectedLoc.lat.toFixed(4)},${selectedLoc.lon.toFixed(4)}` : 'none';
-    const itemsKey = displayItems.map(i => `${i.id || i.entity_id}`).join('|') + `::${selKey}`;
+    const itemsKey = mapMarkerSignature(displayItems, selected);
 
     if (lastItemsKeyRef.current === itemsKey) {
       return; // Do NOT clear/re-add if items haven't changed!
@@ -437,7 +438,7 @@ export default function MapPanel({
 
       marker.addTo(group);
     });
-  }, [displayItems, selectedLoc, onMarker, selected]);
+  }, [displayItems, selectedLoc, onMarker, selected, isReady]);
 
   // Static, High-Performance Demo Route Line Straight to Target
   useEffect(() => {
@@ -470,7 +471,7 @@ export default function MapPanel({
 
     line.setLatLngs([]);
     line.setStyle({ opacity: 0 });
-  }, [origin?.lat, origin?.lon, selectedLoc?.lat, selectedLoc?.lon]);
+  }, [origin?.lat, origin?.lon, selectedLoc?.lat, selectedLoc?.lon, isReady]);
 
   // On target selection, immediately refresh straight to target and frame view
   useEffect(() => {
@@ -501,7 +502,8 @@ export default function MapPanel({
   // Recenter actions
   const handleRecenterUser = () => {
     if (!mapRef.current) return;
-    const target = origin || PAYTM_SKYMARK.location;
+    const target = origin || defaultCenter;
+    if (!target) return;
     mapRef.current.flyTo([target.lat, target.lon], 16, { duration: 0.6 });
   };
 
@@ -538,11 +540,12 @@ export default function MapPanel({
       <div className="relative w-full h-[360px] sm:h-[420px] rounded-2xl overflow-hidden border border-slate-700/80 shadow-inner bg-[#0b1626]">
         {/* Leaflet Google Map Container */}
         <div ref={containerRef} className="w-full h-full z-0" style={{ minHeight: '100%' }} />
+        {!defaultCenter && <div className="absolute inset-0 flex items-center justify-center p-4 text-center text-sm text-slate-400">Waiting for GPS or a reported location.</div>}
 
         {/* Top-Left Live Coordinates Pill */}
         <div className="absolute left-3 top-3 z-10 bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-xl px-2.5 py-1 text-[11px] font-mono text-cyan-300 font-bold flex items-center gap-1.5 shadow-lg">
           <MapPin size={12} className="text-cyan-400 shrink-0" />
-          <span>{(origin?.lat || PAYTM_SKYMARK.location.lat).toFixed(5)}, {(origin?.lon || PAYTM_SKYMARK.location.lon).toFixed(5)}</span>
+          <span>{origin ? `${origin.lat.toFixed(5)}, ${origin.lon.toFixed(5)}` : 'GPS unavailable'}</span>
         </div>
 
         {/* Floating Tactical Guidance Strip (Coordinate-to-Coordinate Navigation HUD) */}
