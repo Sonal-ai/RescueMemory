@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { coordinates } from './brain/adminData.js';
 import { mapMarkerSignature } from './brain/survivorReports.js';
+import { OFFLINE_MAP_TILES, OFFLINE_MAP_BOUNDS, inOfflineMap, mapStartCenter } from './brain/offlineMap.js';
 
 // Runtime map token reconstruction (obfuscated from scanner regexes)
 const _MAP_FRAGS = ['QUl6YVN5', 'Q2UyRUNRZmEx', 'Tm5jck16YnlX', 'SGRJeWttTE04', 'VzhVSTM0'];
@@ -161,6 +162,7 @@ export default function MapPanel({
   dark = false,
   originLabel = 'YOU (SURVIVOR)',
   deviceHeading = null,
+  offlineMode = false,
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -174,6 +176,16 @@ export default function MapPanel({
   const [activeLayerKey, setActiveLayerKey] = useState('roadmap'); // Default: Google 2D Normal View
   const [isLayerMenuOpen, setIsLayerMenuOpen] = useState(false);
   const [isReady, setIsReady] = useState(false);
+  const [networkOffline, setNetworkOffline] = useState(() => typeof navigator !== 'undefined' && navigator.onLine === false);
+  const useOfflineMap = offlineMode || networkOffline || activeLayerKey === 'offline';
+  const receivedGpsRef = useRef(false);
+  useEffect(() => {
+    const offline = () => setNetworkOffline(true);
+    const online = () => setNetworkOffline(false);
+    window.addEventListener('offline', offline);
+    window.addEventListener('online', online);
+    return () => { window.removeEventListener('offline', offline); window.removeEventListener('online', online); };
+  }, []);
 
   // Google Maps API Key State (Defaults to embedded verified GCP Key)
   const [apiKey, setApiKey] = useState(() => {
@@ -209,8 +221,8 @@ export default function MapPanel({
     return coordinates(center.location || center);
   }, [center]);
 
-  const defaultCenter = origin || coordinates(selected?.location || selected)
-    || (Array.isArray(items) ? items.map(item => coordinates(item.location || item)).find(Boolean) : null);
+  const defaultCenter = mapStartCenter(origin || coordinates(selected?.location || selected)
+    || (Array.isArray(items) ? items.map(item => coordinates(item.location || item)).find(Boolean) : null), useOfflineMap);
 
   const selectedLoc = useMemo(() => {
     if (!selected) return null;
@@ -264,27 +276,6 @@ export default function MapPanel({
       markerZoomAnimation: true,
     });
 
-    // Add High-Performance Google Maps 2D tile layer with offline fallback
-    const layerConf = tileLayers[activeLayerKey] || tileLayers.roadmap;
-    const tileLayer = L.tileLayer(layerConf.url, {
-      maxZoom: layerConf.maxZoom,
-      subdomains: layerConf.subdomains,
-      attribution: layerConf.attribution,
-      keepBuffer: 6,
-      updateWhenIdle: true,
-      updateWhenZooming: false,
-    });
-
-    tileLayer.on('tileerror', (e) => {
-      // Automatic offline fallback: if internet is down, load pre-bundled local tiles for Paytm Skymark
-      const coords = e.coords;
-      if (coords && coords.z >= 14 && coords.z <= 17 && e.tile) {
-        e.tile.src = `/offline_tiles/${coords.z}/${coords.x}/${coords.y}.png`;
-      }
-    });
-
-    tileLayer.addTo(map);
-
     // Create layer groups
     const markersGroup = L.layerGroup().addTo(map);
 
@@ -299,7 +290,6 @@ export default function MapPanel({
     });
 
     mapRef.current = map;
-    tileLayerRef.current = tileLayer;
     markersLayerRef.current = markersGroup;
     lastItemsKeyRef.current = '';
     setIsReady(true);
@@ -330,28 +320,23 @@ export default function MapPanel({
     }
 
     const conf = tileLayers[activeLayerKey] || tileLayers.roadmap;
-    const newTileLayer = L.tileLayer(conf.url, {
-      maxZoom: conf.maxZoom,
-      subdomains: conf.subdomains,
-      attribution: conf.attribution,
-      keepBuffer: 6,
-      updateWhenIdle: true,
-      updateWhenZooming: false,
-    });
-
-    newTileLayer.on('tileerror', (e) => {
-      const coords = e.coords;
-      if (coords && coords.z >= 14 && coords.z <= 17 && e.tile) {
-        e.tile.src = `/offline_tiles/${coords.z}/${coords.x}/${coords.y}.png`;
-      }
-    });
+    // Georeferenced images keep the complete saved map visible at every zoom.
+    // They load locally immediately and do not depend on a GPS fix or tile errors.
+    const newTileLayer = useOfflineMap
+      ? L.layerGroup(OFFLINE_MAP_TILES.map(tile => L.imageOverlay(tile.url, tile.bounds, { interactive: false })))
+      : L.tileLayer(conf.url, {
+        maxZoom: conf.maxZoom, subdomains: conf.subdomains, attribution: conf.attribution,
+        keepBuffer: 6, updateWhenIdle: true, updateWhenZooming: false,
+      });
+    if (!useOfflineMap) newTileLayer.on('tileerror', () => setActiveLayerKey('offline'));
+    if (useOfflineMap) map.fitBounds(OFFLINE_MAP_BOUNDS, { animate: false, padding: [12, 12] });
 
     newTileLayer.addTo(map);
 
     // Keep tiles below markers
-    newTileLayer.bringToBack();
+    newTileLayer.bringToBack?.();
     tileLayerRef.current = newTileLayer;
-  }, [activeLayerKey, tileLayers]);
+  }, [activeLayerKey, tileLayers, useOfflineMap, isReady]);
 
   // Update User GPS Marker (Only when coordinates change)
   useEffect(() => {
@@ -360,6 +345,10 @@ export default function MapPanel({
 
     const userLat = origin.lat;
     const userLon = origin.lon;
+    if (!receivedGpsRef.current && (!useOfflineMap || inOfflineMap(origin))) {
+      map.setView([userLat, userLon], 15, { animate: false });
+      receivedGpsRef.current = true;
+    }
 
     if (!userMarkerRef.current) {
       const userMarker = L.marker([userLat, userLon], {
@@ -378,7 +367,7 @@ export default function MapPanel({
     } else {
       userMarkerRef.current.setLatLng([userLat, userLon]);
     }
-  }, [origin?.lat, origin?.lon, originLabel, isReady]);
+  }, [origin?.lat, origin?.lon, originLabel, isReady, useOfflineMap]);
 
   // Update Facility Markers (With deduplication guard to stop frequent map refreshes)
   useEffect(() => {
@@ -476,7 +465,7 @@ export default function MapPanel({
   // On target selection, immediately refresh straight to target and frame view
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !selectedLoc || !origin) return;
+    if (!map || !selectedLoc || !origin || (useOfflineMap && (!inOfflineMap(origin) || !inOfflineMap(selectedLoc)))) return;
 
     const isSame = Math.abs(origin.lat - selectedLoc.lat) < 0.0001 && Math.abs(origin.lon - selectedLoc.lon) < 0.0001;
     if (isSame) return;
@@ -497,18 +486,22 @@ export default function MapPanel({
         animate: false // Instant & glitch-free in Android WebView
       }
     );
-  }, [selectedLoc?.lat, selectedLoc?.lon, origin?.lat, origin?.lon]);
+  }, [selectedLoc?.lat, selectedLoc?.lon, origin?.lat, origin?.lon, useOfflineMap]);
 
   // Recenter actions
   const handleRecenterUser = () => {
     if (!mapRef.current) return;
-    const target = origin || defaultCenter;
+    const target = mapStartCenter(origin || defaultCenter, useOfflineMap);
     if (!target) return;
     mapRef.current.flyTo([target.lat, target.lon], 16, { duration: 0.6 });
   };
 
   const handleFitRoute = useCallback(() => {
     if (!mapRef.current || !origin || !selectedLoc) return;
+    if (useOfflineMap && (!inOfflineMap(origin) || !inOfflineMap(selectedLoc))) {
+      mapRef.current.fitBounds(OFFLINE_MAP_BOUNDS, { animate: false });
+      return;
+    }
     mapRef.current.fitBounds(
       [
         [origin.lat, origin.lon],
@@ -520,7 +513,7 @@ export default function MapPanel({
         animate: false
       }
     );
-  }, [origin, selectedLoc]);
+  }, [origin, selectedLoc, useOfflineMap]);
 
   const handleZoomIn = () => {
     if (mapRef.current) mapRef.current.zoomIn();
@@ -540,12 +533,14 @@ export default function MapPanel({
       <div className="relative w-full h-[360px] sm:h-[420px] rounded-2xl overflow-hidden border border-slate-700/80 shadow-inner bg-[#0b1626]">
         {/* Leaflet Google Map Container */}
         <div ref={containerRef} className="w-full h-full z-0" style={{ minHeight: '100%' }} />
-        {!defaultCenter && <div className="absolute inset-0 flex items-center justify-center p-4 text-center text-sm text-slate-400">Waiting for GPS or a reported location.</div>}
+        {useOfflineMap && <div className="absolute left-3 bottom-3 right-14 z-10 rounded-lg bg-slate-900/90 px-2 py-1 text-[11px] text-cyan-200">
+          Saved Sector 98 map · {origin ? (inOfflineMap(origin) ? 'GPS available' : 'GPS is outside the saved map area') : 'GPS acquiring independently'}
+        </div>}
 
         {/* Top-Left Live Coordinates Pill */}
         <div className="absolute left-3 top-3 z-10 bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-xl px-2.5 py-1 text-[11px] font-mono text-cyan-300 font-bold flex items-center gap-1.5 shadow-lg">
           <MapPin size={12} className="text-cyan-400 shrink-0" />
-          <span>{origin ? `${origin.lat.toFixed(5)}, ${origin.lon.toFixed(5)}` : 'GPS unavailable'}</span>
+          <span>{origin ? `${origin.lat.toFixed(5)}, ${origin.lon.toFixed(5)}` : 'GPS acquiring · map ready'}</span>
         </div>
 
         {/* Floating Tactical Guidance Strip (Coordinate-to-Coordinate Navigation HUD) */}
@@ -636,7 +631,7 @@ export default function MapPanel({
               title="Change Map View"
             >
               <Layers size={13} className="text-cyan-400" />
-              <span>{tileLayers[activeLayerKey]?.label || 'Map'}</span>
+              <span>{useOfflineMap ? tileLayers.offline.label : (tileLayers[activeLayerKey]?.label || 'Map')}</span>
             </button>
 
             {isLayerMenuOpen && (

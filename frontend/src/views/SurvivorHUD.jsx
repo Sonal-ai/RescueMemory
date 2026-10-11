@@ -677,10 +677,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
       triggerAutoSync().catch(() => {});
       if (peers.length > 0) {
         peers.forEach((p) => {
-          syncDiscoveredPeer({
-            peer_url: p.url || `http://${p.ip}:${p.port}`,
-            scope: 'public'
-          }).catch(() => {});
+          syncDiscoveredPeer(p).catch(err => console.warn('[SOS] Peer relay pending:', err.message));
         });
       }
 
@@ -699,14 +696,14 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
         {
           id: `sos_ack_${Date.now()}`,
           role: 'assistant',
-          text: `### 🚨 EMERGENCY SOS TRANSMITTED (#${evtId})\n\n` +
-            `Your emergency distress beacon is **ACTIVE and BROADCASTING** across the local disaster mesh. Location: **${formatCoordinates(pin, 4)}**.\n\n` +
+          text: `### 🚨 EMERGENCY SOS SAVED (#${evtId})\n\n` +
+            `Your emergency report is saved on this phone and queued for delivery. Location: **${formatCoordinates(pin, 4)}**.\n\n` +
             `**Reported Situation:**\n` +
             `• ${reportText}\n` +
             `\n**Dispatch & Relay Status:**\n` +
-            `• ✅ Recorded into local Qdrant memory\n` +
-            `• 📡 Transmitted to ${peers.length} nearby peer device(s) on Bluetooth LE mesh\n` +
-            `• 🛰️ Uplinked to Central Command & Field Responders\n\n` +
+            `• ✅ Saved on this phone\n` +
+            `• 📡 Bluetooth relay requested for available nearby phones\n` +
+            `• 🛰️ Command HQ delivery queued; check Sync for confirmation\n\n` +
             `Tap the **Radar Map** tab to monitor your live beacon position.`,
           timestamp: new Date(),
           isAi: false
@@ -721,7 +718,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
       refreshMap();
     } catch (err) {
       console.warn('[SurvivorHUD] SOS submit fallback:', err);
-      setMessage('Emergency SOS saved in offline memory. It will sync automatically when connectivity returns.');
+      setError(`SOS could not be saved: ${err.message}. Please retry.`);
     } finally {
       setSavingSos(false);
     }
@@ -1630,7 +1627,7 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                 DISTRESS BEACON ACTIVE
               </span>
               <h2 className="text-lg sm:text-xl font-black text-white mt-1.5">
-                Emergency SOS Broadcasted!
+                Emergency SOS Saved
               </h2>
               <p className="text-xs text-slate-300 mt-1 font-mono">
                 Transmission ID: #{sosBroadcastModal.id}
@@ -1647,8 +1644,8 @@ export default function SurvivorHUD({ initialTab = 'ask' }) {
                 <strong className="text-amber-400">{sosBroadcastModal.visibility === 'responders' ? 'Verified Responders & HQ' : 'Public Mesh Broadcast'}</strong>
               </div>
               <div className="flex justify-between text-slate-400">
-                <span>Mesh Relayed:</span>
-                <strong className="text-cyan-400">{sosBroadcastModal.peersCount} nearby device(s) on Bluetooth</strong>
+                <span>Delivery:</span>
+                <strong className="text-cyan-400">Queued · see Sync for confirmation</strong>
               </div>
               <p className="pt-2 border-t border-slate-800 text-xs sm:text-sm text-slate-200 font-sans leading-relaxed line-clamp-3">
                 "{sosBroadcastModal.text}"

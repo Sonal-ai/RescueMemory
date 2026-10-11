@@ -93,6 +93,10 @@ test('native GPS adapter requests fresh fixes, preserves real timestamps and zer
   assert.equal(fixes[0].heading, 0); assert.equal(fixes[0].speed, 0);
   receive(sample(1, 1, time - GPS_FRESH_MS - 1));
   assert.equal(fixes.length, 1); assert.match(errors[0].message, /STALE_FIX/);
+  receive({ error: { code: 'GPS_UNAVAILABLE', message: 'Acquiring satellite GPS without internet' } });
+  assert.match(errors[1].message, /GPS_UNAVAILABLE.*without internet/);
+  receive(sample(0.5, 0, time));
+  assert.equal(fixes.length, 2); // The persistent watch recovers after an acquisition warning.
   await stop(); assert.equal(cleared, 'native-watch');
 });
 

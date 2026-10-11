@@ -56,3 +56,22 @@ test('a rejected online authority request cannot turn into a fabricated offline 
   await assert.rejects(api('/api/guides/publish', { method: 'POST', body: { id: 'actual-guide' }, admin: true }), /actual authorization failure/);
   assert.equal((await getAllLocalReports()).length, previous);
 });
+
+test('online SOS is saved immediately even when the server never responds, with a stable outbox ID', async () => {
+  navigator.onLine = true;
+  globalThis.fetch = () => new Promise(() => {});
+  const before = (await getAllLocalReports()).length;
+  let timer;
+  try {
+    const result = await Promise.race([
+      api('/api/reports', { method: 'POST', body: { kind: 'sos', text: 'Need immediate help', location: { lat: 0, lon: 0 } } }),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('SOS waited for network')), 500); }),
+    ]);
+    assert.equal(result.queued, true);
+    assert.equal(result.on_device, true);
+    assert.equal(result.event.source_report_id, result.event.id);
+    const reports = await getAllLocalReports();
+    assert.equal(reports.length, before + 1);
+    assert.equal(reports.find(report => report.id === result.event.id).synced, false);
+  } finally { clearTimeout(timer); }
+});

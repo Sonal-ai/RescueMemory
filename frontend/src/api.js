@@ -5,6 +5,8 @@ import { localReportAnswer } from './brain/localReportChat.js';
 import { formatOnlineAnswer } from './brain/onlineAnswer.js';
 import { prototypeAccess, prototypeReport, prototypeGuide } from './brain/prototypeAccess.js';
 import { gpsPosition, hardwareLocationWatch } from './brain/locationTracking.js';
+import { hasSatelliteGps, loadLocationPlugin } from './brain/nativeGps.js';
+import { cachedMeshLocation } from './brain/meshRadar.js';
 import { coordinates, requiresAuthorityServer, storedEntityTimeline, localMemoryPage } from './brain/adminData.js';
 import {
   searchKnowledgeLocal,
@@ -270,6 +272,13 @@ export async function api(path, options = {}) {
   }
   const liveCloud = isCloudApi(path);
   const authorityWrite = requiresAuthorityServer(path, method, body);
+  // SOS is durable immediately, even while Render wakes or a network request stalls.
+  // Delivery continues through the existing outbox; authority publications keep their server checks.
+  if (path === '/api/reports' && method === 'POST' && !authorityWrite) {
+    const saved = await recordReportLocal(body);
+    invalidateApiCache();
+    return { event: saved, id: saved.id, event_id: saved.id, queued: true, on_device: true };
+  }
   const cacheKey = `${method}:${path}:${admin ? 'a' : ''}:${responder ? 'r' : ''}:${group ? 'g' : ''}`;
 
   if (method === 'GET' && !liveCloud && !options.noCache && options.preferCache) {
@@ -789,13 +798,8 @@ export async function syncDiscoveredPeer(syncData = {}) {
     try {
       const reports = await getAllLocalReports();
       const myDeviceId = getDeviceId();
-      let myLocation = null;
-      try {
-        const loc = await getNativeOrWebLocation({ allowCached: false });
-        if (coordinates(loc)) myLocation = loc;
-      } catch {
-        // silent
-      }
+      // Location is optional metadata; satellite acquisition must never delay SOS relay.
+      const myLocation = cachedMeshLocation();
 
       const bleOutcome = await syncWithBlePeer(syncData, reports, myDeviceId, myLocation);
       return {
@@ -903,6 +907,18 @@ export async function getNativeOrWebLocation({ allowCached = true } = {}) {
     return null;
   };
 
+  if (hasSatelliteGps()) {
+    try {
+      const { Geolocation } = await loadLocationPlugin();
+      const position = await Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 90000, maximumAge: 0 });
+      const fix = gpsPosition(position, 'native_gps'); saveCached(fix); return fix;
+    } catch (error) {
+      const cached = allowCached ? getCached() : null;
+      if (cached) return cached;
+      throw new Error(`GPS unavailable: ${error.message}`);
+    }
+  }
+
   const withTimeout = (promise, ms) =>
     Promise.race([
       promise,
@@ -926,8 +942,8 @@ export async function getNativeOrWebLocation({ allowCached = true } = {}) {
       // Tier 1: High accuracy
       try {
         const pos1 = await withTimeout(
-          Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 3500, maximumAge: 0 }),
-          4000
+          Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 90000, maximumAge: 0 }),
+          95000
         );
         if (coordinates({ lat: pos1?.coords?.latitude, lon: pos1?.coords?.longitude })) {
           const fix = gpsPosition(pos1, 'native_gps'); saveCached(fix); return fix;
@@ -957,7 +973,7 @@ export async function getNativeOrWebLocation({ allowCached = true } = {}) {
   if (typeof navigator !== 'undefined' && navigator.geolocation) {
     try {
       const webPos = await new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error('Web geolocation timeout')), 4000);
+        const timer = setTimeout(() => reject(new Error('Web geolocation timeout')), 95000);
         navigator.geolocation.getCurrentPosition(
           (pos) => {
             clearTimeout(timer);
@@ -967,7 +983,7 @@ export async function getNativeOrWebLocation({ allowCached = true } = {}) {
             clearTimeout(timer);
             reject(err);
           },
-          { enableHighAccuracy: true, timeout: 3500, maximumAge: 0 }
+          { enableHighAccuracy: true, timeout: 90000, maximumAge: 0 }
         );
       });
       if (coordinates({ lat: webPos?.coords?.latitude, lon: webPos?.coords?.longitude })) {
@@ -1003,8 +1019,8 @@ export async function watchNativeOrWebLocation(onUpdate, onError) {
     catch (error) { console.warn('[GPS cache]', error.message); }
     onUpdate(fix);
   }, onError, {
-    nativeAvailable: () => typeof window !== 'undefined' && window.Capacitor?.isPluginAvailable?.('Geolocation'),
-    loadNative: () => import('@capacitor/geolocation'),
+    nativeAvailable: () => hasSatelliteGps() || (typeof window !== 'undefined' && window.Capacitor?.isPluginAvailable?.('Geolocation')),
+    loadNative: loadLocationPlugin,
     geolocation: typeof navigator !== 'undefined' ? navigator.geolocation : null,
   });
 }

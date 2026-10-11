@@ -13,7 +13,7 @@ import {
   Search,
   X,
 } from 'lucide-react';
-import { getSurvivalRadar, distM, bearingDeg, cardinalDirection, isOnlineMode } from '../api';
+import { getSurvivalRadar, distM, bearingDeg, cardinalDirection, isOnlineMode, onOnlineModeChange } from '../api';
 import MapPanel from '../MapPanel';
 import { radarDestinationLabel, radarDestinationOption } from '../brain/radarLabels.js';
 import { currentSurvivorReports, radarMapReports, savedShelters, targetMeasurements } from '../brain/survivorReports.js';
@@ -75,9 +75,8 @@ export default function UnifiedRadarMap({
   const [selectorCategoryFilter, setSelectorCategoryFilter] = useState('all');
 
   // Offline / Location missing popup state
-  const [isOffline, setIsOffline] = useState(() => typeof navigator !== 'undefined' ? !navigator.onLine : false);
+  const [isOffline, setIsOffline] = useState(() => navigator.onLine === false || !isOnlineMode());
   const [showLocationPopup, setShowLocationPopup] = useState(false);
-  const hasPromptedLocation = useRef(false);
 
   // Device orientation / heading state (0 = North, 90 = East, 180 = South, 270 = West)
   const [deviceHeading, setDeviceHeading] = useState(null);
@@ -101,43 +100,18 @@ export default function UnifiedRadarMap({
     previousFix.current = userLocation;
   }, [userLocation, gpsLive]);
 
-  // Monitor network status & trigger location popup if offline with no GPS fix
+  // Connectivity selects the map, but never blocks its display or GPS acquisition.
   useEffect(() => {
-    const handleOnline = () => setIsOffline(false);
-    const handleOffline = () => {
-      setIsOffline(true);
-      if (!userLocation) {
-        setShowLocationPopup(true);
-      }
-    };
-
-    if (typeof window !== 'undefined') {
-      window.addEventListener('online', handleOnline);
-      window.addEventListener('offline', handleOffline);
-
-      // Check initially: if internet is turned off (or navigator.onLine is false) and location is null
-      if ((!navigator.onLine || !isOnlineMode()) && !userLocation && !hasPromptedLocation.current) {
-        const timer = setTimeout(() => {
-          if (!userLocation) {
-            setShowLocationPopup(true);
-            hasPromptedLocation.current = true;
-          }
-        }, 1800);
-        return () => {
-          clearTimeout(timer);
-          window.removeEventListener('online', handleOnline);
-          window.removeEventListener('offline', handleOffline);
-        };
-      }
-    }
-
+    const update = () => setIsOffline(navigator.onLine === false || !isOnlineMode());
+    window.addEventListener('online', update);
+    window.addEventListener('offline', update);
+    const unsubscribe = onOnlineModeChange(update);
     return () => {
-      if (typeof window !== 'undefined') {
-        window.removeEventListener('online', handleOnline);
-        window.removeEventListener('offline', handleOffline);
-      }
+      window.removeEventListener('online', update);
+      window.removeEventListener('offline', update);
+      unsubscribe();
     };
-  }, [userLocation]);
+  }, []);
 
   // Request iOS 13+ sensor permissions on first user gesture
   const requestCompassPermission = useCallback(async () => {
@@ -777,6 +751,7 @@ export default function UnifiedRadarMap({
           {/* REAL MAP CANVAS (Zoomable, Satellite View, Real GPS Pointer, One Skymark Noida) */}
           <div className="radar-map-canvas relative min-w-0 w-full rounded-xl overflow-hidden border border-[#e8e4db] dark:border-slate-800 bg-[#091927]">
             <MapPanel
+              offlineMode={isOffline}
               center={liveCoords || userLocation}
               items={filteredMapItems}
               peers={peers}

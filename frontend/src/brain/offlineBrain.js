@@ -438,7 +438,7 @@ export async function recordReportLocal(reportData) {
   const saved = await saveOfflineReport(reportData);
   console.log('[OfflineBrain] Report saved to on-device outbox:', saved.id);
   // Attempt background sync if network is active
-  triggerAutoSync();
+  triggerAutoSync().catch(error => console.warn('[Reports] Delivery pending:', error.message));
   return {
     status: 'saved_locally',
     ...saved,
@@ -497,7 +497,7 @@ async function runAutoSync() {
   const checkRevision = () => assertLocalDataRevision(expectedRevision);
   const unsyncedInitial = await getUnsyncedReports();
   checkRevision();
-  const isOnline = (typeof localStorage !== 'undefined' ? localStorage.getItem('rescue.online_mode') !== 'false' : true) &&
+  const isOnline = (isAndroidEdge() || (typeof localStorage !== 'undefined' ? localStorage.getItem('rescue.online_mode') !== 'false' : true)) &&
                    (typeof navigator === 'undefined' || navigator.onLine !== false);
   if (!isOnline) {
     notifySync({ state: 'offline', pendingCount: unsyncedInitial.length });
@@ -516,7 +516,7 @@ async function runAutoSync() {
   let edgeReachable = false;
   if (edgeBase) {
     try {
-      const healthCheck = await fetch(`${edgeBase}/health`, { method: 'GET', signal: AbortSignal.timeout(2000) });
+      const healthCheck = await fetch(`${edgeBase}/health`, { method: 'GET', signal: AbortSignal.timeout(60000) });
       if (healthCheck.ok) {
         edgeReachable = true;
         anyChannelConnected = true;
@@ -554,7 +554,7 @@ async function runAutoSync() {
             'X-Node-Admin-Key': sessionStorage.getItem('rescue.adminKey') || 'rescue-admin-key-2026',
             'X-Responder-Key': sessionStorage.getItem('rescue.responderKey') || 'rescue-responder-shared-key-2026' },
           body: JSON.stringify(payload),
-          signal: AbortSignal.timeout(3000),
+          signal: AbortSignal.timeout(30000),
         });
         if (res.ok) {
           syncedIds.push(report.id);

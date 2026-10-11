@@ -9,6 +9,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(RescueBlePlugin.class);
         registerPlugin(QdrantEdgePlugin.class);
         registerPlugin(CompassHeadingPlugin.class);
+        registerPlugin(OfflineGpsPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

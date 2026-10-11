@@ -27,7 +27,7 @@ export function gpsStatusText(state, now = Date.now()) {
 export async function hardwareLocationWatch(onUpdate, onError, { nativeAvailable, loadNative, geolocation, now = Date.now }) {
   const report = error => onError?.(new Error(`[gps.watch/${error?.code ?? 'UNAVAILABLE'}] ${error?.message || String(error)}`));
   const receive = source => (position, error) => {
-    if (error) { report(error); return; }
+    if (error || position?.error) { report(error || position.error); return; }
     try { onUpdate(gpsPosition(position, source, now())); } catch (invalid) { onError?.(invalid); }
   };
   let nativeFailure;
