@@ -17,6 +17,7 @@ import { getSurvivalRadar, distM, bearingDeg, cardinalDirection, isOnlineMode, o
 import MapPanel from '../MapPanel';
 import { radarDestinationLabel, radarDestinationOption } from '../brain/radarLabels.js';
 import { currentSurvivorReports, radarMapReports, savedShelters, targetMeasurements } from '../brain/survivorReports.js';
+import { compassNeedleState, nextCompassNeedleAngle } from '../brain/compassNeedle.js';
 
 const COMPASS_SIZE = 220;
 const COMPASS_CENTER = COMPASS_SIZE / 2;
@@ -364,8 +365,8 @@ export default function UnifiedRadarMap({
     return null;
   }, [selectedTargetId, selectedTarget, destinationOptions]);
 
-  // Current heading from smoothed device magnetometer (or 0 if calibrating)
-  const currentHeading = isCompassActive ? deviceHeading : (deviceHeading ?? null);
+  // Use only current sensor readings; expired headings cannot indicate alignment.
+  const currentHeading = isCompassActive && Number.isFinite(deviceHeading) ? deviceHeading : null;
 
   // Real-time geodesic metrics between live walking GPS and activeTarget.location
   const liveTargetMetrics = useMemo(() => {
@@ -400,43 +401,17 @@ export default function UnifiedRadarMap({
     );
   }, [activeTarget]);
 
-  // COMPASS NEEDLE BEARING LOGIC:
-  // 1. If target is selected and has directional bearing: relative angle = (targetBearing - heading + 360) % 360
-  // 2. If NO target is selected or coordinates unavailable: relative angle = (0 - heading + 360) % 360 (POINTS NORTH!)
-  const targetRelativeAngle = useMemo(() => {
-    const h = currentHeading ?? 0;
-    if (hasTargetDirection) {
-      return ((targetBearing - h + 360) % 360);
-    }
-    // Magnetic North reference (0° Azimuth relative to device heading)
-    return ((360 - (h % 360)) % 360);
-  }, [hasTargetDirection, targetBearing, currentHeading]);
+  const [previouslyAligned, setPreviouslyAligned] = useState(false);
+  const needle = compassNeedleState(currentHeading, targetBearing, previouslyAligned);
+  const targetRelativeAngle = needle.angle;
+  const isAligned = needle.aligned;
+  useEffect(() => { setPreviouslyAligned(isAligned); }, [isAligned]);
 
   // Maintain continuous smooth needle rotation (prevents 360° flip spins)
   const [needleAngle, setNeedleAngle] = useState(0);
   useEffect(() => {
-    setNeedleAngle((prev) => {
-      let delta = (targetRelativeAngle - (prev % 360) + 540) % 360 - 180;
-      return prev + delta;
-    });
+    setNeedleAngle(prev => nextCompassNeedleAngle(prev, targetRelativeAngle));
   }, [targetRelativeAngle]);
-
-  // Alignment Calculation with Hysteresis (prevents edge flickering between aligned and turning)
-  const [isAligned, setIsAligned] = useState(false);
-  const angularError = useMemo(() => {
-    if (!hasTargetDirection || currentHeading === null) return null;
-    return Math.abs(((targetRelativeAngle + 180) % 360) - 180);
-  }, [hasTargetDirection, currentHeading, targetRelativeAngle]);
-
-  useEffect(() => {
-    if (currentHeading === null || !hasTargetDirection || angularError === null) {
-      setIsAligned(false);
-    } else if (!isAligned && angularError <= 12) {
-      setIsAligned(true);
-    } else if (isAligned && angularError >= 18) {
-      setIsAligned(false);
-    }
-  }, [angularError, isAligned, currentHeading, hasTargetDirection]);
 
   const turnRightAngle = targetRelativeAngle > 180 ? 0 : targetRelativeAngle;
   const turnLeftAngle = targetRelativeAngle > 180 ? 360 - targetRelativeAngle : 0;
@@ -796,7 +771,11 @@ export default function UnifiedRadarMap({
         <div className="min-w-0 lg:col-span-5 bg-white dark:bg-[#0b1626] border border-[#dbe6f0] dark:border-slate-800 rounded-2xl p-3 sm:p-4 shadow-xs flex flex-col justify-between gap-3">
           {/* Live Alignment Action Banner */}
           <div className="w-full font-mono h-[34px] min-h-[34px] flex items-center justify-center">
-            {!userLocation ? (
+            {currentHeading === null ? (
+              <div className="w-full h-full rounded-xl bg-amber-500/10 border border-amber-500/40 text-amber-900 dark:text-amber-300 font-bold text-xs flex items-center justify-center px-3">
+                Calibrating compass · Move phone in figure eight
+              </div>
+            ) : !userLocation ? (
               <div
                 onClick={() => setShowLocationPopup(true)}
                 className="w-full h-full rounded-xl bg-cyan-500/10 border border-cyan-500/40 text-cyan-900 dark:text-cyan-300 font-bold text-xs flex items-center justify-center px-3 cursor-pointer hover:bg-cyan-500/20 transition-all gap-1.5"
@@ -816,10 +795,6 @@ export default function UnifiedRadarMap({
             ) : !hasTargetDirection ? (
               <div className="w-full h-full rounded-xl bg-cyan-500/10 border border-cyan-500/40 text-cyan-900 dark:text-cyan-300 font-bold text-xs flex items-center justify-center px-3">
                 {hasTargetFix ? 'At reported coordinates · Needle points North' : 'Target coordinates pending · Needle points North'}
-              </div>
-            ) : currentHeading === null ? (
-              <div className="w-full h-full rounded-xl bg-amber-500/10 border border-amber-500/40 text-amber-900 dark:text-amber-300 font-bold text-xs flex items-center justify-center px-3">
-                Calibrating compass · Move phone in figure eight
               </div>
             ) : isAligned ? (
               <div className="w-full h-full rounded-xl bg-emerald-500/10 border border-emerald-500/40 text-emerald-800 dark:text-emerald-300 font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs animate-pulse px-3">
@@ -907,18 +882,16 @@ export default function UnifiedRadarMap({
                   <line x1={COMPASS_CENTER - 20} y1={COMPASS_CENTER} x2={COMPASS_CENTER + 20} y2={COMPASS_CENTER} stroke="#0e7490" strokeWidth="0.8" opacity="0.3" />
                   <line x1={COMPASS_CENTER} y1={COMPASS_CENTER - 20} x2={COMPASS_CENTER} y2={COMPASS_CENTER + 20} stroke="#0e7490" strokeWidth="0.8" opacity="0.3" />
 
-                  {/* NEEDLE: ALWAYS VISIBLE (Points to destination if set, else points North) */}
-                  <g
+                  {/* One pointer: selected destination, or north without a target. */}
+                  {needle.angle !== null && <g
                     transform={`rotate(${needleAngle} ${COMPASS_CENTER} ${COMPASS_CENTER})`}
                     filter="url(#needleGlow)"
                     className="transition-transform duration-200 ease-out"
+                    aria-label={hasTargetDirection ? (isAligned ? 'Facing selected location' : 'Direction to selected location') : 'North direction'}
                   >
-                    {hasTargetDirection ? (
-                      /* ACTIVE TARGET GUIDANCE NEEDLE */
-                      <>
                         <polygon
                           points={`${COMPASS_CENTER},${COMPASS_CENTER - COMPASS_RADIUS + 12} ${COMPASS_CENTER - 9},${COMPASS_CENTER - 14} ${COMPASS_CENTER},${COMPASS_CENTER - 7} ${COMPASS_CENTER + 9},${COMPASS_CENTER - 14}`}
-                          fill={isAligned ? '#10b981' : activeTarget?.category === 'resource' ? '#06b6d4' : '#ef4444'}
+                          fill={isAligned ? '#10b981' : '#ef4444'}
                           stroke="#ffffff"
                           strokeWidth="1.5"
                         />
@@ -927,60 +900,20 @@ export default function UnifiedRadarMap({
                           y1={COMPASS_CENTER}
                           x2={COMPASS_CENTER}
                           y2={COMPASS_CENTER - COMPASS_RADIUS + 12}
-                          stroke={isAligned ? '#10b981' : activeTarget?.category === 'resource' ? '#06b6d4' : '#ef4444'}
+                          stroke={isAligned ? '#10b981' : '#ef4444'}
                           strokeWidth="3.5"
                           strokeLinecap="round"
-                        />
-                        <polygon
-                          points={`${COMPASS_CENTER},${COMPASS_CENTER + 24} ${COMPASS_CENTER - 5},${COMPASS_CENTER + 10} ${COMPASS_CENTER + 5},${COMPASS_CENTER + 10}`}
-                          fill="#475569"
                         />
                         <circle
                           cx={COMPASS_CENTER}
                           cy={COMPASS_CENTER - COMPASS_RADIUS + 12}
                           r="5.5"
                           fill="none"
-                          stroke={isAligned ? '#10b981' : activeTarget?.category === 'resource' ? '#06b6d4' : '#ef4444'}
+                          stroke={isAligned ? '#10b981' : '#ef4444'}
                           strokeWidth="2"
                           className={isAligned ? 'animate-pulse' : ''}
                         />
-                      </>
-                    ) : (
-                      /* CLASSIC MAGNETIC COMPASS NEEDLE (POINTS NORTH) */
-                      <>
-                        {/* North Arrow (Bright Radiant Red) */}
-                        <polygon
-                          points={`${COMPASS_CENTER},${COMPASS_CENTER - COMPASS_RADIUS + 12} ${COMPASS_CENTER - 8},${COMPASS_CENTER - 8} ${COMPASS_CENTER},${COMPASS_CENTER} ${COMPASS_CENTER + 8},${COMPASS_CENTER - 8}`}
-                          fill="#ef4444"
-                          stroke="#ffffff"
-                          strokeWidth="1.2"
-                        />
-                        <line
-                          x1={COMPASS_CENTER}
-                          y1={COMPASS_CENTER - 8}
-                          x2={COMPASS_CENTER}
-                          y2={COMPASS_CENTER - COMPASS_RADIUS + 12}
-                          stroke="#ffffff"
-                          strokeWidth="1.5"
-                          strokeLinecap="round"
-                        />
-                        {/* South Arrow (Sleek Slate/Silver) */}
-                        <polygon
-                          points={`${COMPASS_CENTER},${COMPASS_CENTER + COMPASS_RADIUS - 12} ${COMPASS_CENTER - 8},${COMPASS_CENTER + 8} ${COMPASS_CENTER},${COMPASS_CENTER} ${COMPASS_CENTER + 8},${COMPASS_CENTER + 8}`}
-                          fill="#64748b"
-                          stroke="#ffffff"
-                          strokeWidth="1.2"
-                        />
-                        {/* North Tip Dot */}
-                        <circle
-                          cx={COMPASS_CENTER}
-                          cy={COMPASS_CENTER - COMPASS_RADIUS + 12}
-                          r="3"
-                          fill="#ffffff"
-                        />
-                      </>
-                    )}
-                  </g>
+                  </g>}
 
                   {/* Compass Center Bezel */}
                   <circle cx={COMPASS_CENTER} cy={COMPASS_CENTER} r="26" fill="#091424" stroke="#1e293b" strokeWidth="2" />
@@ -996,7 +929,7 @@ export default function UnifiedRadarMap({
                     fontWeight="900"
                     fontFamily="monospace"
                   >
-                    {hasTargetFix ? `${targetDistance}m` : (currentHeading !== null ? `${Math.round(currentHeading)}°` : '0°')}
+                    {hasTargetFix ? `${targetDistance}m` : (currentHeading !== null ? `${Math.round(currentHeading)}°` : '—')}
                   </text>
                   <text
                     x={COMPASS_CENTER}
@@ -1007,14 +940,14 @@ export default function UnifiedRadarMap({
                     fontWeight="bold"
                     fontFamily="monospace"
                   >
-                    {hasTargetDirection ? targetCardinal : (currentHeading !== null ? cardinalDirection(currentHeading) : 'N')}
+                    {hasTargetDirection ? targetCardinal : (currentHeading !== null ? cardinalDirection(currentHeading) : '—')}
                   </text>
                 </svg>
               </div>
 
               <div className="mt-0.5 text-center font-mono text-[10px] text-slate-500 dark:text-slate-400">
                 <span>Heading: </span>
-                <strong className="text-cyan-600 dark:text-cyan-400">{currentHeading === null ? '0° N · Calibrating…' : `${Math.round(currentHeading)}° ${cardinalDirection(currentHeading)} · ${compassReference === 'true' ? 'true north' : 'magnetic north'}`}</strong>
+                <strong className="text-cyan-600 dark:text-cyan-400">{currentHeading === null ? 'Calibrating…' : `${Math.round(currentHeading)}° ${cardinalDirection(currentHeading)} · ${compassReference === 'true' ? 'true north' : 'magnetic north'}`}</strong>
               </div>
             </div>
 
@@ -1034,7 +967,7 @@ export default function UnifiedRadarMap({
                 </div>
                 <div className="bg-[#f8fafc] dark:bg-slate-950/80 p-2 rounded-xl border border-[#dbe6f0] dark:border-slate-800">
                   <span className="text-[9px] text-slate-500 uppercase block font-semibold mb-0.5">Azimuth</span>
-                  <strong className="text-xs sm:text-sm font-black text-slate-900 dark:text-cyan-400 tabular-nums">{hasTargetDirection ? `${targetBearing}° ${targetCardinal}` : (currentHeading !== null ? `${Math.round(currentHeading)}°` : '0° N')}</strong>
+                  <strong className="text-xs sm:text-sm font-black text-slate-900 dark:text-cyan-400 tabular-nums">{hasTargetDirection ? `${targetBearing}° ${targetCardinal}` : (currentHeading !== null ? `${Math.round(currentHeading)}°` : '—')}</strong>
                 </div>
               </div>
 
